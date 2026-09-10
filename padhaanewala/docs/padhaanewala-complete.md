@@ -51,6 +51,8 @@
 | Service | Why | Where | What to Get |
 |---|---|---|---|
 | GitHub | Code repository | github.com | Account + create private repo `padhaanewala` |
+
+not done 
 | AWS Account | Servers, database, storage | aws.amazon.com | Root account, enable MFA, set billing alerts |
 | OpenAI or Anthropic | AI for chat + predictor | platform.openai.com | API key, set $100/month budget limit |
 | MSG91 | SMS/OTP for Indian mobiles | msg91.com | Account, API key, sender ID, DLT registration |
@@ -61,7 +63,7 @@
 | Google Search Console | SEO monitoring | searchconsole.google.com | Verify padhaanewala.in domain |
 
 **After creating each account, save the credentials in a password manager (NOT in any file).**
-
+till here  
 ---
 
 ## STEP 2: BUY/CONFIGURE DOMAIN [YOU]

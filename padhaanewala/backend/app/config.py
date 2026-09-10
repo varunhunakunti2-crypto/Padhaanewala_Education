@@ -21,12 +21,12 @@ class Settings(BaseSettings):
     TIMEZONE: str = "Asia/Kolkata"
 
     DB_HOST: str = "localhost"
-    DB_PORT: int = 5432
+    DB_PORT: int = 5433
     DB_NAME: str = "padhaanewala_dev"
     DB_USER: str = "padhaanewala"
     DB_PASSWORD: str = "dev_password_123"
     DATABASE_URL: str = (
-        "postgresql+psycopg2://padhaanewala:dev_password_123@localhost:5432/padhaanewala_dev"
+        "postgresql+psycopg2://padhaanewala:dev_password_123@localhost:5433/padhaanewala_dev"
     )
 
     REDIS_URL: str = "redis://localhost:6379/0"

@@ -1,6 +1,49 @@
 # PADHAANEWALA — MASTER PHASE CHECKLIST + MANDATORY PREREQUISITES
 Generated from: `padhaanewala-complete.md` (Master Plan V5.0)
 
+## STATUS UPDATE — Last reviewed: 11 September 2026 (re-verified against project code)
+
+**Current progress: 1 of 105 phases (Phase 1 is ~90% complete). All development blocks B–P not started.**
+
+> Re-verified 11 Sep 2026: Docker stack live (PostgreSQL 15 on host port 5433 + Redis 7), `alembic upgrade head` applied against Docker PG, `/health` → 200. Homepage built with placeholder data (Phase 16 workfront, API-swap later). Backend has `/health` endpoint only (no models/routers/tables yet). Blocks B–P confirmed NOT STARTED.
+
+### Completed so far
+- ☑ **M1 (GitHub account)** — private repo `Padhaanewala_Education` created, connected, code pushed. Other accounts (AWS, OpenAI, MSG91, SendGrid, Sentry, Cloudflare, GA4, Search Console) **PENDING**.
+- ☑ **M3 (Developer engaged)** — developer working; master doc handed over; repo `main` + `develop` branches active.
+- ◐ **Phase 1 (Setup Environment) — PARTIAL (~90%)**
+
+### Recently added (design/dev prep for upcoming phases — no phase gates passed)
+- ☑ `DESIGN.md` added — frontend design system reference (colors, typography) for Phase 16 (homepage/layout)
+- ☑ Tailwind 4 docs + web-design-guidelines skills added — dev tooling prep for Phase 16–18 (frontend build)
+- ☑ Docker Desktop installed (v29.7.2) + WSL2/Virtual Machine Platform enabled — verified running 11 Sep 2026
+- ☑ **Port conflict resolved** — native Windows PostgreSQL 16 owns port 5432, so Docker PG 15 now publishes on host port **5433** (docker-compose.dev.yml, `.env.development`, `config.py` updated to match)
+
+### Phase 1 — what's DONE ✅
+- ☑ Folder structure: `frontend/`, `backend/`, `docs/`, `scripts/` created
+- ☑ `docker-compose.dev.yml` created (PostgreSQL 15 + Redis 7)
+- ☑ `.env.example` written (139-env template: DB, Redis, JWT, email, SMS, S3, AI, proctoring)
+- ☑ `.gitignore` created
+- ☑ `README.md` with setup instructions
+- ☑ Frontend scaffolded: Next.js + React + TypeScript + Tailwind (stock `create-next-app`)
+- ☑ Backend scaffolded: FastAPI + `main.py` `/health` endpoint + `config.py` + `database.py`
+- ☑ `requirements.txt` (35 packages) + Alembic initialized (`alembic.ini`, `env.py`)
+- ☑ Git repo initialized, `main`/`develop` branches, code pushed to GitHub
+- ✅ `npm install` / `node_modules` — DONE (358 packages, 0 vulnerabilities; `next build` passes)
+- ✅ `.env.development` — DONE (created, settings load from it, dev DB/Redis creds match docker-compose)
+- ✅ Python `venv` + backend deps — DONE (venv created, requirements installed, uvicorn serves `GET /health` → HTTP 200 `{"status":"ok"}`)
+- ✅ `alembic/versions/` — DONE (base revision `80137954d5c1` created AND applied)
+- ✅ **Homepage built** — stock "Create Next App" page replaced with a full Padhaanewala homepage: hero + search bar, quick-action cards, popular courses, featured colleges (fee/placement), scholarships, upcoming exams, mock tests, why-us, reviews, articles, admission CTA, WhatsApp button, sticky header + mobile menu, footer. Placeholder data in `frontend/src/data/home.ts` (will switch to APIs at Phases 11–16). `next build` + ESLint pass; renders HTTP 200.
+- ✅ **Docker stack verified against real PostgreSQL/Redis** — `docker compose up -d` runs `postgres:15` (host port 5433) + `redis:7-alpine` (6379, `PONG`); `alembic upgrade head` + `alembic current` = `80137954d5c1` (head) on Docker PG; DB `alembic_version` = `80137954d5c1`; node v24.20.0 / Python 3.12.10 / git 2.55.0 / Docker 29.7.2 confirmed.
+
+### Phase 1 — what's REMAINING ❌ (blocks completion gate)
+- ❌ **Code not yet pushed to `develop`** — homepage (`frontend/src/app/page.tsx`, `layout.tsx`, `frontend/src/components/`, `frontend/src/data/`), `backend/alembic/versions/`, port-remap changes (`docker-compose.dev.yml`, `.env.development`, `backend/app/config.py`), and updated `docs/` are UNCOMMITTED on `main`. Stage + commit → push to `develop`.
+- ❌ Completion Gate not confirmed → **do not proceed to Phase 2 until verified**
+
+### Next action
+- ⛔ Phase 2 (Users, Auth, Roles) is BLOCKED until Phase 1 Completion Gate = YES.
+
+---
+
 ## How to use
 1. Do all **Manual Gates (M1–M10)** in order below — nothing starts without them.
 2. Follow phase blocks **A–P** in order. The "Mandatory before" list for each block is a HARD gate — do not start that block until every listed prerequisite is complete (verified).
@@ -13,9 +56,9 @@ Generated from: `padhaanewala-complete.md` (Master Plan V5.0)
 
 | # | Task | Mandatory before | Done |
 |---|---|---|---|
-| M1 | Create accounts: GitHub, AWS, OpenAI/Anthropic, MSG91, SendGrid/AWS SES, Sentry, Cloudflare, GA4, Search Console | GitHub → Phase 1; MSG91+SendGrid → Phase 3; OpenAI → Phase 38–41; S3 → Phase 47–55; Sentry → Phase 78; GA4 → Phase 83; Cloudflare → Phase 85 | ☐ |
+| M1 | Create accounts: GitHub, AWS, OpenAI/Anthropic, MSG91, SendGrid/AWS SES, Sentry, Cloudflare, GA4, Search Console | GitHub → Phase 1; MSG91+SendGrid → Phase 3; OpenAI → Phase 38–41; S3 → Phase 47–55; Sentry → Phase 78; GA4 → Phase 83; Cloudflare → Phase 85 | ☑ GitHub only — others PENDING |
 | M2 | Buy `padhaanewala.in`, point nameservers to Cloudflare, DNS records | Phase 82 / Phase 90 (production DNS) / Phase 96 (launch) | ☐ |
-| M3 | Engage developer, give them this single doc | Phase 1 | ☐ |
+| M3 | Engage developer, give them this single doc | Phase 1 | ☑ |
 | M4 | Compile data: Colleges CSV (1000+), Courses (50+), Scholarships (100+), Exams (50+), Questions (500+), Placement (top 500), Cutoff CSVs, 20+ blog articles | Phase 56–65 (Data Import) | ☐ |
 | M5 | Write legal pages: Privacy Policy (English AND Hindi), Terms, Disclaimer, Cookie Policy | Phase 76, Phase 96–97 | ☐ |
 | M6 | Appoint Grievance Officer (name/email/phone), define 24h ack / 15-day resolution | Phase 76, Phase 96–97 (legally required BEFORE launch) | ☐ |
@@ -31,9 +74,9 @@ Generated from: `padhaanewala-complete.md` (Master Plan V5.0)
 ### BLOCK A — Foundation
 | # | Phase | Prerequisites aIready met | Done |
 |---|---|---|---|
-| 1 | Setup Environment [BOTH] | **M1 (GitHub), M3** + Node 18, Python 3.11, Docker, Git, VS Code installed. Domain NOT required yet. | ☐ |
+| 1 | Setup Environment [BOTH] | **M1 (GitHub), M3** + Node 18, Python 3.11, Docker, Git, VS Code installed. Domain NOT required yet. | ◐ PARTIAL (~65%) — see Status Update above |
 
-**Completion Gate:** node/python/git/docker verified; private GitHub repo `padhaanewala`; `docker compose up` runs PostgreSQL+Redis; backend `/health` returns OK; frontend loads at localhost:3000; code pushed to `develop`.
+**Completion Gate:** node/python/git/docker verified ✅; private GitHub repo `padhaanewala` ✅; `docker compose up` runs PostgreSQL+Redis ✅; backend `/health` returns OK ✅; frontend loads at localhost:3000 ✅; code pushed to `develop` ❌ **PENDING COMMIT+PUSH**. → **NOT YET PASSED — Phase 2 is BLOCKED.**
 
 ### BLOCK B — Database Layer 1 (Phases 2–10)
 | # | Phase | Mandatory before | Done |
