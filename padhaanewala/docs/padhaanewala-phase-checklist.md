@@ -3,20 +3,21 @@ Generated from: `padhaanewala-complete.md` (Master Plan V5.0)
 
 ## STATUS UPDATE — Last reviewed: 11 September 2026 (re-verified against project code)
 
-**Current progress: 1 of 105 phases (Phase 1 is ~90% complete). All development blocks B–P not started.**
+**Current progress: 1 of 105 phases (Phase 1 is ~95% complete). Phase 2/4/6 code exists on `develop` but is unverified.**
 
-> Re-verified 11 Sep 2026: Docker stack live (PostgreSQL 15 on host port 5433 + Redis 7), `alembic upgrade head` applied against Docker PG, `/health` → 200. Homepage built with placeholder data (Phase 16 workfront, API-swap later). Backend has `/health` endpoint only (no models/routers/tables yet). Blocks B–P confirmed NOT STARTED.
+> Re-verified 11 Sep 2026: Docker stack live (PostgreSQL 15 on host port 5433 + Redis 7). Homepage built with placeholder data (API-swap later). **Important discovery:** `origin/develop` already contains Phase 2/4/6 code (users/auth/roles `bbe7820`, locations/universities/colleges/courses/fees/scholarships/exams `605b88f`, test fix `bce279f`) pushed separately from the developer — so Phase 2 is NOT untouched, but those migrations have NOT yet been applied/verified against the live Docker DB. The empty base revision `80137954d5c1` has been removed (it collided with develop's real migration root `8422ac618df6`).
 
 ### Completed so far
 - ☑ **M1 (GitHub account)** — private repo `Padhaanewala_Education` created, connected, code pushed. Other accounts (AWS, OpenAI, MSG91, SendGrid, Sentry, Cloudflare, GA4, Search Console) **PENDING**.
 - ☑ **M3 (Developer engaged)** — developer working; master doc handed over; repo `main` + `develop` branches active.
-- ◐ **Phase 1 (Setup Environment) — PARTIAL (~90%)**
+- ◐ **Phase 1 (Setup Environment) — PARTIAL (~95%)**
 
 ### Recently added (design/dev prep for upcoming phases — no phase gates passed)
 - ☑ `DESIGN.md` added — frontend design system reference (colors, typography) for Phase 16 (homepage/layout)
 - ☑ Tailwind 4 docs + web-design-guidelines skills added — dev tooling prep for Phase 16–18 (frontend build)
 - ☑ Docker Desktop installed (v29.7.2) + WSL2/Virtual Machine Platform enabled — verified running 11 Sep 2026
 - ☑ **Port conflict resolved** — native Windows PostgreSQL 16 owns port 5432, so Docker PG 15 now publishes on host port **5433** (docker-compose.dev.yml, `.env.development`, `config.py` updated to match)
+- ℹ️ **Upstream Phase 2/4/6 code present** on `origin/develop` (`bbe7820`, `605b88f`, `bce279f`) — models, routers, schemes, tests, seed scripts, 4 real Alembic migrations (root `8422ac618df6`). Local `develop` merged `main` (homepage + port remap) and removed the collision empty base.
 
 ### Phase 1 — what's DONE ✅
 - ☑ Folder structure: `frontend/`, `backend/`, `docs/`, `scripts/` created
@@ -25,22 +26,19 @@ Generated from: `padhaanewala-complete.md` (Master Plan V5.0)
 - ☑ `.gitignore` created
 - ☑ `README.md` with setup instructions
 - ☑ Frontend scaffolded: Next.js + React + TypeScript + Tailwind (stock `create-next-app`)
-- ☑ Backend scaffolded: FastAPI + `main.py` `/health` endpoint + `config.py` + `database.py`
-- ☑ `requirements.txt` (35 packages) + Alembic initialized (`alembic.ini`, `env.py`)
+- ☑ Backend scaffolded with Phase 2/4/6 additions: `/health` endpoint + `config.py` + `database.py` + models/routers/schemas/tests
+- ☑ `requirements.txt` + Alembic initialized (`alembic.ini`, `env.py`)
 - ☑ Git repo initialized, `main`/`develop` branches, code pushed to GitHub
 - ✅ `npm install` / `node_modules` — DONE (358 packages, 0 vulnerabilities; `next build` passes)
 - ✅ `.env.development` — DONE (created, settings load from it, dev DB/Redis creds match docker-compose)
 - ✅ Python `venv` + backend deps — DONE (venv created, requirements installed, uvicorn serves `GET /health` → HTTP 200 `{"status":"ok"}`)
-- ✅ `alembic/versions/` — DONE (base revision `80137954d5c1` created AND applied)
 - ✅ **Homepage built** — stock "Create Next App" page replaced with a full Padhaanewala homepage: hero + search bar, quick-action cards, popular courses, featured colleges (fee/placement), scholarships, upcoming exams, mock tests, why-us, reviews, articles, admission CTA, WhatsApp button, sticky header + mobile menu, footer. Placeholder data in `frontend/src/data/home.ts` (will switch to APIs at Phases 11–16). `next build` + ESLint pass; renders HTTP 200.
-- ✅ **Docker stack verified against real PostgreSQL/Redis** — `docker compose up -d` runs `postgres:15` (host port 5433) + `redis:7-alpine` (6379, `PONG`); `alembic upgrade head` + `alembic current` = `80137954d5c1` (head) on Docker PG; DB `alembic_version` = `80137954d5c1`; node v24.20.0 / Python 3.12.10 / git 2.55.0 / Docker 29.7.2 confirmed.
+- ✅ **Docker stack verified against real PostgreSQL/Redis** — `docker compose up -d` runs `postgres:15` (host port 5433) + `redis:7-alpine` (6379, `PONG`); node v24.20.0 / Python 3.12.10 / git 2.55.0 / Docker 29.7.2 confirmed.
 
 ### Phase 1 — what's REMAINING ❌ (blocks completion gate)
-- ❌ **Code not yet pushed to `develop`** — homepage (`frontend/src/app/page.tsx`, `layout.tsx`, `frontend/src/components/`, `frontend/src/data/`), `backend/alembic/versions/`, port-remap changes (`docker-compose.dev.yml`, `.env.development`, `backend/app/config.py`), and updated `docs/` are UNCOMMITTED on `main`. Stage + commit → push to `develop`.
-- ❌ Completion Gate not confirmed → **do not proceed to Phase 2 until verified**
-
-### Next action
-- ⛔ Phase 2 (Users, Auth, Roles) is BLOCKED until Phase 1 Completion Gate = YES.
+- ❌ **Push homepage/port-remap to `develop`** — homepage (`frontend/src/app/page.tsx`, `layout.tsx`, `frontend/src/components/`, `frontend/src/data/`), port-remap changes (`docker-compose.dev.yml`, `backend/app/config.py`), updated `docs/`, and alembic base-revision removal are committed locally on `develop` (ahead 2 of `origin/develop`) but **NOT PUSHED**.
+- ❌ **Re-apply migrations to live DB** — DB is currently stamped at deleted revision `80137954d5c1`. Needs `alembic stamp base` → `alembic upgrade head` to apply develop's real chain (`8422ac618df6` → … → head) against Docker PG.
+- ❌ Completion Gate not confirmed → **do not proceed to assign new Phase 2 work until verified** (note: Phase 2/4/6 code already exists upstream but is UNVERIFIED against live DB).
 
 ---
 
@@ -74,9 +72,9 @@ Generated from: `padhaanewala-complete.md` (Master Plan V5.0)
 ### BLOCK A — Foundation
 | # | Phase | Prerequisites aIready met | Done |
 |---|---|---|---|
-| 1 | Setup Environment [BOTH] | **M1 (GitHub), M3** + Node 18, Python 3.11, Docker, Git, VS Code installed. Domain NOT required yet. | ◐ PARTIAL (~65%) — see Status Update above |
+| 1 | Setup Environment [BOTH] | **M1 (GitHub), M3** + Node 18, Python 3.11, Docker, Git, VS Code installed. Domain NOT required yet. | ◐ PARTIAL (~95%) — see Status Update above |
 
-**Completion Gate:** node/python/git/docker verified ✅; private GitHub repo `padhaanewala` ✅; `docker compose up` runs PostgreSQL+Redis ✅; backend `/health` returns OK ✅; frontend loads at localhost:3000 ✅; code pushed to `develop` ❌ **PENDING COMMIT+PUSH**. → **NOT YET PASSED — Phase 2 is BLOCKED.**
+**Completion Gate:** node/python/git/docker verified ✅; private GitHub repo `padhaanewala` ✅; `docker compose up` runs PostgreSQL+Redis ✅; backend `/health` returns OK ✅; frontend loads at localhost:3000 ✅; code pushed to `develop` ❌ **PENDING PUSH (local `develop` ahead 2)**; Docker DB re-stamped + `alembic upgrade head` against live PG ❌. → **NOT YET PASSED — Phase 2/4/6 upstream code present but UNVERIFIED against live DB.**
 
 ### BLOCK B — Database Layer 1 (Phases 2–10)
 | # | Phase | Mandatory before | Done |
