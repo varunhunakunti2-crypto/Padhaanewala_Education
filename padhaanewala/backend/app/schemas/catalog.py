@@ -216,3 +216,67 @@ class ExamResponse(BaseModel):
     is_active: bool
 
     model_config = {"from_attributes": True}
+
+
+class MockTestResponse(BaseModel):
+    id: int
+    name: str
+    slug: str
+    exam_id: int | None
+    exam_name: str | None = None
+    course_id: int | None
+    course_name: str | None = None
+    subject: str | None
+    difficulty: str
+    question_type: str
+    duration_minutes: int
+    total_marks: Decimal
+    negative_marking: bool
+    negative_marks_value: Decimal
+    attempts_allowed: int
+    question_randomization: bool
+    option_randomization: bool
+    instructions: str | None
+    result_visibility: str
+    test_type: str
+    question_count: int = 0
+    is_active: bool
+
+    model_config = {"from_attributes": True}
+
+
+class EnquiryCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=255)
+    mobile: str = Field(min_length=10, max_length=20)
+    email: str | None = Field(default=None, max_length=255)
+    course_id: int | None = None
+    college_id: int | None = None
+    state_id: int | None = None
+    city: str | None = Field(default=None, max_length=100)
+    qualification: str | None = Field(default=None, max_length=100)
+    message: str | None = None
+    source: str | None = Field(default=None, max_length=50)
+    source_url: str | None = Field(default=None, max_length=255)
+    utm_source: str | None = Field(default=None, max_length=100)
+    utm_medium: str | None = Field(default=None, max_length=100)
+    utm_campaign: str | None = Field(default=None, max_length=100)
+    utm_content: str | None = Field(default=None, max_length=100)
+    device_type: str | None = Field(default=None, max_length=20)
+    ip_address: str | None = Field(default=None, max_length=45)
+
+
+class EnquiryResponse(BaseModel):
+    id: int
+    name: str
+    mobile: str
+    email: str | None
+    course_id: int | None
+    college_id: int | None
+    state_id: int | None
+    city: str | None
+    message: str | None
+    status: str
+    follow_up_date: date | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
