@@ -2,6 +2,24 @@ from app.database import SessionLocal
 from app.data.india_locations import STATES, DISTRICT_TOTAL
 from app.models import City, District, State
 
+# Major cities whose name substring-matches multiple districts; pin the right one.
+CITY_DISTRICT_OVERRIDES = {
+    "Bengaluru": "Bengaluru Urban",
+    "Delhi": "Central Delhi",
+}
+
+
+def _match_city(c_name: str, district: District) -> bool:
+    candidate = CITY_DISTRICT_OVERRIDES.get(c_name, c_name)
+    if candidate.lower() == district.name.lower():
+        return True
+    if candidate == c_name:
+        return (
+            c_name.lower() in district.name.lower()
+            or district.name.lower() in c_name.lower()
+        )
+    return False
+
 
 def main() -> None:
     with SessionLocal() as db:
@@ -43,10 +61,7 @@ def main() -> None:
                     continue
 
                 def _match(entry):
-                    return c_name.lower() == entry.name.lower() or (
-                        c_name.lower() in entry.name.lower()
-                        or entry.name.lower() in c_name.lower()
-                    )
+                    return _match_city(c_name, entry)
 
                 district = next(
                     (d for d in state_districts if _match(d)), None

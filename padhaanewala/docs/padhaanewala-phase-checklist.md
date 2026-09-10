@@ -3,9 +3,9 @@ Generated from: `padhaanewala-complete.md` (Master Plan V5.0)
 
 ## STATUS UPDATE — Last reviewed: 11 September 2026 (re-verified against project code)
 
-**Current progress: 1 of 105 phases — **Phase 1 COMPLETE: Completion Gate ✅ PASSED.** Phase 2/4/6 code exists on `develop` and its migrations are now verified against the live Docker DB.
+**Current progress: 2 of 105 phases completed — **Phase 1 ✅ (gate PASSED), Phase 11 ✅ (College CRUD API verified).** Phase 2/4/6 code exists on `develop`; its migrations + seeds are applied/verified against the live Docker DB.
 
-> Re-verified 11 Sep 2026: Docker stack live (PostgreSQL 15 on host port 5433 + Redis 7). Homepage built with placeholder data (API-swap later). **Important discovery:** `origin/develop` already contains Phase 2/4/6 code (users/auth/roles `bbe7820`, locations/universities/colleges/courses/fees/scholarships/exams `605b88f`, test fix `bce279f`) pushed separately from the developer — so Phase 2 is NOT untouched, but those migrations have NOT yet been applied/verified against the live Docker DB. The empty base revision `80137954d5c1` has been removed (it collided with develop's real migration root `8422ac618df6`).
+> Re-verified 11 Sep 2026: Docker stack live (PostgreSQL 15 on host port 5433 + Redis 7). Homepage built with placeholder data (API-swap later). **Discovery:** `origin/develop` already contained Phase 2/4/6 code (users/auth/roles `bbe7820`, locations/universities/colleges/courses/fees/scholarships/exams `605b88f`, test fix `bce279f`). Migrations applied to live Docker PG (head `63603ea2106d`), seeds run (36 states/755 districts/105 cities, 155 universities, 14 roles, 20 courses/10 colleges, 6 exams, 6 scholarships), and **Phase 11 verified: 37/37 backend tests green + live CRUD smoke test** (fixes: `ErrorDetail` ordering in `schemas/common.py`; Bengaluru city district mapping in `seed_locations.py`).
 
 ### Completed so far
 - ☑ **M1 (GitHub account)** — private repo `Padhaanewala_Education` created, connected, code pushed. Other accounts (AWS, OpenAI, MSG91, SendGrid, Sentry, Cloudflare, GA4, Search Console) **PENDING**.
@@ -97,7 +97,7 @@ Generated from: `padhaanewala-complete.md` (Master Plan V5.0)
 ### BLOCK C — Backend APIs (Phases 11–14)
 | # | Phase | Mandatory before | Done |
 |---|---|---|---|
-| 11 | College CRUD API [DEV] | Phase 2 + Phase 5 | ☐ |
+| 11 | College CRUD API [DEV] | Phase 2 + Phase 5 | ☑ **VERIFIED 11 Sep 2026** — list/filter/search/detail + admin create/update/delete (RBAC) live; 37/37 tests green |
 | 12 | Course, Scholarship, Exam APIs [DEV] | Phase 6 (+ Phase 11 patterns) | ☐ |
 | 13 | Search Engine (text + filters + NLP) [DEV] | Phase 11 | ☐ |
 | 14 | Placement, Cutoff, NIRF APIs [DEV] | Phase 10 | ☐ |
