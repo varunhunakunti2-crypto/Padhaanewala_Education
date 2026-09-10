@@ -6,7 +6,7 @@ services:
       POSTGRES_DB: padhaanewala_dev
       POSTGRES_USER: padhaanewala
       POSTGRES_PASSWORD: dev_password_123
-    ports: ["5432:5432"]
+    ports: ["5433:5432"]
     volumes: [pgdata:/var/lib/postgresql/data]
   redis:
     image: redis:7-alpine
