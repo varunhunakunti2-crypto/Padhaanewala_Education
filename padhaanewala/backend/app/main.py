@@ -9,7 +9,7 @@ from app.middleware.logging import (
     RequestContextMiddleware,
 )
 from app.middleware.ratelimit import RateLimitMiddleware
-from app.routers import auth, users
+from app.routers import auth, colleges, exams, locations, scholarships, universities, users
 
 logging.basicConfig(
     level=logging.INFO,
@@ -35,6 +35,11 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(users.router)
+app.include_router(locations.router)
+app.include_router(universities.router)
+app.include_router(colleges.router)
+app.include_router(scholarships.router)
+app.include_router(exams.router)
 
 
 @app.get("/health", tags=["health"])

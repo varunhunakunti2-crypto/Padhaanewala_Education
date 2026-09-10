@@ -7,6 +7,15 @@ from alembic import context
 
 from app.config import settings
 from app.database import Base
+from app.models import admission as admission_models  # noqa: F401
+from app.models import college as college_models  # noqa: F401
+from app.models import college_course as college_course_models  # noqa: F401
+from app.models import course as course_models  # noqa: F401
+from app.models import exam as exam_models  # noqa: F401
+from app.models import fee as fee_models  # noqa: F401
+from app.models import location as location_models  # noqa: F401
+from app.models import scholarship as scholarship_models  # noqa: F401
+from app.models import university as university_models  # noqa: F401
 from app.models import user as user_models  # noqa: F401
 
 # this is the Alembic Config object, which provides
