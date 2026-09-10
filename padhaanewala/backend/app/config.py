@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     )
 
     REDIS_URL: str = "redis://localhost:6379/0"
+    RATE_LIMIT_ENABLED: bool = True
 
     JWT_SECRET_KEY: str = "change-me"
     JWT_REFRESH_SECRET_KEY: str = "change-me"
