@@ -8,13 +8,28 @@ from alembic import context
 from app.config import settings
 from app.database import Base
 from app.models import admission as admission_models  # noqa: F401
+from app.models import audit_log as audit_log_models  # noqa: F401
+from app.models import banner as banner_models  # noqa: F401
+from app.models import blog as blog_models  # noqa: F401
 from app.models import college as college_models  # noqa: F401
-from app.models import college_course as college_course_models  # noqa: F401
+from app.models import consent as consent_models  # noqa: F401
+from app.models import cutoff as cutoff_models  # noqa: F401
 from app.models import course as course_models  # noqa: F401
+from app.models import enquiry as enquiry_models  # noqa: F401
 from app.models import exam as exam_models  # noqa: F401
+from app.models import faq as faq_models  # noqa: F401
 from app.models import fee as fee_models  # noqa: F401
 from app.models import location as location_models  # noqa: F401
+from app.models import media as media_models  # noqa: F401
+from app.models import mock_test as mock_test_models  # noqa: F401
+from app.models import notification as notification_models  # noqa: F401
+from app.models import placement as placement_models  # noqa: F401
+from app.models import ranking as ranking_models  # noqa: F401
+from app.models import review as review_models  # noqa: F401
+from app.models import saved_college as saved_college_models  # noqa: F401
 from app.models import scholarship as scholarship_models  # noqa: F401
+from app.models import seat_matrix as seat_matrix_models  # noqa: F401
+from app.models import seo_metadata as seo_metadata_models  # noqa: F401
 from app.models import university as university_models  # noqa: F401
 from app.models import user as user_models  # noqa: F401
 

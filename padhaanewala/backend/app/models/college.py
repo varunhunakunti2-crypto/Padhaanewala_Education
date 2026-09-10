@@ -72,3 +72,4 @@ class College(Base):
     college_courses: Mapped[list["CollegeCourse"]] = relationship(
         back_populates="college"
     )
+    reviews: Mapped[list["Review"]] = relationship(back_populates="college")

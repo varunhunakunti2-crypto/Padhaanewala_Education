@@ -59,6 +59,19 @@ class User(Base):
     roles: Mapped[list["Role"]] = relationship(
         secondary=user_roles, back_populates="users"
     )
+    reviews: Mapped[list["Review"]] = relationship(
+        back_populates="student", foreign_keys="Review.student_id"
+    )
+    notifications: Mapped[list["Notification"]] = relationship(
+        back_populates="user"
+    )
+
+    @property
+    def display_name(self) -> str:
+        profile = self.student_profile
+        if profile and profile.name:
+            return profile.name
+        return self.email
 
 
 class StudentProfile(Base):

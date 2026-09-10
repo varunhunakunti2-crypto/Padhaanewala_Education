@@ -9,7 +9,25 @@ from app.middleware.logging import (
     RequestContextMiddleware,
 )
 from app.middleware.ratelimit import RateLimitMiddleware
-from app.routers import auth, colleges, exams, locations, scholarships, universities, users
+from app.routers import (
+    audit,
+    auth,
+    banners,
+    blogs,
+    colleges,
+    enquiries,
+    exams,
+    faqs,
+    locations,
+    media,
+    mock_tests,
+    notifications,
+    reviews,
+    scholarships,
+    seo,
+    universities,
+    users,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -38,8 +56,18 @@ app.include_router(users.router)
 app.include_router(locations.router)
 app.include_router(universities.router)
 app.include_router(colleges.router)
+app.include_router(enquiries.router)
 app.include_router(scholarships.router)
 app.include_router(exams.router)
+app.include_router(mock_tests.router)
+app.include_router(reviews.router)
+app.include_router(blogs.router)
+app.include_router(faqs.router)
+app.include_router(media.router)
+app.include_router(seo.router)
+app.include_router(notifications.router)
+app.include_router(audit.router)
+app.include_router(banners.router)
 
 
 @app.get("/health", tags=["health"])
