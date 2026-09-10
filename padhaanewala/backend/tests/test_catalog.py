@@ -157,13 +157,14 @@ def test_create_college_requires_admin():
 def test_admin_create_and_update_college():
     token = _make_admin_token()
     headers = {"Authorization": f"Bearer {token}"}
+    name = f"Test Engineering College {uuid.uuid4().hex[:6]}"
 
     create = client.post(
         "/api/v1/colleges",
-        json={"name": "Test Engineering College", "city": "Chennai"},
+        json={"name": name, "city": "Chennai"},
         headers=headers,
     )
-    assert create.status_code == 201
+    assert create.status_code == 201, create.text
     body = create.json()
     assert body["college_id"].startswith("COLLEGE")
     college_ref = body["id"]
