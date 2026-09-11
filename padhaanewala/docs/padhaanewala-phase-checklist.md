@@ -84,7 +84,7 @@ Generated from: `padhaanewala-complete.md` (Master Plan V5.0)
 | # | Phase | Mandatory before | Done |
 |---|---|---|---|
 | 2 | Users, Auth, Roles [DEV] | Phase 1 | ☐ |
-| 3 | Email, SMS, OTP [BOTH] | Phase 2 + **M1 (MSG91 + SendGrid/SES credentials BEFORE developer starts)** | ☐ |
+| 3 | Email, SMS, OTP [BOTH] | Phase 2 + **M1 (MSG91 + SendGrid/SES credentials BEFORE developer starts)** | ☐ |  this is paid 
 | 4 | States, Districts, Universities [DEV] | Phase 1 (*parallel* with 2, 3) | ☐ |
 | 5 | Colleges, Courses, Fees [DEV] | Phase 4 (college → state/district/university FK) | ☐ |
 | 6 | Scholarships, Exams [DEV] | Phase 4 (*parallel* with 5) | ☐ |

@@ -23,24 +23,26 @@ function SectionHeader({
   subtitle,
   href,
   linkLabel,
+  dark = false,
 }: {
   title: string;
   subtitle: string;
   href?: string;
   linkLabel?: string;
+  dark?: boolean;
 }) {
   return (
     <div className="mb-8 flex items-end justify-between gap-4">
       <div>
-        <h2 className="text-2xl font-bold tracking-tight text-neutral-950 sm:text-3xl">
+        <h2 className={`text-2xl font-bold tracking-tight sm:text-3xl ${dark ? "text-white" : "text-neutral-950"}`}>
           {title}
         </h2>
-        <p className="mt-2 text-sm text-neutral-500 sm:text-base">{subtitle}</p>
+        <p className={`mt-2 text-sm sm:text-base ${dark ? "text-neutral-300" : "text-neutral-500"}`}>{subtitle}</p>
       </div>
       {href && linkLabel && (
         <Link
           href={href}
-          className="hidden items-center gap-1.5 text-sm font-semibold text-neutral-950 hover:text-neutral-600 sm:inline-flex"
+          className={`hidden items-center gap-1.5 text-sm font-semibold sm:inline-flex ${dark ? "text-white hover:text-neutral-300" : "text-neutral-950 hover:text-neutral-600"}`}
         >
           {linkLabel}
           <ArrowRightIcon className="h-4 w-4" />
@@ -294,6 +296,7 @@ export function WhyPadhaanewala() {
         <SectionHeader
           title="Why Padhaanewala"
           subtitle="Built for students, trusted by parents"
+          dark={true}
         />
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {reasons.map((reason, index) => (
