@@ -12,6 +12,18 @@
   --font-mono: var(--font-geist-mono);
 }
 
+/* Jobhire design tokens (landing page) */
+@theme {
+  --color-jh-yellow: #ffe65c;
+  --color-jh-teal: #ddefef;
+  --color-jh-green: #55c99a;
+  --color-jh-navy: #071328;
+  --color-jh-ink: #111111;
+  --color-jh-muted: #777777;
+  --color-jh-line: #e8e8e8;
+  --color-jh-pale: #fff7d6;
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0a0a0a;
