@@ -3,15 +3,18 @@ Generated from: `padhaanewala-complete.md` (Master Plan V5.0)
 
 ## STATUS UPDATE — Last reviewed: 12 September 2026 (re-verified against project code)
 
-**Current progress: 2 of 105 phases completed — **Phase 1 ✅ (gate PASSED), Phase 11 ✅ (College CRUD API verified).** Phase 2/4/6 code exists on `develop`; its migrations + seeds are applied/verified against the live Docker DB.
+**Current progress: 2 of 105 phases completed — Phase 1 ✅ (gate PASSED), Phase 11 ✅ (College CRUD API verified), Phase 8 ✅ BACKEND COMPLETE.** Backend models + migration chain now cover Phases 2, 4–11 (users/auth/roles, locations, universities, colleges/courses/fees, scholarships/exams, reviews/blogs/FAQs/media/SEO/notifications/audit/banners, mock tests/questions, enquiries/leads/saved/consent, placement/NIRF/cutoff/seat matrix). Frontend static pages now cover home, colleges, courses, scholarships, exams, blog, mock tests, college predictor + Jobhire landing.
 
 > Re-verified 11 Sep 2026: Docker stack live (PostgreSQL 15 on host port 5433 + Redis 7). Homepage built with placeholder data (API-swap later). **Discovery:** `origin/develop` already contained Phase 2/4/6 code (users/auth/roles `bbe7820`, locations/universities/colleges/courses/fees/scholarships/exams `605b88f`, test fix `bce279f`). Migrations applied to live Docker PG (head `63603ea2106d`), seeds run (36 states/755 districts/105 cities, 155 universities, 14 roles, 20 courses/10 colleges, 6 exams, 6 scholarships), and **Phase 11 verified: 37/37 backend tests green + live CRUD smoke test** (fixes: `ErrorDetail` ordering in `schemas/common.py`; Bengaluru city district mapping in `seed_locations.py`).
+
+> Re-verified 12 Sep 2026: backend grew 4 migrations + 10 routers + 2 test files; frontend grew 4 routes. Suite is now **52 tests** (auth 14 / catalog 23 / content 15). **Docker Desktop was NOT running at last review** — the 4 new migrations (`4e7270c87f0c` mock tests/questions, `2ce8d337ae09` content & engagement, `8cc76261fbc7` enquiries/leads/saved/consent, `68d5258b08f1` placement/NIRF/cutoff/seat matrix) and the full 52-test suite still need to be applied/re-run against the live Docker PG before Block B/C gates are declared PASSED.
 
 ### Completed so far
 - ☑ **M1 (GitHub account)** — private repo `Padhaanewala_Education` created, connected, code pushed. Other accounts (AWS, OpenAI, MSG91, SendGrid, Sentry, Cloudflare, GA4, Search Console) **PENDING**.
 - ☑ **M3 (Developer engaged)** — developer working; master doc handed over; repo `main` + `develop` branches active.
 - ✅ **Phase 1 (Setup Environment) — COMPLETE — Completion Gate PASSED (11 Sep 2026)**
 - ✅ **Phase 11 (College CRUD API) — COMPLETE — verified 11 Sep 2026** (full list/filter/search/detail + admin create/update/delete with RBAC; 37/37 backend tests green against live Docker PG; bug fixes: `ErrorDetail` ordering, Bengaluru city district seed mapping)
+- ✅ **Phase 8 (Reviews, Blogs, FAQs, Media, SEO, Notifications, Audit) — BACKEND COMPLETE — 11–12 Sep 2026** (models `d1c6f8a`, routers `0a9decf`; 15 content tests on `develop`; frontend surface deferred to Blocks E/H)
 
 ### Recently added (design/dev prep for upcoming phases — no phase gates passed)
 - ☑ `DESIGN.md` added — frontend design system reference (colors, typography) for Phase 16 (homepage/layout)
@@ -21,12 +24,23 @@ Generated from: `padhaanewala-complete.md` (Master Plan V5.0)
 - ℹ️ **Upstream Phase 2/4/6 code present** on `origin/develop` (`bbe7820`, `605b88f`, `bce279f`) — models, routers, schemes, tests, seed scripts, 4 real Alembic migrations (root `8422ac618df6`). Local `develop` merged `main` (homepage + port remap) and removed the collision empty base.
 
 ### 12 September 2026 — frontend listing/predictor pages added (placeholder data, dev prep)
+- ✅ **Colleges listing** `/colleges` — filterable (state, category, course) college cards with fee/placement/scholarship highlights (`src/data/colleges.ts`; Phase 17 UI surface).
+- ✅ **Courses listing** `/courses` — course groups with overview, duration, eligibility, career paths (`src/data/courses.ts`; Phase 19 UI surface).
+- ✅ **Jobhire landing** `/jobhire` — standalone job-search landing page with its own layout (`src/app/jobhire/`); marketing sandbox, not a spec phase.
 - ✅ **College Predictor page** `/college-predictor` — configurable rules engine (`src/data/predictor.ts`: course→exam mapping, score→rank estimation, per-category rank bands) + form (course, exam, rank|score, category, state, budget, govt/private, hostel) → buckets **Highly Suitable / Possible / Reach / Not eligible** with confidence + reasons + disclaimer (spec §14, Phase 24/40 UI). Placeholder rank bands; Phase 40 will swap in real cutoff data.
 - ✅ **Scholarships listing** `/scholarships` — 12 scholarships, search + category/provider filters + deadline/amount sort (Phase 20 UI surface).
 - ✅ **Exams listing** `/exams` — 10 exams, type (national/state) + status (open/upcoming/results) filters, date sort (Phase 21 UI surface).
 - ✅ **Blog listing** `/blog` — 12 articles, category/search filters + featured-article hero (Phase 65 blog surface).
 - ✅ **Mock Tests listing** `/mock-tests` — 12 tests (NEET/JEE/KCET/CUET), exam/mode/difficulty filters, desktop-only note (Phase 42 UI surface).
-- ℹ️ All pages run on static TS data under `src/data/` (predictor, scholarships, exams, blog, mockTests) — the existing Header/Footer/QuickActions/home-section links now resolve instead of 404ing. Real API-swap happens at each page's actual phase (16/17/19/20/21/42/65). `next build` + ESLint pass; all routes render.
+- ℹ️ All pages run on static TS data under `src/data/` (home, colleges, courses, predictor, scholarships, exams, blog, mockTests) — the existing Header/Footer/QuickActions/home-section links now resolve instead of 404ing. Real API-swap happens at each page's actual phase (16/17/19/20/21/42/65). `next build` + ESLint pass; all routes render.
+
+### 11–12 September 2026 — backend Phase 7/8/9/10 models + migrations, Phase 8 routers, 52-test suite
+- ✅ **Phase 8 routers + tests** (`0a9decf`) — reviews (submit + admin moderation + moderation queue), blog (categories + CRUD), FAQs (CRUD), media (CRUD), SEO (entity-scoped upsert/list), notifications (per-user inbox, unread count, mark read/all), audit logs (admin list), banners (CRUD) — all RBAC-guarded; 15 content tests in `tests/test_content.py`.
+- ✅ **Phase 7 models + migration** — mock tests + questions (`4e7270c87f0c_add_mock_tests_and_questions`) + read APIs (`/mock-tests`, `/mock-tests/{id}`); question-bank admin is Phase 43.
+- ✅ **Phase 9 models + migration** — enquiries, leads, saved colleges, consent (`8cc76261fbc7_add_enquiries_leads_saved_colleges_`) + enquiry submit API; lead/saved/consent routers pending.
+- ✅ **Phase 10 models + migration** — placements, NIRF/rankings, cutoffs, seat matrix (`68d5258b08f1_add_placement_nirf_cutoff_seat_matrix`); query APIs pending (Phase 14).
+- ✅ **Phase 12 backend READ surface** — scholarship list/detail + exam list/upcoming/detail + course search already live and covered in `tests/test_catalog.py`; admin CRUD for courses/scholarships/exams is the remaining Phase 12 work.
+- ℹ️ Suite = **52 tests** (auth 14 / catalog 23 / content 15) — Phase 11's 37 (auth+catalog) + 15 new content tests. **Applying the 4 new migrations + re-running the full suite against live Docker PG still pending (Docker Desktop was off at last review).**
 
 ### Phase 1 — what's DONE ✅
 - ☑ Folder structure: `frontend/`, `backend/`, `docs/`, `scripts/` created
@@ -96,10 +110,10 @@ Generated from: `padhaanewala-complete.md` (Master Plan V5.0)
 | 4 | States, Districts, Universities [DEV] | Phase 1 (*parallel* with 2, 3) | ☐ |
 | 5 | Colleges, Courses, Fees [DEV] | Phase 4 (college → state/district/university FK) | ☐ |
 | 6 | Scholarships, Exams [DEV] | Phase 4 (*parallel* with 5) | ☐ |
-| 7 | Mock Tests, Questions [DEV] | Phase 5 (→course) + Phase 6 (→exam) | ☐ |
-| 8 | Reviews, Blogs, FAQs, Media, SEO, Notif., Audit [DEV] | Phase 2 + Phase 5 | ☐ |
-| 9 | Enquiries, Leads, Saved, Consent [DEV] | Phase 2 + Phase 5 | ☐ |
-| 10 | Placement, NIRF, Cutoff, Seat Matrix [DEV] | Phase 5 + Phase 6 | ☐ |
+| 7 | Mock Tests, Questions [DEV] | Phase 5 (→course) + Phase 6 (→exam) | ◐ PARTIAL — models + migration `4e7270c87f0c` + read APIs; question-bank admin → Phase 43 |
+| 8 | Reviews, Blogs, FAQs, Media, SEO, Notif., Audit [DEV] | Phase 2 + Phase 5 | ✅ **BACKEND COMPLETE 12 Sep 2026** — all routers + 15 tests; frontend surface deferred |
+| 9 | Enquiries, Leads, Saved, Consent [DEV] | Phase 2 + Phase 5 | ◐ PARTIAL — models + migration `8cc76261fbc7` + enquiry submit API; lead/saved/consent routers pending |
+| 10 | Placement, NIRF, Cutoff, Seat Matrix [DEV] | Phase 5 + Phase 6 | ◐ PARTIAL — models + migration `68d5258b08f1` only; APIs → Phase 14 |
 
 **Completion Gate:** all tables migrated via Alembic; user/login works at API level; OTP arrives on a real phone; 28 states + 8 UTs + ~780 districts seeded; college/scholarship/exam tables accept sample data.
 
@@ -107,7 +121,7 @@ Generated from: `padhaanewala-complete.md` (Master Plan V5.0)
 | # | Phase | Mandatory before | Done |
 |---|---|---|---|
 | 11 | College CRUD API [DEV] | Phase 2 + Phase 5 | ☑ **VERIFIED 11 Sep 2026** — list/filter/search/detail + admin create/update/delete (RBAC) live; 37/37 tests green |
-| 12 | Course, Scholarship, Exam APIs [DEV] | Phase 6 (+ Phase 11 patterns) | ☐ |
+| 12 | Course, Scholarship, Exam APIs [DEV] | Phase 6 (+ Phase 11 patterns) | ◐ PARTIAL — READ APIs live + tested (scholarship list/detail, exam list/upcoming/detail, course search); admin CRUD pending |
 | 13 | Search Engine (text + filters + NLP) [DEV] | Phase 11 | ☐ |
 | 14 | Placement, Cutoff, NIRF APIs [DEV] | Phase 10 | ☐ |
 
