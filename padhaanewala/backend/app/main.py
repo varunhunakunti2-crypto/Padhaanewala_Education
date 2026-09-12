@@ -23,6 +23,7 @@ from app.routers import (
     mock_tests,
     notifications,
     reviews,
+    roles,
     scholarships,
     seo,
     universities,
@@ -53,6 +54,7 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(users.router)
+app.include_router(roles.router)
 app.include_router(locations.router)
 app.include_router(universities.router)
 app.include_router(colleges.router)
