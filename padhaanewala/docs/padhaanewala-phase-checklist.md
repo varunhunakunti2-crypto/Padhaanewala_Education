@@ -1,7 +1,7 @@
 # PADHAANEWALA — MASTER PHASE CHECKLIST + MANDATORY PREREQUISITES
 Generated from: `padhaanewala-complete.md` (Master Plan V5.0)
 
-## STATUS UPDATE — Last reviewed: 12 September 2026 (re-verified against project code)
+## STATUS UPDATE — Last reviewed: 13 September 2026 (re-verified against project code)
 
 **Current progress: 3 of 105 phases completed — Phase 1 ✅ (gate PASSED), Phase 8 ✅ (backend complete), Phase 11 ✅ (College CRUD API verified).** Backend models + migration chain now cover Phases 2, 4–11 (users/auth/roles, locations, universities, colleges/courses/fees, scholarships/exams, reviews/blogs/FAQs/media/SEO/notifications/audit/banners, mock tests/questions, enquiries/leads/saved/consent, placement/NIRF/cutoff/seat matrix). Frontend static pages now cover home, listing + detail pages for colleges/courses/scholarships/exams/blog/mock-tests, college predictor, compare, login UI, about/contact/privacy/terms static pages + Jobhire landing — **every known route renders (no 404s)**.
 
@@ -42,6 +42,15 @@ Generated from: `padhaanewala-complete.md` (Master Plan V5.0)
 - ✅ **Every route renders** — header/menu wired to all pages; quick-action + home sections extended; no 404 routes remain.
 - ✅ **Backend auth/token hardening** — refresh tokens signed with dedicated `JWT_REFRESH_SECRET_KEY`; optional-bearer dependency (`get_optional_current_user`) so public endpoints hide drafts from non-content users; malformed-`sub` guards on `get_current_user`/refresh; production config guard rejects dev default JWT/DB creds (`PADHAANEWALA_ENV_FILE` env override added); review rating recalc committed properly; profile auto-fills display name; `TestQuestion.__test__ = False` stops pytest collecting the model. No new tests (still 52).
 - ℹ️ Same status as the Sep-12 frontend batch: placeholder data, real API-swap at each page's actual phase.
+
+### 13 September 2026 — frontend polish batch (no phase gates passed, dev prep for Blocks D/F)
+- ✅ **Theme toggle + dark mode** (`8990dae`) — global theme switch persisted to localStorage with OS-preference default; dark-mode remap of hardcoded light utility classes in `globals.css`; **View Transitions** wipe animation on theme change; no-JS boot script in `<head>` prevents flash (`(site)/layout.tsx`).
+- ✅ **Hero background image** — `public/dreamlike-surrealistic-landscape.jpg` behind the homepage hero, with overlay treatment.
+- ✅ **Browse Colleges button** — animated CTA (`BrowseCollegesButton.tsx`) with gradient hover + sparkle side-effect; wired on the homepage hero.
+- ✅ **Header refinements** — signature pill/glass navbar (framer-motion scroll-responsive), device breakpoints, mobile menu, "Get Started" CTA; the header was already reworked in earlier commits (`303084f`, `e3c7f77`).
+- ✅ **Floating AI chat assistant widget** — `AIFloatingAssistant.tsx` on all site pages (rule-based Q&A over local data; real AI swap at Phase 41).
+- ✅ **Pricing page** built (static tiers). `next build` + ESLint pass against Next.js 16.3.4 (project already on Next 16 / React 19 / Tailwind 4).
+- ℹ️ Frontend remains a high-fidelity static prototype on `src/data/*.ts` — real API-swap happens at each page's actual phase (16/17/19/20/21/42/65).
 
 ### 11–12 September 2026 — backend Phase 7/8/9/10 models + migrations, Phase 8 routers, 52-test suite
 - ✅ **Phase 8 routers + tests** (`0a9decf`) — reviews (submit + admin moderation + moderation queue), blog (categories + CRUD), FAQs (CRUD), media (CRUD), SEO (entity-scoped upsert/list), notifications (per-user inbox, unread count, mark read/all), audit logs (admin list), banners (CRUD) — all RBAC-guarded; 15 content tests in `tests/test_content.py`.
