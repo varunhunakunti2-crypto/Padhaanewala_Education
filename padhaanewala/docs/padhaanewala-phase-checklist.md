@@ -3,7 +3,7 @@ Generated from: `padhaanewala-complete.md` (Master Plan V5.0)
 
 ## STATUS UPDATE — Last reviewed: 12 September 2026 (re-verified against project code)
 
-**Current progress: 3 of 105 phases completed — Phase 1 ✅ (gate PASSED), Phase 8 ✅ (backend complete), Phase 11 ✅ (College CRUD API verified).** Backend models + migration chain now cover Phases 2, 4–11 (users/auth/roles, locations, universities, colleges/courses/fees, scholarships/exams, reviews/blogs/FAQs/media/SEO/notifications/audit/banners, mock tests/questions, enquiries/leads/saved/consent, placement/NIRF/cutoff/seat matrix). Frontend static pages now cover home, colleges, courses, scholarships, exams, blog, mock tests, college predictor + Jobhire landing.
+**Current progress: 3 of 105 phases completed — Phase 1 ✅ (gate PASSED), Phase 8 ✅ (backend complete), Phase 11 ✅ (College CRUD API verified).** Backend models + migration chain now cover Phases 2, 4–11 (users/auth/roles, locations, universities, colleges/courses/fees, scholarships/exams, reviews/blogs/FAQs/media/SEO/notifications/audit/banners, mock tests/questions, enquiries/leads/saved/consent, placement/NIRF/cutoff/seat matrix). Frontend static pages now cover home, listing + detail pages for colleges/courses/scholarships/exams/blog/mock-tests, college predictor, compare, login UI, about/contact/privacy/terms static pages + Jobhire landing — **every known route renders (no 404s)**.
 
 > Re-verified 11 Sep 2026: Docker stack live (PostgreSQL 15 on host port 5433 + Redis 7). Homepage built with placeholder data (API-swap later). **Discovery:** `origin/develop` already contained Phase 2/4/6 code (users/auth/roles `bbe7820`, locations/universities/colleges/courses/fees/scholarships/exams `605b88f`, test fix `bce279f`). Migrations applied to live Docker PG (head `63603ea2106d`), seeds run (36 states/755 districts/105 cities, 155 universities, 14 roles, 20 courses/10 colleges, 6 exams, 6 scholarships), and **Phase 11 verified: 37/37 backend tests green + live CRUD smoke test** (fixes: `ErrorDetail` ordering in `schemas/common.py`; Bengaluru city district mapping in `seed_locations.py`).
 
@@ -33,6 +33,15 @@ Generated from: `padhaanewala-complete.md` (Master Plan V5.0)
 - ✅ **Blog listing** `/blog` — 12 articles, category/search filters + featured-article hero (Phase 65 blog surface).
 - ✅ **Mock Tests listing** `/mock-tests` — 12 tests (NEET/JEE/KCET/CUET), exam/mode/difficulty filters, desktop-only note (Phase 42 UI surface).
 - ℹ️ All pages run on static TS data under `src/data/` (home, colleges, courses, predictor, scholarships, exams, blog, mockTests) — the existing Header/Footer/QuickActions/home-section links now resolve instead of 404ing. Real API-swap happens at each page's actual phase (16/17/19/20/21/42/65). `next build` + ESLint pass; all routes render.
+
+### 12 September 2026 (later, `9bfaebe`) — detail + static pages kill all 404s; backend auth hardening
+- ✅ **Detail pages added** (placeholder data) — `/college/[slug]`, `/courses/[slug]`, `/exams/[slug]`, `/scholarships/[slug]`, `/mock-tests/[slug]`, `/blog/[slug]`; listing pages now link through (Phase 18/19/20/21/42/65 UI surfaces).
+- ✅ **Static pages added** — `/about`, `/contact`, `/privacy-policy`, `/terms-conditions` (M5 legal-page drafts, Phase 65/76+97 surface; copy still placeholder).
+- ✅ **Login page** `/auth/login` — form UI (Phase 15 surface; real flow waits on Phase 2/3 backend enablement).
+- ✅ **Compare page** `/compare` — college comparison UI starter (Phase 24 surface).
+- ✅ **Every route renders** — header/menu wired to all pages; quick-action + home sections extended; no 404 routes remain.
+- ✅ **Backend auth/token hardening** — refresh tokens signed with dedicated `JWT_REFRESH_SECRET_KEY`; optional-bearer dependency (`get_optional_current_user`) so public endpoints hide drafts from non-content users; malformed-`sub` guards on `get_current_user`/refresh; production config guard rejects dev default JWT/DB creds (`PADHAANEWALA_ENV_FILE` env override added); review rating recalc committed properly; profile auto-fills display name; `TestQuestion.__test__ = False` stops pytest collecting the model. No new tests (still 52).
+- ℹ️ Same status as the Sep-12 frontend batch: placeholder data, real API-swap at each page's actual phase.
 
 ### 11–12 September 2026 — backend Phase 7/8/9/10 models + migrations, Phase 8 routers, 52-test suite
 - ✅ **Phase 8 routers + tests** (`0a9decf`) — reviews (submit + admin moderation + moderation queue), blog (categories + CRUD), FAQs (CRUD), media (CRUD), SEO (entity-scoped upsert/list), notifications (per-user inbox, unread count, mark read/all), audit logs (admin list), banners (CRUD) — all RBAC-guarded; 15 content tests in `tests/test_content.py`.
