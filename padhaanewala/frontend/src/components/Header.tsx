@@ -38,8 +38,7 @@ export default function Header() {
   });
 
   useEffect(() => {
-    // Immediately sync scroll position on reload/mount
-    setScrolled(window.scrollY > 30);
+    queueMicrotask(() => setScrolled(window.scrollY > 30));
 
     const handleResize = () => {
       const width = window.innerWidth;
@@ -178,17 +177,21 @@ export default function Header() {
                 className="relative flex h-9 w-9 items-center justify-center rounded-full text-white/70 transition-all duration-200 hover:bg-white/10 hover:text-white active:scale-95"
               >
                 <Bell className="h-4 w-4" />
-                <span className="absolute right-1 top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-[#ff5500] px-1 text-[9.5px] font-bold leading-none text-white shadow-sm">
+                <span className="absolute right-1 top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-gradient-to-r from-[#A654F0] to-[#B04FFF] px-1 text-[9.5px] font-bold leading-none text-white shadow-sm">
                   1
                 </span>
               </button>
-              <button
-                type="button"
-                aria-label="Your profile"
-                className="ml-1 flex h-8 w-8 items-center justify-center rounded-full bg-[#ff5500] text-sm font-bold text-white shadow-md transition-all duration-200 hover:scale-105 hover:shadow-orange-500/30 active:scale-95"
+              <Link
+                href="/auth/signup"
+                className="group relative ml-1 inline-flex h-9 items-center justify-center overflow-hidden rounded-full bg-gradient-to-r from-[#A654F0] to-[#B04FFF] px-4 text-[13px] font-bold text-white shadow-md shadow-[#A654F0]/30 transition-all duration-200 hover:scale-[1.03] hover:shadow-[#B04FFF]/50 active:scale-95 whitespace-nowrap"
               >
-                P
-              </button>
+                <div className="relative h-4.5 overflow-hidden">
+                  <div className="flex flex-col transition-transform duration-300 ease-out group-hover:-translate-y-1/2">
+                    <span className="flex h-4.5 items-center justify-center whitespace-nowrap">Get Started</span>
+                    <span className="flex h-4.5 items-center justify-center whitespace-nowrap">Login →</span>
+                  </div>
+                </div>
+              </Link>
             </div>
 
             {/* Mobile Hamburger Button */}
@@ -244,14 +247,23 @@ export default function Header() {
                     className="relative flex h-9 w-9 items-center justify-center rounded-full text-neutral-300 transition-colors duration-150 hover:bg-white/10 hover:text-white"
                   >
                     <Bell className="h-4 w-4" />
-                    <span className="absolute right-1 top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-[#ff5500] px-1 text-[9.5px] font-bold leading-none text-white">
+                    <span className="absolute right-1 top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-gradient-to-r from-[#A654F0] to-[#B04FFF] px-1 text-[9.5px] font-bold leading-none text-white">
                       1
                     </span>
                   </button>
                 </div>
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#ff5500] text-sm font-bold text-white shadow-sm">
-                  P
-                </div>
+                <Link
+                  href="/auth/signup"
+                  onClick={() => setOpen(false)}
+                  className="group relative inline-flex h-8.5 items-center justify-center overflow-hidden rounded-full bg-gradient-to-r from-[#A654F0] to-[#B04FFF] px-4 text-xs font-bold text-white shadow-sm transition-all duration-200"
+                >
+                  <div className="relative h-4 overflow-hidden">
+                    <div className="flex flex-col transition-transform duration-300 ease-out group-hover:-translate-y-1/2">
+                      <span className="flex h-4 items-center justify-center whitespace-nowrap">Get Started</span>
+                      <span className="flex h-4 items-center justify-center whitespace-nowrap">Login →</span>
+                    </div>
+                  </div>
+                </Link>
               </div>
             </nav>
           </motion.div>
