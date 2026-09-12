@@ -1,7 +1,7 @@
 # PADHAANEWALA — MASTER PHASE CHECKLIST + MANDATORY PREREQUISITES
 Generated from: `padhaanewala-complete.md` (Master Plan V5.0)
 
-## STATUS UPDATE — Last reviewed: 11 September 2026 (re-verified against project code)
+## STATUS UPDATE — Last reviewed: 12 September 2026 (re-verified against project code)
 
 **Current progress: 2 of 105 phases completed — **Phase 1 ✅ (gate PASSED), Phase 11 ✅ (College CRUD API verified).** Phase 2/4/6 code exists on `develop`; its migrations + seeds are applied/verified against the live Docker DB.
 
@@ -19,6 +19,14 @@ Generated from: `padhaanewala-complete.md` (Master Plan V5.0)
 - ☑ Docker Desktop installed (v29.7.2) + WSL2/Virtual Machine Platform enabled — verified running 11 Sep 2026
 - ☑ **Port conflict resolved** — native Windows PostgreSQL 16 owns port 5432, so Docker PG 15 now publishes on host port **5433** (docker-compose.dev.yml, `.env.development`, `config.py` updated to match)
 - ℹ️ **Upstream Phase 2/4/6 code present** on `origin/develop` (`bbe7820`, `605b88f`, `bce279f`) — models, routers, schemes, tests, seed scripts, 4 real Alembic migrations (root `8422ac618df6`). Local `develop` merged `main` (homepage + port remap) and removed the collision empty base.
+
+### 12 September 2026 — frontend listing/predictor pages added (placeholder data, dev prep)
+- ✅ **College Predictor page** `/college-predictor` — configurable rules engine (`src/data/predictor.ts`: course→exam mapping, score→rank estimation, per-category rank bands) + form (course, exam, rank|score, category, state, budget, govt/private, hostel) → buckets **Highly Suitable / Possible / Reach / Not eligible** with confidence + reasons + disclaimer (spec §14, Phase 24/40 UI). Placeholder rank bands; Phase 40 will swap in real cutoff data.
+- ✅ **Scholarships listing** `/scholarships` — 12 scholarships, search + category/provider filters + deadline/amount sort (Phase 20 UI surface).
+- ✅ **Exams listing** `/exams` — 10 exams, type (national/state) + status (open/upcoming/results) filters, date sort (Phase 21 UI surface).
+- ✅ **Blog listing** `/blog` — 12 articles, category/search filters + featured-article hero (Phase 65 blog surface).
+- ✅ **Mock Tests listing** `/mock-tests` — 12 tests (NEET/JEE/KCET/CUET), exam/mode/difficulty filters, desktop-only note (Phase 42 UI surface).
+- ℹ️ All pages run on static TS data under `src/data/` (predictor, scholarships, exams, blog, mockTests) — the existing Header/Footer/QuickActions/home-section links now resolve instead of 404ing. Real API-swap happens at each page's actual phase (16/17/19/20/21/42/65). `next build` + ESLint pass; all routes render.
 
 ### Phase 1 — what's DONE ✅
 - ☑ Folder structure: `frontend/`, `backend/`, `docs/`, `scripts/` created
