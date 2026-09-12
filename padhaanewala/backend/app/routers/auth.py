@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.database import get_db
 from app.models import Role, StudentProfile, User
 from app.schemas.auth import LoginRequest, LogoutRequest, RefreshRequest, RegisterRequest
@@ -92,7 +93,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
 @router.post("/refresh", response_model=TokenResponse)
 def refresh(payload: RefreshRequest, db: Session = Depends(get_db)):
     try:
-        claims = decode_token(payload.refresh_token)
+        claims = decode_token(payload.refresh_token, settings.JWT_REFRESH_SECRET_KEY)
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -105,7 +106,15 @@ def refresh(payload: RefreshRequest, db: Session = Depends(get_db)):
             detail="Invalid token type",
         )
 
-    user = db.get(User, int(claims.get("sub")))
+    try:
+        user_id = int(claims.get("sub"))
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token",
+        )
+
+    user = db.get(User, user_id)
     if user is None or not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

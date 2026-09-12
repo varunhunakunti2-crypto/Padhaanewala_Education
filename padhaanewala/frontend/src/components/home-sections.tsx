@@ -16,6 +16,7 @@ import {
   reviews,
   articles,
   type College,
+  type Review,
 } from "@/data/home";
 
 function SectionHeader({
@@ -319,14 +320,25 @@ export function WhyPadhaanewala() {
   );
 }
 
+const avatarBgClasses = [
+  "bg-purple-100 text-purple-700",
+  "bg-indigo-100 text-indigo-700",
+  "bg-blue-100 text-blue-700",
+  "bg-emerald-100 text-emerald-700",
+  "bg-rose-100 text-rose-700",
+  "bg-amber-100 text-amber-700",
+];
+
 function Stars({ rating }: { rating: number }) {
   return (
-    <div className="flex items-center gap-0.5" aria-label={`Rated ${rating} out of 5`}>
+    <div className="flex items-center gap-1" aria-label={`Rated ${rating} out of 5`}>
       {[1, 2, 3, 4, 5].map((i) => (
         <StarIcon
           key={i}
           className={`h-4 w-4 ${
-            i <= Math.round(rating) ? "text-amber-400" : "text-neutral-200"
+            i <= Math.round(rating)
+              ? "text-amber-400 fill-amber-400"
+              : "text-neutral-200 fill-neutral-200"
           }`}
         />
       ))}
@@ -334,33 +346,95 @@ function Stars({ rating }: { rating: number }) {
   );
 }
 
-export function StudentReviews() {
+function ReviewCard({ review, index }: { review: Review; index: number }) {
+  const initial = review.name ? review.name.trim().charAt(0).toUpperCase() : "S";
+  const avatarStyle = avatarBgClasses[index % avatarBgClasses.length];
+
   return (
-    <section className="mx-auto w-full max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
+    <figure className="w-[310px] sm:w-[340px] shrink-0 flex flex-col justify-between rounded-2xl border border-neutral-200/80 bg-white p-5 shadow-sm transition-all duration-300 hover:shadow-md hover:border-neutral-300">
+      <div>
+        {/* Top Profile Row: Avatar + Name & Title */}
+        <div className="flex items-center gap-3">
+          {review.avatar ? (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src={review.avatar}
+              alt={review.name}
+              className="h-11 w-11 shrink-0 rounded-full object-cover ring-2 ring-neutral-100"
+            />
+          ) : (
+            <div
+              className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full font-bold text-base ${avatarStyle}`}
+            >
+              {initial}
+            </div>
+          )}
+          <div className="min-w-0 flex-1">
+            <h4 className="truncate text-sm font-semibold text-neutral-950">
+              {review.name}
+            </h4>
+            <p className="truncate text-xs text-neutral-500">
+              {review.role || `${review.course} · ${review.college}`}
+            </p>
+          </div>
+        </div>
+
+        {/* Horizontal Divider Line */}
+        <hr className="my-3.5 border-t border-neutral-100" />
+
+        {/* Rating Row: Numeric Rating + Stars */}
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold text-neutral-700">
+            {review.rating.toFixed(1)}
+          </span>
+          <Stars rating={review.rating} />
+        </div>
+
+        {/* Review Body Text */}
+        <blockquote className="mt-3 text-xs leading-relaxed text-neutral-600 line-clamp-3">
+          {review.text}
+        </blockquote>
+      </div>
+    </figure>
+  );
+}
+
+export function StudentReviews() {
+  const row1 = reviews.slice(0, Math.ceil(reviews.length / 2));
+  const row2 = reviews.slice(Math.ceil(reviews.length / 2));
+
+  // Duplicated sets for smooth 100% infinite marquee loop
+  const row1Items = [...row1, ...row1];
+  const row2Items = [...row2, ...row2];
+
+  return (
+    <section className="mx-auto w-full max-w-7xl px-4 py-14 sm:px-6 lg:px-8 overflow-hidden">
       <SectionHeader
         title="What students say"
         subtitle="Real experiences from the Padhaanewala community"
       />
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {reviews.map((review) => (
-          <figure
-            key={review.id}
-            className="flex flex-col rounded-2xl border border-black/5 bg-white p-6 shadow-sm"
-          >
-            <Stars rating={review.rating} />
-            <blockquote className="mt-4 text-sm leading-6 text-neutral-600">
-              &ldquo;{review.text}&rdquo;
-            </blockquote>
-            <figcaption className="mt-4 border-t border-black/5 pt-4">
-              <span className="block text-sm font-semibold text-neutral-950">
-                {review.name}
-              </span>
-              <span className="mt-0.5 block text-xs text-neutral-500">
-                {review.course} · {review.college}
-              </span>
-            </figcaption>
-          </figure>
-        ))}
+      <div className="relative mt-8 flex flex-col gap-6 overflow-hidden py-2">
+        {/* Left & Right Gradient Fade Masks */}
+        <div className="pointer-events-none absolute left-0 top-0 bottom-0 z-10 w-12 bg-gradient-to-r from-white to-transparent" />
+        <div className="pointer-events-none absolute right-0 top-0 bottom-0 z-10 w-12 bg-gradient-to-l from-white to-transparent" />
+
+        {/* Upper Cards - Moving to the LEFT */}
+        <div className="flex overflow-hidden">
+          <div className="animate-marquee-left flex gap-5">
+            {row1Items.map((review, idx) => (
+              <ReviewCard key={`r1-${review.id}-${idx}`} review={review} index={idx} />
+            ))}
+          </div>
+        </div>
+
+        {/* Down Cards - Moving to the RIGHT */}
+        <div className="flex overflow-hidden">
+          <div className="animate-marquee-right flex gap-5">
+            {row2Items.map((review, idx) => (
+              <ReviewCard key={`r2-${review.id}-${idx}`} review={review} index={idx + row1.length} />
+            ))}
+          </div>
+        </div>
       </div>
     </section>
   );

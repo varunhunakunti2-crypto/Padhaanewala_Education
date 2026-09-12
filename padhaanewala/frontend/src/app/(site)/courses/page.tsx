@@ -1,3 +1,4 @@
+import Link from "next/link";
 import CourseCard from "@/components/courses/CourseCard";
 import CourseFilters from "@/components/courses/CourseFilters";
 import Pagination from "@/components/colleges/Pagination";
@@ -100,12 +101,12 @@ export default async function CoursesPage({
             <p className="mt-2 text-sm text-neutral-500">
               Try adjusting your filters or clearing the search.
             </p>
-            <a
+            <Link
               href="/courses"
               className="mt-6 inline-flex rounded-full bg-neutral-950 px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-neutral-800"
             >
               Reset all filters
-            </a>
+            </Link>
           </div>
         )}
 

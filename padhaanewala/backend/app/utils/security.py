@@ -39,8 +39,11 @@ def create_refresh_token(subject: str | int, role: str) -> str:
         "iat": now,
         "exp": now + timedelta(days=settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS),
     }
-    return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=ALGORITHM)
+    return jwt.encode(
+        payload, settings.JWT_REFRESH_SECRET_KEY, algorithm=ALGORITHM
+    )
 
 
-def decode_token(token: str) -> dict:
-    return jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[ALGORITHM])
+def decode_token(token: str, secret: str | None = None) -> dict:
+    key = secret if secret is not None else settings.JWT_SECRET_KEY
+    return jwt.decode(token, key, algorithms=[ALGORITHM])

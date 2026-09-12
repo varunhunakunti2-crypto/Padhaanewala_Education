@@ -1,3 +1,4 @@
+import Link from "next/link";
 import {
   ArticleCard,
   FeaturedArticle,
@@ -129,12 +130,12 @@ export default async function BlogPage({
             <p className="mt-2 text-sm text-neutral-500">
               Try a different search or reset the filters.
             </p>
-            <a
+            <Link
               href="/blog"
               className="mt-6 inline-flex rounded-full bg-neutral-950 px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-neutral-800"
             >
               Reset all filters
-            </a>
+            </Link>
           </div>
         )}
 

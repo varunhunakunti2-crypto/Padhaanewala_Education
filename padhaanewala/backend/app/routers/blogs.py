@@ -6,7 +6,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
-from app.dependencies import get_current_user, require_role
+from app.dependencies import get_current_user, get_current_user_roles, get_optional_current_user, require_role
 from app.models import AuditLog, Blog, BlogCategory, User
 from app.schemas.content import (
     BlogCategoryCreate,
@@ -99,12 +99,17 @@ def list_blogs(
     limit: int = 20,
     offset: int = 0,
     db: Session = Depends(get_db),
+    user: User | None = Depends(get_optional_current_user),
 ):
     query = (
         select(Blog)
-        .where(Blog.status == "published")
         .order_by(Blog.published_at.desc().nullslast(), Blog.created_at.desc())
     )
+    is_content_user = user is not None and not get_current_user_roles(user).isdisjoint(CONTENT_ROLES)
+    if is_content_user and status:
+        query = query.where(Blog.status == status)
+    else:
+        query = query.where(Blog.status == "published")
     if category:
         cat = db.scalar(select(BlogCategory).where(BlogCategory.slug == category))
         if cat is None:

@@ -50,12 +50,12 @@ def update_my_profile(
     profile = db.scalar(
         select(StudentProfile).where(StudentProfile.user_id == user.id)
     )
+    updates = payload.model_dump(exclude_unset=True)
     if profile is None:
-        profile = StudentProfile(user_id=user.id)
+        profile = StudentProfile(user_id=user.id, name=updates.get("name") or user.display_name)
         db.add(profile)
         db.flush()
 
-    updates = payload.model_dump(exclude_unset=True)
     for field, value in updates.items():
         setattr(profile, field, value)
 

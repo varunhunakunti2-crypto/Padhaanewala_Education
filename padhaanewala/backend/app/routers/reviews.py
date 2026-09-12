@@ -191,6 +191,7 @@ def moderate_review(
     )
     db.commit()
     _recalc_rating(db, review.college_id)
+    db.commit()
     db.refresh(review)
     return _to_response(db, review)
 
@@ -208,3 +209,4 @@ def delete_review(
     db.delete(review)
     db.commit()
     _recalc_rating(db, college_id)
+    db.commit()

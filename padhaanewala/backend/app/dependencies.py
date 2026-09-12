@@ -9,6 +9,7 @@ from app.models import Role, User
 from app.utils.security import decode_token
 
 bearer_scheme = HTTPBearer(auto_error=True)
+bearer_scheme_optional = HTTPBearer(auto_error=False)
 
 
 def get_current_user(
@@ -35,7 +36,14 @@ def get_current_user(
             detail="Invalid token type",
         )
 
-    user = db.get(User, int(payload.get("sub")))
+    try:
+        user_id = int(payload.get("sub"))
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
+        )
+    user = db.get(User, user_id)
     if user is None or not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -46,6 +54,18 @@ def get_current_user(
 
 def get_current_user_roles(user: User) -> set[str]:
     return {role.name for role in user.roles}
+
+
+def get_optional_current_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme_optional),
+    db: Session = Depends(get_db),
+) -> User | None:
+    if credentials is None:
+        return None
+    try:
+        return get_current_user(credentials, db)
+    except HTTPException:
+        return None
 
 
 def require_role(*allowed_roles: str):

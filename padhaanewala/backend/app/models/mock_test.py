@@ -60,6 +60,7 @@ class MockTest(Base):
 
 
 class TestQuestion(Base):
+    __test__ = False
     __tablename__ = "test_questions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
