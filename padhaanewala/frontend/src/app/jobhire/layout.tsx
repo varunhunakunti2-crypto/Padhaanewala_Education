@@ -26,7 +26,7 @@ export default function JobhireLayout({ children }: { children: React.ReactNode 
           fontFamily:
             "var(--font-poppins), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
         }}
-        className="bg-white text-jh-ink antialiased"
+        className="jobhire-root bg-white text-jh-ink antialiased"
       >
         {children}
       </body>

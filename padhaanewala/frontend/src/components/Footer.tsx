@@ -36,7 +36,7 @@ export default function Footer() {
       <div className="mx-auto grid w-full max-w-[1536px] gap-10 px-4 py-12 sm:grid-cols-2 sm:px-6 lg:grid-cols-4 lg:px-8">
         <div>
           <div className="flex items-center gap-2">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-sm font-bold text-neutral-950">
+            <span className="foreground-accent flex h-9 w-9 items-center justify-center rounded-xl bg-white text-sm font-bold text-neutral-950">
               P
             </span>
             <span className="text-lg font-semibold tracking-tight text-white">

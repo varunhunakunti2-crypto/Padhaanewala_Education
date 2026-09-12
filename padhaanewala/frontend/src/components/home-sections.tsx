@@ -351,7 +351,7 @@ function ReviewCard({ review, index }: { review: Review; index: number }) {
   const avatarStyle = avatarBgClasses[index % avatarBgClasses.length];
 
   return (
-    <figure className="w-[310px] sm:w-[340px] shrink-0 flex flex-col justify-between rounded-2xl border border-neutral-200/80 bg-white p-5 shadow-sm transition-all duration-300 hover:shadow-md hover:border-neutral-300">
+    <figure className="w-[310px] sm:w-[340px] shrink-0 flex flex-col justify-between rounded-2xl border border-neutral-200/80 bg-white dark:bg-neutral-900/90 dark:border-white/10 p-5 shadow-sm transition-all duration-300 hover:shadow-md hover:border-neutral-300 dark:hover:border-white/20">
       <div>
         {/* Top Profile Row: Avatar + Name & Title */}
         <div className="flex items-center gap-3">
@@ -360,7 +360,7 @@ function ReviewCard({ review, index }: { review: Review; index: number }) {
             <img
               src={review.avatar}
               alt={review.name}
-              className="h-11 w-11 shrink-0 rounded-full object-cover ring-2 ring-neutral-100"
+              className="h-11 w-11 shrink-0 rounded-full object-cover ring-2 ring-neutral-100 dark:ring-neutral-800"
             />
           ) : (
             <div
@@ -370,28 +370,28 @@ function ReviewCard({ review, index }: { review: Review; index: number }) {
             </div>
           )}
           <div className="min-w-0 flex-1">
-            <h4 className="truncate text-sm font-semibold text-neutral-950">
+            <h4 className="truncate text-sm font-semibold text-neutral-950 dark:text-white">
               {review.name}
             </h4>
-            <p className="truncate text-xs text-neutral-500">
+            <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">
               {review.role || `${review.course} · ${review.college}`}
             </p>
           </div>
         </div>
 
         {/* Horizontal Divider Line */}
-        <hr className="my-3.5 border-t border-neutral-100" />
+        <hr className="my-3.5 border-t border-neutral-100 dark:border-white/10" />
 
         {/* Rating Row: Numeric Rating + Stars */}
         <div className="flex items-center gap-2">
-          <span className="text-xs font-bold text-neutral-700">
+          <span className="text-xs font-bold text-neutral-700 dark:text-neutral-300">
             {review.rating.toFixed(1)}
           </span>
           <Stars rating={review.rating} />
         </div>
 
         {/* Review Body Text */}
-        <blockquote className="mt-3 text-xs leading-relaxed text-neutral-600 line-clamp-3">
+        <blockquote className="mt-3 text-xs leading-relaxed text-neutral-600 dark:text-neutral-300 line-clamp-3">
           {review.text}
         </blockquote>
       </div>
@@ -415,8 +415,8 @@ export function StudentReviews() {
       />
       <div className="relative mt-8 flex flex-col gap-6 overflow-hidden py-2">
         {/* Left & Right Gradient Fade Masks */}
-        <div className="pointer-events-none absolute left-0 top-0 bottom-0 z-10 w-12 bg-gradient-to-r from-white to-transparent" />
-        <div className="pointer-events-none absolute right-0 top-0 bottom-0 z-10 w-12 bg-gradient-to-l from-white to-transparent" />
+        <div className="pointer-events-none absolute left-0 top-0 bottom-0 z-10 w-16 bg-gradient-to-r from-white dark:from-[#0a0a0a] to-transparent" />
+        <div className="pointer-events-none absolute right-0 top-0 bottom-0 z-10 w-16 bg-gradient-to-l from-white dark:from-[#0a0a0a] to-transparent" />
 
         {/* Upper Cards - Moving to the LEFT */}
         <div className="flex overflow-hidden">

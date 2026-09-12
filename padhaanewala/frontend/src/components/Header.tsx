@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { flushSync } from "react-dom";
 import Link from "next/link";
 import {
   AnimatePresence,
@@ -8,7 +9,7 @@ import {
   useMotionValueEvent,
   useScroll,
 } from "framer-motion";
-import { Bell, ChevronDown, Menu, Sun, X } from "lucide-react";
+import { Bell, ChevronDown, Menu, Moon, Sun, X } from "lucide-react";
 
 const navLinks = [
   { label: "Courses", href: "/courses", chevron: true },
@@ -32,13 +33,14 @@ export default function Header() {
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
   const [device, setDevice] = useState<"mobile" | "tablet" | "desktop">("desktop");
+  const [isDark, setIsDark] = useState(false);
 
   useMotionValueEvent(scrollY, "change", (latest) => {
     setScrolled(latest > 30);
   });
 
   useEffect(() => {
-    queueMicrotask(() => setScrolled(window.scrollY > 30));
+    queueMicrotask(() => setIsDark(document.documentElement.classList.contains("dark")));
 
     const handleResize = () => {
       const width = window.innerWidth;
@@ -55,6 +57,21 @@ export default function Header() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
+  const toggleTheme = () => {
+    const doc = document as Document & {
+      startViewTransition?: (cb: () => void) => void;
+    };
+    const apply = () => {
+      flushSync(() => {
+        const isDarkNow = document.documentElement.classList.toggle("dark");
+        localStorage.setItem("padhaanewala-theme", isDarkNow ? "dark" : "light");
+      });
+    };
+    if (doc.startViewTransition) doc.startViewTransition(apply);
+    else apply();
+    setIsDark(document.documentElement.classList.contains("dark"));
+  };
+
   const isDesktop = device === "desktop";
   const isTablet = device === "tablet";
 
@@ -67,9 +84,7 @@ export default function Header() {
       if (isTablet) return "90%";
       return "94%";
     } else {
-      if (isDesktop) return 1280;
-      if (isTablet) return "95%";
-      return "96%";
+      return "100%";
     }
   };
 
@@ -122,7 +137,7 @@ export default function Header() {
               onClick={() => setOpen(false)}
             >
               <motion.span
-                className="flex items-center justify-center bg-white font-black text-black shadow-sm transition-transform duration-200 group-hover:scale-105"
+                className="foreground-accent flex items-center justify-center bg-white font-black text-black shadow-sm transition-transform duration-200 group-hover:scale-105"
                 animate={{
                   width: scrolled ? 26 : 28,
                   height: scrolled ? 26 : 28,
@@ -167,9 +182,10 @@ export default function Header() {
               <button
                 type="button"
                 aria-label="Toggle theme"
+                onClick={toggleTheme}
                 className="flex h-9 w-9 items-center justify-center rounded-full text-white/70 transition-all duration-200 hover:bg-white/10 hover:text-white active:scale-95"
               >
-                <Sun className="h-4 w-4" />
+                {isDark ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
               </button>
               <button
                 type="button"
@@ -237,9 +253,10 @@ export default function Header() {
                   <button
                     type="button"
                     aria-label="Toggle theme"
+                    onClick={toggleTheme}
                     className="flex h-9 w-9 items-center justify-center rounded-full text-neutral-300 transition-colors duration-150 hover:bg-white/10 hover:text-white"
                   >
-                    <Sun className="h-4 w-4" />
+                    {isDark ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
                   </button>
                   <button
                     type="button"

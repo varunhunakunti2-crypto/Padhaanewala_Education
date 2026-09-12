@@ -20,7 +20,7 @@ export default function HeroSearch() {
       <form
         onSubmit={onSubmit}
         role="search"
-        className="flex items-center gap-2 rounded-2xl border border-black/5 bg-white p-2 shadow-lg shadow-neutral-950/5"
+        className="foreground-accent flex items-center gap-2 rounded-2xl border border-black/5 bg-white p-2 shadow-lg shadow-neutral-950/5"
       >
         <SearchIcon className="ml-2 h-5 w-5 shrink-0 text-neutral-400" />
         <label htmlFor="hero-search" className="sr-only">
@@ -36,7 +36,7 @@ export default function HeroSearch() {
         />
         <button
           type="submit"
-          className="h-11 shrink-0 rounded-xl bg-neutral-950 px-5 text-sm font-semibold text-white transition-colors hover:bg-neutral-800"
+          className="h-11 shrink-0 rounded-xl bg-violet-600 px-5 text-sm font-semibold text-white transition-colors hover:bg-violet-700"
         >
           Search
         </button>
