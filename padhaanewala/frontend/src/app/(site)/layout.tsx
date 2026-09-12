@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { MotionConfig } from "framer-motion";
 import "../globals.css";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import AIFloatingAssistant from "@/components/AIFloatingAssistant";
+import StickyCta from "@/components/StickyCta";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -15,7 +17,27 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://padhaanewala.in";
+
+const organizationJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  name: "Padhaanewala",
+  url: SITE_URL,
+  description:
+    "India's education discovery platform. Verified colleges, courses, scholarships, mock tests and free admission counselling.",
+  email: "support@padhaanewala.in",
+  address: {
+    "@type": "PostalAddress",
+    addressLocality: "Bengaluru",
+    addressRegion: "Karnataka",
+    postalCode: "560100",
+    addressCountry: "IN",
+  },
+};
+
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: {
     default: "Padhaanewala — Find the Right College for Your Future",
     template: "%s | Padhaanewala",
@@ -40,6 +62,17 @@ export const metadata: Metadata = {
       "Verified college data, AI college predictor, scholarships, mock tests and free counselling.",
     siteName: "Padhaanewala",
     type: "website",
+    locale: "en_IN",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Padhaanewala — Find the Right College for Your Future",
+    description:
+      "Verified college data, AI college predictor, scholarships, mock tests and free counselling.",
+  },
+  robots: {
+    index: true,
+    follow: true,
   },
 };
 
@@ -51,16 +84,23 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <head>
         <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
+        />
+        <script
           dangerouslySetInnerHTML={{
             __html: `(function(){try{var t=localStorage.getItem("padhaanewala-theme");var d=t?t==="dark":window.matchMedia("(prefers-color-scheme: dark)").matches;if(d){document.documentElement.classList.add("dark")}}catch(e){}})();`,
           }}
         />
       </head>
       <body className="min-h-full flex flex-col font-sans">
-        <Header />
-        <main className="flex-1">{children}</main>
-        <Footer />
-        <AIFloatingAssistant />
+        <MotionConfig reducedMotion="user">
+          <Header />
+          <main className="flex-1">{children}</main>
+          <Footer />
+          <AIFloatingAssistant />
+          <StickyCta />
+        </MotionConfig>
       </body>
     </html>
   );

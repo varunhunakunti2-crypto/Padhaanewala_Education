@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { flushSync } from "react-dom";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   AnimatePresence,
   motion,
@@ -29,11 +30,15 @@ const easeOutSpec = [0.22, 1, 0.36, 1] as [number, number, number, number];
 const navbarTransition = { duration: 0.35, ease: easeOutSpec };
 
 export default function Header() {
+  const pathname = usePathname();
   const { scrollY } = useScroll();
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
   const [device, setDevice] = useState<"mobile" | "tablet" | "desktop">("desktop");
   const [isDark, setIsDark] = useState(false);
+
+  const isActive = (href: string) =>
+    href === "/" ? pathname === "/" : pathname.startsWith(href);
 
   useMotionValueEvent(scrollY, "change", (latest) => {
     setScrolled(latest > 30);
@@ -162,19 +167,23 @@ export default function Header() {
               aria-label="Primary"
               className="hidden items-center gap-1.5 lg:flex"
             >
-              {navLinks.map((link) => (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className="group relative flex items-center gap-1 rounded-full px-3.5 py-1.5 text-[14px] font-medium text-white/80 transition-colors duration-200 hover:text-white"
-                >
-                  <span className="absolute inset-0 rounded-full bg-white/10 opacity-0 transition-all duration-200 group-hover:opacity-100 group-hover:scale-100" />
-                  <span className="relative z-10">{link.label}</span>
-                  {link.chevron && (
-                    <ChevronDown className="relative z-10 h-3.5 w-3.5 text-white/60 transition-transform duration-200 group-hover:rotate-180 group-hover:text-white" />
-                  )}
-                </Link>
-              ))}
+              {navLinks.map((link) => {
+                const active = isActive(link.href);
+                return (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    aria-current={active ? "page" : undefined}
+                    className="group relative flex items-center gap-1 rounded-full px-3.5 py-1.5 text-[14px] font-medium text-white/80 transition-colors duration-200 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+                  >
+                    <span className={`absolute inset-0 rounded-full bg-white/10 transition-all duration-200 ${active ? "opacity-100 scale-100" : "opacity-0 group-hover:opacity-100 group-hover:scale-100"}`} />
+                    <span className={`relative z-10 ${active ? "text-white" : ""}`}>{link.label}</span>
+                    {link.chevron && (
+                      <ChevronDown className="relative z-10 h-3.5 w-3.5 text-white/60 transition-transform duration-200 group-hover:rotate-180 group-hover:text-white" />
+                    )}
+                  </Link>
+                );
+              })}
             </nav>
 
             {/* Right-Side Controls (Tablet & Desktop) */}
@@ -235,19 +244,25 @@ export default function Header() {
             className="fixed inset-x-3 top-[64px] z-[999] rounded-3xl border border-white/12 bg-[#0a0a0a]/95 p-4 shadow-2xl backdrop-blur-2xl lg:hidden"
           >
             <nav aria-label="Mobile" className="flex flex-col">
-              {navLinks.map((link) => (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  onClick={() => setOpen(false)}
-                  className="flex items-center justify-between rounded-xl px-4 py-3 text-sm font-medium text-neutral-200 transition-colors duration-150 hover:bg-white/10 hover:text-white"
-                >
-                  {link.label}
-                  {link.chevron && (
-                    <ChevronDown className="h-4 w-4 text-neutral-400" />
-                  )}
-                </Link>
-              ))}
+              {navLinks.map((link) => {
+                const active = isActive(link.href);
+                return (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    onClick={() => setOpen(false)}
+                    aria-current={active ? "page" : undefined}
+                    className={`flex items-center justify-between rounded-xl px-4 py-3 text-sm transition-colors duration-150 hover:bg-white/10 hover:text-white ${
+                      active ? "font-semibold text-white" : "font-medium text-neutral-200"
+                    }`}
+                  >
+                    {link.label}
+                    {link.chevron && (
+                      <ChevronDown className="h-4 w-4 text-neutral-400" />
+                    )}
+                  </Link>
+                );
+              })}
               <div className="mt-3 flex items-center justify-between border-t border-white/10 pt-3 px-2">
                 <div className="flex items-center gap-2">
                   <button

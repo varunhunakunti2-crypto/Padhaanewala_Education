@@ -6,7 +6,9 @@ import {
   AwardIcon,
   SparklesIcon,
   ClipboardIcon,
+  WhatsAppIcon,
 } from "@/components/icons";
+import { StaggerGroup, StaggerItem } from "@/components/motion";
 import {
   popularCourses,
   featuredColleges,
@@ -78,23 +80,24 @@ export function PopularCourses() {
         href="/courses"
         linkLabel="All courses"
       />
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      <StaggerGroup className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         {popularCourses.map((course, index) => (
-          <Link
-            key={course.id}
-            href={`/courses/${course.slug}`}
-            className={`rounded-2xl border p-4 transition-all hover:-translate-y-0.5 hover:shadow-md ${courseTint(index)}`}
-          >
-            <span className="block text-base font-bold text-neutral-950">
-              {course.name}
-            </span>
-            <span className="mt-1 block text-xs text-neutral-500">{course.tag}</span>
-            <span className="mt-3 block text-xs font-medium text-neutral-600">
-              {course.colleges} colleges
-            </span>
-          </Link>
+          <StaggerItem key={course.id} className="h-full">
+            <Link
+              href={`/courses/${course.slug}`}
+              className={`block h-full rounded-2xl border p-4 transition-all hover:-translate-y-0.5 hover:shadow-md ${courseTint(index)}`}
+            >
+              <span className="block text-base font-bold text-neutral-950">
+                {course.name}
+              </span>
+              <span className="mt-1 block text-xs text-neutral-500">{course.tag}</span>
+              <span className="mt-3 block text-xs font-medium text-neutral-600">
+                {course.colleges} colleges
+              </span>
+            </Link>
+          </StaggerItem>
         ))}
-      </div>
+      </StaggerGroup>
     </section>
   );
 }
@@ -103,7 +106,7 @@ function CollegeCard({ college }: { college: College }) {
   return (
     <Link
       href={`/college/${college.slug}`}
-      className="flex flex-col rounded-2xl border border-black/5 bg-white p-6 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
+      className="flex h-full flex-col rounded-2xl border border-black/5 bg-white p-6 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
     >
       <div className="flex items-start justify-between gap-3">
         <h3 className="text-base font-semibold leading-6 text-neutral-950">
@@ -148,11 +151,13 @@ export function FeaturedColleges() {
           href="/colleges"
           linkLabel="All colleges"
         />
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StaggerGroup className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {featuredColleges.map((college) => (
-            <CollegeCard key={college.id} college={college} />
+            <StaggerItem key={college.id} className="h-full">
+              <CollegeCard college={college} />
+            </StaggerItem>
           ))}
-        </div>
+        </StaggerGroup>
       </div>
     </section>
   );
@@ -167,31 +172,32 @@ export function Scholarships() {
         href="/scholarships"
         linkLabel="All scholarships"
       />
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <StaggerGroup className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {scholarships.map((s) => (
-          <Link
-            key={s.id}
-            href={`/scholarships/${s.slug}`}
-            className="flex flex-col rounded-2xl border border-black/5 bg-white p-6 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
-          >
-            <AwardIcon className="h-7 w-7 text-amber-500" />
-            <h3 className="mt-4 text-base font-semibold leading-6 text-neutral-950">
-              {s.name}
-            </h3>
-            <p className="mt-1 text-sm text-neutral-500">{s.provider}</p>
-            <div className="mt-4 flex items-end justify-between gap-2 border-t border-black/5 pt-4">
-              <div>
-                <p className="text-xs text-neutral-500">Scholarship amount</p>
-                <p className="text-sm font-bold text-emerald-700">{s.amount}</p>
+          <StaggerItem key={s.id} className="h-full">
+            <Link
+              href={`/scholarships/${s.slug}`}
+              className="flex h-full flex-col rounded-2xl border border-black/5 bg-white p-6 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
+            >
+              <AwardIcon className="h-7 w-7 text-amber-500" />
+              <h3 className="mt-4 text-base font-semibold leading-6 text-neutral-950">
+                {s.name}
+              </h3>
+              <p className="mt-1 text-sm text-neutral-500">{s.provider}</p>
+              <div className="mt-4 flex items-end justify-between gap-2 border-t border-black/5 pt-4">
+                <div>
+                  <p className="text-xs text-neutral-500">Scholarship amount</p>
+                  <p className="text-sm font-bold text-emerald-700">{s.amount}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs text-neutral-500">Deadline</p>
+                  <p className="text-sm font-medium text-neutral-800">{s.deadline}</p>
+                </div>
               </div>
-              <div className="text-right">
-                <p className="text-xs text-neutral-500">Deadline</p>
-                <p className="text-sm font-medium text-neutral-800">{s.deadline}</p>
-              </div>
-            </div>
-          </Link>
+            </Link>
+          </StaggerItem>
         ))}
-      </div>
+      </StaggerGroup>
     </section>
   );
 }
@@ -206,23 +212,24 @@ export function UpcomingExams() {
           href="/exams"
           linkLabel="All exams"
         />
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StaggerGroup className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {upcomingExams.map((exam) => (
-            <Link
-              key={exam.id}
-              href={`/exams/${exam.slug}`}
-              className="rounded-2xl border border-black/5 bg-white p-6 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
-            >
-              <span className="inline-flex rounded-full bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700">
-                {exam.status}
-              </span>
-              <h3 className="mt-4 text-base font-semibold text-neutral-950">
-                {exam.name}
-              </h3>
-              <p className="mt-2 text-sm text-neutral-500">Exam date: {exam.date}</p>
-            </Link>
+            <StaggerItem key={exam.id} className="h-full">
+              <Link
+                href={`/exams/${exam.slug}`}
+                className="block h-full rounded-2xl border border-black/5 bg-white p-6 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
+              >
+                <span className="inline-flex rounded-full bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700">
+                  {exam.status}
+                </span>
+                <h3 className="mt-4 text-base font-semibold text-neutral-950">
+                  {exam.name}
+                </h3>
+                <p className="mt-2 text-sm text-neutral-500">Exam date: {exam.date}</p>
+              </Link>
+            </StaggerItem>
           ))}
-        </div>
+        </StaggerGroup>
       </div>
     </section>
   );
@@ -237,34 +244,35 @@ export function MockTests() {
         href="/mock-tests"
         linkLabel="All tests"
       />
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <StaggerGroup className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {mockTests.map((test) => (
-          <Link
-            key={test.id}
-            href={`/mock-tests/${test.slug}`}
-            className="flex flex-col rounded-2xl border border-black/5 bg-white p-6 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
-          >
-            <div className="flex items-center justify-between">
-              <ClipboardIcon className="h-6 w-6 text-indigo-600" />
-              <span
-                className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                  test.mode === "Proctored"
-                    ? "bg-rose-50 text-rose-700"
-                    : "bg-sky-50 text-sky-700"
-                }`}
-              >
-                {test.mode}
-              </span>
-            </div>
-            <h3 className="mt-4 text-base font-semibold text-neutral-950">
-              {test.name}
-            </h3>
-            <p className="mt-2 text-sm text-neutral-500">
-              {test.questions} questions · {test.duration} min
-            </p>
-          </Link>
+          <StaggerItem key={test.id} className="h-full">
+            <Link
+              href={`/mock-tests/${test.slug}`}
+              className="flex h-full flex-col rounded-2xl border border-black/5 bg-white p-6 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
+            >
+              <div className="flex items-center justify-between">
+                <ClipboardIcon className="h-6 w-6 text-indigo-600" />
+                <span
+                  className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                    test.mode === "Proctored"
+                      ? "bg-rose-50 text-rose-700"
+                      : "bg-sky-50 text-sky-700"
+                  }`}
+                >
+                  {test.mode}
+                </span>
+              </div>
+              <h3 className="mt-4 text-base font-semibold text-neutral-950">
+                {test.name}
+              </h3>
+              <p className="mt-2 text-sm text-neutral-500">
+                {test.questions} questions · {test.duration} min
+              </p>
+            </Link>
+          </StaggerItem>
         ))}
-      </div>
+      </StaggerGroup>
       <p className="mt-4 text-xs text-neutral-500">
         Mock tests require a laptop or desktop computer with a modern browser.
       </p>
@@ -299,22 +307,21 @@ export function WhyPadhaanewala() {
           subtitle="Built for students, trusted by parents"
           dark={true}
         />
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {reasons.map((reason, index) => (
-            <div
-              key={reason.title}
-              className="rounded-2xl border border-white/10 bg-white/5 p-6"
-            >
-              <span className="text-sm font-bold text-neutral-500">
-                0{index + 1}
-              </span>
-              <h3 className="mt-3 text-base font-semibold">{reason.title}</h3>
-              <p className="mt-2 text-sm leading-6 text-neutral-300">
-                {reason.text}
-              </p>
-            </div>
+        <StaggerGroup className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {reasons.map((reason) => (
+            <StaggerItem key={reason.title} className="h-full">
+              <div className="h-full rounded-2xl border border-white/10 bg-white/5 p-6">
+                <span className="text-sm font-bold text-neutral-500">
+                  0{reasons.indexOf(reason) + 1}
+                </span>
+                <h3 className="mt-3 text-base font-semibold">{reason.title}</h3>
+                <p className="mt-2 text-sm leading-6 text-neutral-300">
+                  {reason.text}
+                </p>
+              </div>
+            </StaggerItem>
           ))}
-        </div>
+        </StaggerGroup>
       </div>
     </section>
   );
@@ -360,6 +367,8 @@ function ReviewCard({ review, index }: { review: Review; index: number }) {
             <img
               src={review.avatar}
               alt={review.name}
+              loading="lazy"
+              decoding="async"
               className="h-11 w-11 shrink-0 rounded-full object-cover ring-2 ring-neutral-100 dark:ring-neutral-800"
             />
           ) : (
@@ -450,25 +459,26 @@ export function LatestArticles() {
           href="/blog"
           linkLabel="All articles"
         />
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StaggerGroup className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {articles.map((article) => (
-            <Link
-              key={article.id}
-              href={`/blog/${article.slug}`}
-              className="group flex flex-col rounded-2xl border border-black/5 bg-white p-6 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
-            >
-              <span className="text-xs font-semibold uppercase tracking-wide text-violet-700">
-                {article.category}
-              </span>
-              <h3 className="mt-3 text-base font-semibold leading-6 text-neutral-950 group-hover:text-neutral-600">
-                {article.title}
-              </h3>
-              <span className="mt-auto pt-4 text-xs text-neutral-500">
-                {article.readTime}
-              </span>
-            </Link>
+            <StaggerItem key={article.id} className="h-full">
+              <Link
+                href={`/blog/${article.slug}`}
+                className="group flex h-full flex-col rounded-2xl border border-black/5 bg-white p-6 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
+              >
+                <span className="text-xs font-semibold uppercase tracking-wide text-violet-700">
+                  {article.category}
+                </span>
+                <h3 className="mt-3 text-base font-semibold leading-6 text-neutral-950 group-hover:text-neutral-600">
+                  {article.title}
+                </h3>
+                <span className="mt-auto pt-4 text-xs text-neutral-500">
+                  {article.readTime}
+                </span>
+              </Link>
+            </StaggerItem>
           ))}
-        </div>
+        </StaggerGroup>
       </div>
     </section>
   );
@@ -488,13 +498,24 @@ export function AdmissionCta() {
             <SparklesIcon className="ml-1 inline h-4 w-4" />
           </p>
         </div>
-        <Link
-          href="/contact"
-          className="inline-flex h-12 shrink-0 items-center gap-2 rounded-full bg-white px-6 text-sm font-bold text-neutral-950 transition-transform hover:scale-105"
-        >
-          Get Admission Help
-          <ArrowRightIcon className="h-4 w-4" />
-        </Link>
+        <div className="flex shrink-0 flex-col items-stretch gap-3 sm:flex-row sm:items-center">
+          <a
+            href="https://wa.me/919000000000"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex h-12 items-center justify-center gap-2 rounded-full border border-white/25 bg-white/10 px-6 text-sm font-bold text-white transition-all hover:bg-white/20"
+          >
+            <WhatsAppIcon className="h-4 w-4" />
+            Chat on WhatsApp
+          </a>
+          <Link
+            href="/contact"
+            className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-white px-6 text-sm font-bold text-neutral-950 transition-transform hover:scale-105"
+          >
+            Get Admission Help
+            <ArrowRightIcon className="h-4 w-4" />
+          </Link>
+        </div>
       </div>
     </section>
   );
