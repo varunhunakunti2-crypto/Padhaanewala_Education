@@ -45,7 +45,11 @@ export default function Header() {
   });
 
   useEffect(() => {
-    queueMicrotask(() => setIsDark(document.documentElement.classList.contains("dark")));
+    queueMicrotask(() => {
+      const dark = document.documentElement.classList.contains("dark");
+      setIsDark(dark);
+      setScrolled(window.scrollY > 30);
+    });
 
     const handleResize = () => {
       const width = window.innerWidth;
@@ -95,6 +99,9 @@ export default function Header() {
 
   return (
     <header className="relative z-[1000]">
+      {pathname !== "/" && (
+        <div aria-hidden className="h-[64px] md:h-[70px] lg:h-[76px]" />
+      )}
       <motion.nav
         initial={false}
         aria-label="Main"

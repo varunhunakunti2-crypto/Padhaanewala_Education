@@ -267,10 +267,10 @@
     mask-size: 0;
   }
   15% {
-    mask-size: 26vmax;
+    mask-size: 10vmax;
   }
   85% {
-    mask-size: 26vmax;
+    mask-size: 10vmax;
   }
   100% {
     mask-size: 2500vmax;
