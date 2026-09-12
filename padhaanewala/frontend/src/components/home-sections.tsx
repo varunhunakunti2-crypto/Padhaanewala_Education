@@ -71,7 +71,7 @@ function courseTint(index: number) {
 
 export function PopularCourses() {
   return (
-    <section className="mx-auto w-full max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
+    <section className="mx-auto w-full max-w-[1536px] px-4 py-14 sm:px-6 lg:px-8">
       <SectionHeader
         title="Popular courses"
         subtitle="Explore the courses Indian students search the most"
@@ -141,7 +141,7 @@ function CollegeCard({ college }: { college: College }) {
 export function FeaturedColleges() {
   return (
     <section className="bg-neutral-50 py-14">
-      <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto w-full max-w-[1536px] px-4 sm:px-6 lg:px-8">
         <SectionHeader
           title="Featured colleges"
           subtitle="Verified colleges with fee, placement and NIRF data"
@@ -160,7 +160,7 @@ export function FeaturedColleges() {
 
 export function Scholarships() {
   return (
-    <section className="mx-auto w-full max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
+    <section className="mx-auto w-full max-w-[1536px] px-4 py-14 sm:px-6 lg:px-8">
       <SectionHeader
         title="Scholarships"
         subtitle="Apply before deadlines and reduce your education cost"
@@ -199,7 +199,7 @@ export function Scholarships() {
 export function UpcomingExams() {
   return (
     <section className="bg-neutral-50 py-14">
-      <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto w-full max-w-[1536px] px-4 sm:px-6 lg:px-8">
         <SectionHeader
           title="Upcoming examinations"
           subtitle="Dates, notifications and counselling schedules"
@@ -230,7 +230,7 @@ export function UpcomingExams() {
 
 export function MockTests() {
   return (
-    <section className="mx-auto w-full max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
+    <section className="mx-auto w-full max-w-[1536px] px-4 py-14 sm:px-6 lg:px-8">
       <SectionHeader
         title="Mock tests"
         subtitle="Take standard and proctored tests on laptop or desktop"
@@ -293,7 +293,7 @@ export function WhyPadhaanewala() {
   ];
   return (
     <section className="bg-neutral-950 py-14 text-white">
-      <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto w-full max-w-[1536px] px-4 sm:px-6 lg:px-8">
         <SectionHeader
           title="Why Padhaanewala"
           subtitle="Built for students, trusted by parents"
@@ -408,7 +408,7 @@ export function StudentReviews() {
   const row2Items = [...row2, ...row2];
 
   return (
-    <section className="mx-auto w-full max-w-7xl px-4 py-14 sm:px-6 lg:px-8 overflow-hidden">
+    <section className="mx-auto w-full max-w-[1536px] px-4 py-14 sm:px-6 lg:px-8 overflow-hidden">
       <SectionHeader
         title="What students say"
         subtitle="Real experiences from the Padhaanewala community"
@@ -443,7 +443,7 @@ export function StudentReviews() {
 export function LatestArticles() {
   return (
     <section className="bg-neutral-50 py-14">
-      <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto w-full max-w-[1536px] px-4 sm:px-6 lg:px-8">
         <SectionHeader
           title="Latest education articles"
           subtitle="Guides on admissions, counselling, exams and careers"
@@ -476,7 +476,7 @@ export function LatestArticles() {
 
 export function AdmissionCta() {
   return (
-    <section className="mx-auto w-full max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
+    <section className="mx-auto w-full max-w-[1536px] px-4 py-14 sm:px-6 lg:px-8">
       <div className="flex flex-col items-start justify-between gap-6 rounded-3xl bg-gradient-to-br from-fuchsia-600 to-violet-700 px-6 py-10 text-white sm:px-10 lg:flex-row lg:items-center">
         <div>
           <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">

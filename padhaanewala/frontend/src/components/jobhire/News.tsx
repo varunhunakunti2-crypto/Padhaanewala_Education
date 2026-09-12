@@ -23,7 +23,7 @@ export function NewsCard({ title, date, image }: (typeof articles)[number]) {
 export default function NewsSection() {
   return (
     <section id="news" className="bg-white py-16 sm:py-20">
-      <div className="mx-auto w-full max-w-[1160px] px-4 sm:px-6">
+      <div className="mx-auto w-full max-w-[1536px] px-4 sm:px-6">
         <h2 className="text-center text-3xl font-bold tracking-tight text-jh-ink sm:text-4xl">
           Latest News
         </h2>

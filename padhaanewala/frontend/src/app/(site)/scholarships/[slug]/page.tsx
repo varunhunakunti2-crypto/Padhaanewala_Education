@@ -46,7 +46,7 @@ export default async function ScholarshipDetailPage({ params }: Props) {
   return (
     <div className="bg-white text-neutral-900">
       <section className="border-b border-black/5 bg-neutral-50">
-        <div className="mx-auto w-full max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+        <div className="mx-auto w-full max-w-[1536px] px-4 py-12 sm:px-6 lg:px-8">
           <nav className="text-sm text-neutral-500" aria-label="Breadcrumb">
             <Link href="/scholarships" className="hover:text-neutral-900">
               Scholarships
@@ -84,7 +84,7 @@ export default async function ScholarshipDetailPage({ params }: Props) {
         </div>
       </section>
 
-      <section className="mx-auto w-full max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
+      <section className="mx-auto w-full max-w-[1536px] px-4 py-10 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 gap-10 lg:grid-cols-3">
           <div className="lg:col-span-2">
             <h2 className="text-xl font-bold tracking-tight text-neutral-950">Eligibility</h2>
@@ -167,7 +167,7 @@ export default async function ScholarshipDetailPage({ params }: Props) {
       </section>
 
       {relatedScholarships.length > 0 && (
-        <section className="mx-auto w-full max-w-7xl px-4 pb-14 sm:px-6 lg:px-8">
+        <section className="mx-auto w-full max-w-[1536px] px-4 pb-14 sm:px-6 lg:px-8">
           <h2 className="text-xl font-bold tracking-tight text-neutral-950">
             Related scholarships
           </h2>

@@ -22,7 +22,7 @@ function FooterLogo() {
 export default function Footer() {
   return (
     <footer id="contact" className="bg-jh-navy text-white">
-      <div className="mx-auto grid w-full max-w-[1160px] gap-10 px-4 py-16 sm:px-6 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mx-auto grid w-full max-w-[1536px] gap-10 px-4 py-16 sm:px-6 sm:grid-cols-2 lg:grid-cols-4">
         <div>
           <FooterLogo />
           <ul className="mt-5 space-y-2 text-sm text-jh-muted">
@@ -67,7 +67,7 @@ export default function Footer() {
       </div>
 
       <div className="border-t border-white/10">
-        <div className="mx-auto flex w-full max-w-[1160px] flex-col items-center justify-between gap-2 px-4 py-6 text-xs text-white/40 sm:flex-row sm:px-6">
+        <div className="mx-auto flex w-full max-w-[1536px] flex-col items-center justify-between gap-2 px-4 py-6 text-xs text-white/40 sm:flex-row sm:px-6">
           <p>© {new Date().getFullYear()} Jobhire. All rights reserved.</p>
           <div className="flex items-center gap-5">
             <a href="#" className="transition-colors hover:text-white">Privacy</a>

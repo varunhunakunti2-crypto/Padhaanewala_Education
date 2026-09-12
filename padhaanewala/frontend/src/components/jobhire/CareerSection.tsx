@@ -4,7 +4,7 @@ import { CheckIcon, ResumeIllustration } from "./icons";
 export function CareerSection() {
   return (
     <section className="bg-white py-16 sm:py-24">
-      <div className="mx-auto grid w-full max-w-[1160px] items-center gap-12 px-4 sm:px-6 lg:grid-cols-2 lg:gap-20">
+      <div className="mx-auto grid w-full max-w-[1536px] items-center gap-12 px-4 sm:px-6 lg:grid-cols-2 lg:gap-20">
         <div className="mx-auto w-full max-w-[430px]">
           <ResumeIllustration className="w-full" />
         </div>

@@ -80,7 +80,7 @@ export default async function BlogPage({
   return (
     <div className="bg-white text-neutral-900">
       <section className="border-b border-black/5 bg-neutral-50">
-        <div className="mx-auto w-full max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+        <div className="mx-auto w-full max-w-[1536px] px-4 py-12 sm:px-6 lg:px-8">
           <h1 className="text-3xl font-bold tracking-tight text-neutral-950 sm:text-4xl">
             Articles & Guides
           </h1>
@@ -96,7 +96,7 @@ export default async function BlogPage({
         </div>
       </section>
 
-      <section className="mx-auto w-full max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
+      <section className="mx-auto w-full max-w-[1536px] px-4 py-10 sm:px-6 lg:px-8">
         {featured && (
           <div className="mb-10">
             <FeaturedArticle article={featured} />

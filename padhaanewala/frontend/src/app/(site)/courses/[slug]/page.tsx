@@ -36,7 +36,7 @@ export default async function CourseDetailPage({ params }: Props) {
   return (
     <div className="bg-white text-neutral-900">
       <section className="border-b border-black/5 bg-neutral-50">
-        <div className="mx-auto w-full max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+        <div className="mx-auto w-full max-w-[1536px] px-4 py-12 sm:px-6 lg:px-8">
           <nav className="text-sm text-neutral-500" aria-label="Breadcrumb">
             <Link href="/courses" className="hover:text-neutral-900">
               Courses
@@ -79,7 +79,7 @@ export default async function CourseDetailPage({ params }: Props) {
         </div>
       </section>
 
-      <section className="mx-auto w-full max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
+      <section className="mx-auto w-full max-w-[1536px] px-4 py-10 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 gap-10 lg:grid-cols-3">
           <div className="lg:col-span-2">
             <h2 className="text-xl font-bold tracking-tight text-neutral-950">About this course</h2>
@@ -162,7 +162,7 @@ export default async function CourseDetailPage({ params }: Props) {
       </section>
 
       {offeringColleges.length > 0 && (
-        <section className="mx-auto w-full max-w-7xl px-4 pb-14 sm:px-6 lg:px-8">
+        <section className="mx-auto w-full max-w-[1536px] px-4 pb-14 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between gap-4">
             <h2 className="text-xl font-bold tracking-tight text-neutral-950">
               Colleges offering {course.short}
@@ -205,7 +205,7 @@ export default async function CourseDetailPage({ params }: Props) {
       )}
 
       {offeringColleges.length === 0 && (
-        <section className="mx-auto w-full max-w-7xl px-4 pb-14 sm:px-6 lg:px-8">
+        <section className="mx-auto w-full max-w-[1536px] px-4 pb-14 sm:px-6 lg:px-8">
           <div className="rounded-2xl border border-dashed border-black/10 bg-neutral-50 px-6 py-12 text-center">
             <p className="text-base font-semibold text-neutral-900">
               Colleges offering {course.short}

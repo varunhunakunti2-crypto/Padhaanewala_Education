@@ -84,7 +84,7 @@ export default async function CollegesPage({
   return (
     <div className="bg-white text-neutral-900">
       <section className="border-b border-black/5 bg-neutral-50">
-        <div className="mx-auto w-full max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+        <div className="mx-auto w-full max-w-[1536px] px-4 py-12 sm:px-6 lg:px-8">
           <h1 className="text-3xl font-bold tracking-tight text-neutral-950 sm:text-4xl">
             Colleges in India
           </h1>
@@ -100,7 +100,7 @@ export default async function CollegesPage({
         </div>
       </section>
 
-      <section className="mx-auto w-full max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
+      <section className="mx-auto w-full max-w-[1536px] px-4 py-10 sm:px-6 lg:px-8">
         <div className="mb-6 flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
           <p className="text-sm font-medium text-neutral-700">
             {total === 0

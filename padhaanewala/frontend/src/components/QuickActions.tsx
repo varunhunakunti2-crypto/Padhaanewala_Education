@@ -29,7 +29,7 @@ const accentClasses = [
 
 export default function QuickActions() {
   return (
-    <section className="mx-auto w-full max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
+    <section className="mx-auto w-full max-w-[1536px] px-4 py-14 sm:px-6 lg:px-8">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {quickActions.map((action, index) => {
           const Icon = iconMap[action.icon];

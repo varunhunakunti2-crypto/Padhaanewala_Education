@@ -67,7 +67,7 @@ export function CategoryCard({ name, positions, icon }: Category) {
 export function CategoriesSection() {
   return (
     <section className="bg-jh-teal/50 py-16 sm:py-20">
-      <div className="mx-auto w-full max-w-[1160px] px-4 sm:px-6">
+      <div className="mx-auto w-full max-w-[1536px] px-4 sm:px-6">
         <div className="mx-auto max-w-2xl text-center">
           <h2 className="text-3xl font-bold tracking-tight text-jh-ink sm:text-4xl">
             Thousands of

@@ -95,7 +95,7 @@ export default async function BlogArticlePage({ params }: Props) {
         </div>
       </section>
 
-      <section className="mx-auto w-full max-w-7xl px-4 pb-14 sm:px-6 lg:px-8">
+      <section className="mx-auto w-full max-w-[1536px] px-4 pb-14 sm:px-6 lg:px-8">
         <div className="border-t border-black/5 pt-10">
           <h2 className="text-xl font-bold tracking-tight text-neutral-950">
             More in {article.category}

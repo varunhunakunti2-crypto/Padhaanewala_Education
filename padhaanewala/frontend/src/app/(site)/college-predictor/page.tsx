@@ -11,7 +11,7 @@ export default function CollegePredictorPage() {
   return (
     <div className="bg-white text-neutral-900">
       <section className="border-b border-black/5 bg-neutral-50">
-        <div className="mx-auto w-full max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+        <div className="mx-auto w-full max-w-[1536px] px-4 py-12 sm:px-6 lg:px-8">
           <span className="inline-flex items-center gap-1.5 rounded-full border border-black/10 bg-white px-3 py-1 text-xs font-medium text-neutral-700">
             <SparklesIcon className="h-3.5 w-3.5" />
             Free · No sign-up needed
@@ -31,7 +31,7 @@ export default function CollegePredictorPage() {
         </div>
       </section>
 
-      <section className="mx-auto w-full max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
+      <section className="mx-auto w-full max-w-[1536px] px-4 py-10 sm:px-6 lg:px-8">
         <CollegePredictor />
       </section>
     </div>

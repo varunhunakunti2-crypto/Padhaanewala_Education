@@ -34,7 +34,7 @@ function Portrait({ variant, label, className }: { variant: "beard" | "blonde" |
 export default function Testimonials() {
   return (
     <section className="bg-white py-16 sm:py-24">
-      <div className="mx-auto grid w-full max-w-[1160px] items-center gap-12 px-4 sm:px-6 lg:grid-cols-2 lg:gap-16">
+      <div className="mx-auto grid w-full max-w-[1536px] items-center gap-12 px-4 sm:px-6 lg:grid-cols-2 lg:gap-16">
         <div>
           <div className="max-w-md">
             <h2 className="text-3xl font-bold tracking-tight text-jh-ink sm:text-4xl">

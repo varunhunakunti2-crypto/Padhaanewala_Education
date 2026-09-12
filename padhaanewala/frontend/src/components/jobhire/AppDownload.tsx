@@ -3,7 +3,7 @@ import { AppStoreBadge, PhoneIllustration, PlayStoreBadge } from "./icons";
 export default function AppDownload() {
   return (
     <section id="app" className="overflow-hidden bg-jh-teal/70 py-16 sm:py-20">
-      <div className="mx-auto grid w-full max-w-[1160px] items-end gap-10 px-4 sm:px-6 lg:grid-cols-2">
+      <div className="mx-auto grid w-full max-w-[1536px] items-end gap-10 px-4 sm:px-6 lg:grid-cols-2">
         <div className="pb-2">
           <h2 className="text-3xl font-bold tracking-tight text-jh-ink sm:text-4xl">
             Download the App

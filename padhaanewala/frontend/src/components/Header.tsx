@@ -19,7 +19,7 @@ export default function Header() {
 
   return (
     <header className="sticky top-0 z-50 border-b border-black/5 bg-white/90 backdrop-blur">
-      <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto flex h-16 w-full max-w-[1536px] items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
         <Link href="/" className="flex shrink-0 items-center gap-2">
           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-neutral-950 text-sm font-bold text-white">
             P
@@ -44,15 +44,15 @@ export default function Header() {
         <div className="hidden items-center gap-3 lg:flex">
           <Link
             href="/auth/login"
-            className="text-sm font-semibold text-neutral-700 transition-colors hover:text-neutral-950"
+            className="rounded-full border border-neutral-200 px-4 py-2 text-sm font-semibold text-neutral-700 transition-colors hover:border-neutral-300 hover:text-neutral-950"
           >
             Login
           </Link>
           <Link
-            href="/contact"
-            className="inline-flex h-10 items-center gap-2 rounded-full bg-neutral-950 px-4 text-sm font-semibold text-white transition-colors hover:bg-neutral-800"
+            href="/auth/signup"
+            className="inline-flex h-10 items-center gap-2 rounded-full bg-neutral-950 px-5 text-sm font-semibold text-white transition-colors hover:bg-neutral-800"
           >
-            Get Admission Help
+            Sign up
             <ArrowRightIcon className="h-4 w-4" />
           </Link>
         </div>
@@ -70,7 +70,7 @@ export default function Header() {
 
       {open && (
         <div className="border-t border-black/5 bg-white lg:hidden">
-          <nav className="mx-auto flex max-w-7xl flex-col gap-1 px-4 py-4" aria-label="Mobile">
+          <nav className="mx-auto flex max-w-[1536px] flex-col gap-1 px-4 py-4" aria-label="Mobile">
             {navLinks.map((link) => (
               <Link
                 key={link.href}
@@ -90,11 +90,11 @@ export default function Header() {
                 Login
               </Link>
               <Link
-                href="/contact"
+                href="/auth/signup"
                 onClick={() => setOpen(false)}
                 className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-neutral-950 px-4 text-sm font-semibold text-white"
               >
-                Get Admission Help
+                Sign up
                 <ArrowRightIcon className="h-4 w-4" />
               </Link>
             </div>

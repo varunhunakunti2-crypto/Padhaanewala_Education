@@ -75,7 +75,7 @@ export default function JobsSection() {
 
   return (
     <section id="jobs" className="bg-white py-16 sm:py-20">
-      <div className="mx-auto w-full max-w-[1160px] px-4 sm:px-6">
+      <div className="mx-auto w-full max-w-[1536px] px-4 sm:px-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <h2 className="text-3xl font-bold tracking-tight text-jh-ink">
             Recent Available Jobs

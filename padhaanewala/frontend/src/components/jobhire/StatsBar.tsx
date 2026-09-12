@@ -15,7 +15,7 @@ function StatIcon({ name, className }: { name: Stat["icon"]; className?: string 
 export default function StatsBar() {
   return (
     <section className="bg-jh-teal/50 py-16 sm:py-20">
-      <div className="mx-auto w-full max-w-[1160px] px-4 sm:px-6">
+      <div className="mx-auto w-full max-w-[1536px] px-4 sm:px-6">
         <div className="grid grid-cols-1 gap-8 rounded-[28px] border border-[#D0DEE0] bg-[#F4FAFA] px-8 py-10 sm:grid-cols-3 sm:gap-4 sm:py-12">
           {stats.map((stat) => (
             <div

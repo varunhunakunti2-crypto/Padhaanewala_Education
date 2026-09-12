@@ -23,7 +23,7 @@ export default function Header() {
 
   return (
     <header className="sticky top-0 z-50 border-b border-jh-line bg-white/95 backdrop-blur-sm">
-      <div className="mx-auto flex h-16 w-full max-w-[1160px] items-center justify-between gap-6 px-4 sm:px-6">
+      <div className="mx-auto flex h-16 w-full max-w-[1536px] items-center justify-between gap-6 px-4 sm:px-6">
         <Logo />
 
         <nav className="hidden items-center gap-1 lg:flex" aria-label="Main navigation">
@@ -67,7 +67,7 @@ export default function Header() {
 
       {open && (
         <div className="border-t border-jh-line bg-white lg:hidden">
-          <nav className="mx-auto flex max-w-[1160px] flex-col gap-1 px-4 py-4" aria-label="Mobile navigation">
+          <nav className="mx-auto flex max-w-[1536px] flex-col gap-1 px-4 py-4" aria-label="Mobile navigation">
             {navLinks.map((link) => (
               <a
                 key={link.label}
