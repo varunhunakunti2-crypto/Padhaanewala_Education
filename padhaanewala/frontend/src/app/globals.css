@@ -258,3 +258,54 @@
   transform: scale(1.2);
 }
 
+/* Custom View Transitions Mask Animation */
+::view-transition {
+  opacity: 1 !important;
+  z-index: 999999 !important;
+  pointer-events: none;
+}
+
+::view-transition-group(root) {
+  opacity: 1 !important;
+  z-index: 999999 !important;
+  animation-timing-function: var(--expo-in);
+}
+
+::view-transition-image-pair(root) {
+  z-index: 999999 !important;
+  isolation: isolate;
+}
+
+::view-transition-new(root) {
+  opacity: 1 !important;
+  z-index: 999999 !important;
+  mix-blend-mode: normal !important;
+  mask: url('https://media.tenor.com/cyORI7kwShQAAAAi/shigure-ui-dance.gif') center / 0 no-repeat;
+  animation: scale 1.8s;
+  animation-fill-mode: both;
+}
+
+::view-transition-old(root),
+.dark::view-transition-old(root) {
+  opacity: 1 !important;
+  z-index: 1 !important;
+  mix-blend-mode: normal !important;
+  animation: scale 1.8s;
+  animation-fill-mode: both;
+}
+
+@keyframes scale {
+  0% {
+    mask-size: 0;
+  }
+  15% {
+    mask-size: 26vmax;
+  }
+  85% {
+    mask-size: 26vmax;
+  }
+  100% {
+    mask-size: 2500vmax;
+  }
+}
+

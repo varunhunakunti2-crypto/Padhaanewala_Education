@@ -80,19 +80,16 @@ export default function Header() {
 
   const getMaxWidth = () => {
     if (scrolled) {
-      if (isDesktop) return 920;
-      if (isTablet) return "90%";
-      return "94%";
+      if (isDesktop) return 850;
+      if (isTablet) return "86%";
+      return "92%";
     } else {
-      return "100%";
+      return 1280;
     }
   };
 
   return (
     <header className="relative z-[1000]">
-      {/* Reserved space to prevent layout jump */}
-      <div aria-hidden className="h-[64px] md:h-[70px] lg:h-[76px]" />
-
       <motion.nav
         initial={false}
         aria-label="Main"
@@ -110,8 +107,8 @@ export default function Header() {
           animate={{
             maxWidth: getMaxWidth(),
             height: scrolled ? scrolledHeight : topHeight,
-            paddingLeft: isDesktop ? 24 : 16,
-            paddingRight: isDesktop ? 24 : 16,
+            paddingLeft: isDesktop ? 20 : 14,
+            paddingRight: isDesktop ? 20 : 14,
             borderRadius: 9999,
             backgroundColor: scrolled
               ? "rgba(12, 12, 12, 0.88)"
@@ -129,7 +126,7 @@ export default function Header() {
           }}
           transition={navbarTransition}
         >
-          <div className="mx-auto flex w-full max-w-[1536px] items-center justify-between">
+          <div className="mx-auto flex w-full max-w-[1280px] items-center justify-between">
             {/* Logo */}
             <Link
               href="/"

@@ -20,9 +20,9 @@ export default function HeroSearch() {
       <form
         onSubmit={onSubmit}
         role="search"
-        className="foreground-accent flex items-center gap-2 rounded-2xl border border-black/5 bg-white p-2 shadow-lg shadow-neutral-950/5"
+        className="foreground-accent flex items-center gap-2 rounded-2xl border border-white/20 bg-white/95 dark:bg-neutral-900/95 p-2 shadow-2xl backdrop-blur-xl"
       >
-        <SearchIcon className="ml-2 h-5 w-5 shrink-0 text-neutral-400" />
+        <SearchIcon className="ml-2 h-5 w-5 shrink-0 text-neutral-400 dark:text-neutral-300" />
         <label htmlFor="hero-search" className="sr-only">
           Search colleges, courses, exams or locations
         </label>
@@ -32,7 +32,7 @@ export default function HeroSearch() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search colleges, courses, exams or locations"
-          className="w-full bg-transparent text-base text-neutral-900 outline-none placeholder:text-neutral-400"
+          className="w-full bg-transparent text-base text-neutral-900 dark:text-white outline-none placeholder:text-neutral-400 dark:placeholder:text-neutral-400"
         />
         <button
           type="submit"

@@ -408,12 +408,14 @@ export function StudentReviews() {
   const row2Items = [...row2, ...row2];
 
   return (
-    <section className="mx-auto w-full max-w-[1536px] px-4 py-14 sm:px-6 lg:px-8 overflow-hidden">
-      <SectionHeader
-        title="What students say"
-        subtitle="Real experiences from the Padhaanewala community"
-      />
-      <div className="relative mt-8 flex flex-col gap-6 overflow-hidden py-2">
+    <section className="w-full py-14 overflow-hidden">
+      <div className="mx-auto w-full max-w-[1536px] px-4 sm:px-6 lg:px-8">
+        <SectionHeader
+          title="What students say"
+          subtitle="Real experiences from the Padhaanewala community"
+        />
+      </div>
+      <div className="relative mt-8 flex flex-col gap-6 overflow-hidden py-2 w-full">
         {/* Left & Right Gradient Fade Masks */}
         <div className="pointer-events-none absolute left-0 top-0 bottom-0 z-10 w-16 bg-gradient-to-r from-white dark:from-[#0a0a0a] to-transparent" />
         <div className="pointer-events-none absolute right-0 top-0 bottom-0 z-10 w-16 bg-gradient-to-l from-white dark:from-[#0a0a0a] to-transparent" />
