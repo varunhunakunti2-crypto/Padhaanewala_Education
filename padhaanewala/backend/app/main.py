@@ -15,6 +15,7 @@ from app.routers import (
     banners,
     blogs,
     colleges,
+    courses,
     enquiries,
     exams,
     faqs,
@@ -22,7 +23,9 @@ from app.routers import (
     media,
     mock_tests,
     notifications,
+    predictor,
     reviews,
+    saved_colleges,
     scholarships,
     seo,
     universities,
@@ -56,6 +59,7 @@ app.include_router(users.router)
 app.include_router(locations.router)
 app.include_router(universities.router)
 app.include_router(colleges.router)
+app.include_router(courses.router)
 app.include_router(enquiries.router)
 app.include_router(scholarships.router)
 app.include_router(exams.router)
@@ -68,6 +72,8 @@ app.include_router(seo.router)
 app.include_router(notifications.router)
 app.include_router(audit.router)
 app.include_router(banners.router)
+app.include_router(saved_colleges.router)
+app.include_router(predictor.router)
 
 
 @app.get("/health", tags=["health"])

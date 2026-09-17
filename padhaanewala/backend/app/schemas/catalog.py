@@ -245,6 +245,87 @@ class MockTestResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class TestQuestionResponse(BaseModel):
+    id: int
+    question_text: str
+    question_type: str
+    options: list | None
+    marks: Decimal
+    negative_marks: Decimal
+    difficulty: str
+    sort_order: int
+
+    model_config = {"from_attributes": True}
+
+
+class AttemptQuestionResponse(TestQuestionResponse):
+    selected_answer: str | None = None
+
+
+class ResultQuestionResponse(AttemptQuestionResponse):
+    is_correct: bool | None = None
+    marks_awarded: Decimal | None = None
+    correct_answer: str | None = None
+    explanation: str | None = None
+
+
+class TestAttemptResponse(BaseModel):
+    id: int
+    mock_test_id: int
+    mock_test_name: str | None = None
+    status: str
+    started_at: datetime
+    expires_at: datetime
+    submitted_at: datetime | None = None
+    score: Decimal | None = None
+    total_marks: Decimal | None = None
+    correct_count: int | None = None
+    incorrect_count: int | None = None
+    unanswered_count: int | None = None
+    percentage: Decimal | None = None
+    time_remaining_seconds: int = 0
+
+    model_config = {"from_attributes": True}
+
+    @classmethod
+    def build(cls, attempt: Any) -> "TestAttemptResponse":
+        return cls(
+            id=attempt.id,
+            mock_test_id=attempt.mock_test_id,
+            mock_test_name=attempt.mock_test.name if attempt.mock_test else None,
+            status=attempt.status,
+            started_at=attempt.started_at,
+            expires_at=attempt.expires_at,
+            submitted_at=attempt.submitted_at,
+            score=attempt.score,
+            total_marks=attempt.total_marks,
+            correct_count=attempt.correct_count,
+            incorrect_count=attempt.incorrect_count,
+            unanswered_count=attempt.unanswered_count,
+            percentage=attempt.percentage,
+            time_remaining_seconds=attempt.time_remaining_seconds,
+        )
+
+
+class StartAttemptResponse(BaseModel):
+    attempt: TestAttemptResponse
+    questions: list[AttemptQuestionResponse]
+
+
+class SaveAnswerRequest(BaseModel):
+    selected_answer: str | None = None
+
+
+class AttemptDetailResponse(BaseModel):
+    attempt: TestAttemptResponse
+    questions: list[AttemptQuestionResponse]
+
+
+class TestResultResponse(BaseModel):
+    attempt: TestAttemptResponse
+    questions: list[ResultQuestionResponse]
+
+
 class EnquiryCreate(BaseModel):
     name: str = Field(min_length=2, max_length=255)
     mobile: str = Field(min_length=10, max_length=20)

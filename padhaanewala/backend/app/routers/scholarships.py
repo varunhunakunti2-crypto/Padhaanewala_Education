@@ -72,12 +72,19 @@ def list_scholarships(
     return [_to_response(s) for s in scholarships]
 
 
-@router.get("/{scholarship_id}", response_model=ScholarshipResponse)
-def get_scholarship(scholarship_id: int, db: Session = Depends(get_db)):
+@router.get("/{scholarship_ref}", response_model=ScholarshipResponse)
+def get_scholarship(scholarship_ref: str, db: Session = Depends(get_db)):
     scholarship = db.scalar(
         select(Scholarship)
         .options(selectinload(Scholarship.state))
-        .where(Scholarship.id == scholarship_id, Scholarship.is_active)
+        .where(
+            Scholarship.is_active,
+            (
+                Scholarship.id == int(scholarship_ref)
+                if scholarship_ref.isdigit()
+                else Scholarship.slug == scholarship_ref
+            ),
+        )
     )
     if scholarship is None:
         raise HTTPException(status_code=404, detail="Scholarship not found")

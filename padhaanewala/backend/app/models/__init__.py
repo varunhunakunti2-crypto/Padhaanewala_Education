@@ -13,7 +13,7 @@ from app.models.faq import FAQ
 from app.models.fee import Fee
 from app.models.location import City, District, State
 from app.models.media import Media
-from app.models.mock_test import MockTest, TestQuestion
+from app.models.mock_test import MockTest, TestAnswer, TestAttempt, TestQuestion
 from app.models.notification import Notification
 from app.models.placement import PlacementRecord
 from app.models.ranking import NIRFRanking, OtherRanking
@@ -67,6 +67,8 @@ __all__ = [
     "SeoMetadata",
     "State",
     "StudentProfile",
+    "TestAnswer",
+    "TestAttempt",
     "TestQuestion",
     "University",
     "User",

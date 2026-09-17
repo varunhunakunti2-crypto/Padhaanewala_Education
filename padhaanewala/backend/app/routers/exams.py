@@ -64,10 +64,13 @@ def upcoming_exams(
     return exams
 
 
-@router.get("/{exam_id}", response_model=ExamResponse)
-def get_exam(exam_id: int, db: Session = Depends(get_db)):
+@router.get("/{exam_ref}", response_model=ExamResponse)
+def get_exam(exam_ref: str, db: Session = Depends(get_db)):
     exam = db.scalar(
-        select(Exam).where(Exam.id == exam_id, Exam.is_active)
+        select(Exam).where(
+            Exam.is_active,
+            (Exam.id == int(exam_ref) if exam_ref.isdigit() else Exam.slug == exam_ref),
+        )
     )
     if exam is None:
         raise HTTPException(status_code=404, detail="Exam not found")

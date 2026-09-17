@@ -228,3 +228,28 @@ def test_get_exam():
 def test_get_exam_not_found():
     response = client.get("/api/v1/exams/999999")
     assert response.status_code == 404
+
+
+def test_get_exam_by_slug():
+    exams = client.get("/api/v1/exams").json()
+    slug = exams[0]["slug"]
+    response = client.get(f"/api/v1/exams/{slug}")
+    assert response.status_code == 200
+    assert response.json()["slug"] == slug
+
+
+def test_get_scholarship_by_slug():
+    scholarships = client.get("/api/v1/scholarships").json()
+    slug = scholarships[0]["slug"]
+    response = client.get(f"/api/v1/scholarships/{slug}")
+    assert response.status_code == 200
+    assert response.json()["slug"] == slug
+
+
+def test_get_mock_test_by_slug():
+    mock_tests = client.get("/api/v1/mock-tests").json()
+    if mock_tests:
+        slug = mock_tests[0]["slug"]
+        response = client.get(f"/api/v1/mock-tests/{slug}")
+        assert response.status_code == 200
+        assert response.json()["slug"] == slug
