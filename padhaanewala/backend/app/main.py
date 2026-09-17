@@ -19,6 +19,7 @@ from app.routers import (
     enquiries,
     exams,
     faqs,
+    enrichment,
     locations,
     media,
     mock_tests,
@@ -61,6 +62,8 @@ app.include_router(universities.router)
 app.include_router(colleges.router)
 app.include_router(courses.router)
 app.include_router(enquiries.router)
+app.include_router(enrichment.router)
+app.include_router(enrichment.catalog_router)
 app.include_router(scholarships.router)
 app.include_router(exams.router)
 app.include_router(mock_tests.router)

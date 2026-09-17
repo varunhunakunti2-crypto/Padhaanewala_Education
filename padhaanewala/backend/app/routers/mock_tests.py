@@ -1,4 +1,5 @@
 import random
+import re
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -6,21 +7,32 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, require_role
 from app.models import MockTest, TestAnswer, TestAttempt, TestQuestion, User
 from app.schemas.catalog import (
+    AdminQuestionResponse,
     AttemptDetailResponse,
     AttemptQuestionResponse,
+    MockTestAdminDetailResponse,
+    MockTestCreate,
     MockTestResponse,
+    MockTestUpdate,
     ResultQuestionResponse,
     SaveAnswerRequest,
     StartAttemptResponse,
+    SubmitAttemptRequest,
     TestAttemptResponse,
     TestQuestionResponse,
     TestResultResponse,
 )
 
 router = APIRouter(prefix="/api/v1/mock-tests", tags=["mock-tests"])
+
+CONTENT_ROLES = ("admin", "super_admin", "content_manager")
+
+
+def _slugify(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", text.strip().lower()).strip("-")
 
 
 def _to_response(mock_test: MockTest, question_count: int) -> MockTestResponse:
@@ -53,6 +65,11 @@ def _to_response(mock_test: MockTest, question_count: int) -> MockTestResponse:
 def _find_mock_test(db: Session, ref: str) -> MockTest | None:
     cond = MockTest.id == int(ref) if ref.isdigit() else MockTest.slug == ref
     return db.scalar(select(MockTest).where(cond, MockTest.is_active))
+
+
+def _find_mock_test_admin(db: Session, ref: str) -> MockTest | None:
+    cond = MockTest.id == int(ref) if ref.isdigit() else MockTest.slug == ref
+    return db.scalar(select(MockTest).where(cond))
 
 
 def _active_questions(db: Session, mock_test_id: int) -> list[TestQuestion]:
@@ -95,6 +112,7 @@ def _finalize_if_expired(db: Session, attempt: TestAttempt) -> bool:
 
 
 def _grade_attempt(db: Session, attempt: TestAttempt) -> None:
+    db.flush()
     questions = _active_questions(db, attempt.mock_test_id)
     answers = {a.question_id: a for a in attempt.answers}
     score = 0
@@ -159,6 +177,39 @@ def _marks_for(attempt: TestAttempt, question: TestQuestion, is_correct: bool) -
     return 0
 
 
+def _save_answer(
+    db: Session,
+    attempt: TestAttempt,
+    question: TestQuestion,
+    selected_answer: str | None,
+) -> TestAnswer:
+    answer = db.scalar(
+        select(TestAnswer).where(
+            TestAnswer.attempt_id == attempt.id,
+            TestAnswer.question_id == question.id,
+        )
+    )
+    if answer is None:
+        answer = TestAnswer(
+            attempt_id=attempt.id,
+            question_id=question.id,
+        )
+        db.add(answer)
+
+    answer.selected_answer = selected_answer
+    answer.answered_at = (
+        datetime.now(timezone.utc) if selected_answer is not None else None
+    )
+    is_correct = _is_answer_correct(attempt, question, answer)
+    answer.is_correct = is_correct
+    answer.marks_awarded = (
+        _marks_for(attempt, question, is_correct)
+        if is_correct is not None
+        else None
+    )
+    return answer
+
+
 def _attempt_view(attempt: TestAttempt) -> TestAttemptResponse:
     return TestAttemptResponse.build(attempt)
 
@@ -199,6 +250,75 @@ def list_mock_tests(
         query.group_by(MockTest.id).order_by(MockTest.name).limit(limit).offset(offset)
     ).all()
     return [_to_response(m, count) for m, count in rows]
+
+
+@router.post(
+    "",
+    response_model=MockTestResponse,
+    status_code=201,
+    dependencies=[Depends(require_role(*CONTENT_ROLES))],
+)
+def create_mock_test(payload: MockTestCreate, db: Session = Depends(get_db)):
+    slug = _slugify(payload.name)
+    if db.scalar(select(MockTest).where(MockTest.slug == slug)):
+        raise HTTPException(status_code=400, detail="Mock test with this name exists")
+    mock_test = MockTest(
+        **payload.model_dump(exclude={"name"}), name=payload.name, slug=slug
+    )
+    db.add(mock_test)
+    db.commit()
+    db.refresh(mock_test)
+    return _to_response(mock_test, 0)
+
+
+@router.put(
+    "/{mock_test_ref}",
+    response_model=MockTestResponse,
+    dependencies=[Depends(require_role(*CONTENT_ROLES))],
+)
+def update_mock_test(
+    mock_test_ref: str, payload: MockTestUpdate, db: Session = Depends(get_db)
+):
+    mock_test = _find_mock_test_admin(db, mock_test_ref)
+    if mock_test is None:
+        raise HTTPException(status_code=404, detail="Mock test not found")
+
+    data = payload.model_dump(exclude_unset=True)
+    if "name" in data and data["name"] != mock_test.name:
+        slug = _slugify(data["name"])
+        if db.scalar(
+            select(MockTest).where(
+                MockTest.slug == slug, MockTest.id != mock_test.id
+            )
+        ):
+            raise HTTPException(
+                status_code=400, detail="Mock test with this name exists"
+            )
+        mock_test.slug = slug
+    for field, value in data.items():
+        setattr(mock_test, field, value)
+    db.commit()
+    db.refresh(mock_test)
+
+    question_count = db.scalar(
+        select(func.count(TestQuestion.id)).where(
+            TestQuestion.mock_test_id == mock_test.id
+        )
+    )
+    return _to_response(mock_test, question_count or 0)
+
+
+@router.delete(
+    "/{mock_test_ref}",
+    status_code=204,
+    dependencies=[Depends(require_role(*CONTENT_ROLES))],
+)
+def delete_mock_test(mock_test_ref: str, db: Session = Depends(get_db)):
+    mock_test = _find_mock_test_admin(db, mock_test_ref)
+    if mock_test is None:
+        raise HTTPException(status_code=404, detail="Mock test not found")
+    mock_test.is_active = False
+    db.commit()
 
 
 @router.get("/{mock_test_ref}/questions", response_model=list[TestQuestionResponse])
@@ -283,6 +403,73 @@ def start_mock_test(
     )
 
 
+@router.post("/{mock_test_ref}/submit", response_model=TestResultResponse)
+def submit_mock_test(
+    mock_test_ref: str,
+    payload: SubmitAttemptRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    mock_test = _find_mock_test(db, mock_test_ref)
+    if mock_test is None:
+        raise HTTPException(status_code=404, detail="Mock test not found")
+
+    attempt = db.scalar(
+        select(TestAttempt)
+        .options(selectinload(TestAttempt.mock_test))
+        .where(
+            TestAttempt.mock_test_id == mock_test.id,
+            TestAttempt.user_id == user.id,
+        )
+        .order_by(TestAttempt.started_at.desc())
+        .limit(1)
+    )
+
+    if attempt is None:
+        used = db.scalar(
+            select(func.count(TestAttempt.id)).where(
+                TestAttempt.mock_test_id == mock_test.id,
+                TestAttempt.user_id == user.id,
+                TestAttempt.status.in_(["in_progress", "submitted"]),
+            )
+        )
+        if mock_test.attempts_allowed > 0 and used >= mock_test.attempts_allowed:
+            raise HTTPException(
+                status_code=400,
+                detail="Attempt limit reached for this mock test",
+            )
+        attempt = TestAttempt(
+            mock_test_id=mock_test.id,
+            user_id=user.id,
+            status="in_progress",
+            expires_at=datetime.now(timezone.utc)
+            + timedelta(minutes=mock_test.duration_minutes),
+        )
+        db.add(attempt)
+        db.flush()
+    attempt.mock_test = mock_test
+
+    if attempt.status == "submitted":
+        raise HTTPException(status_code=400, detail="Attempt already submitted")
+    _finalize_if_expired(db, attempt)
+    if attempt.status == "submitted":
+        raise HTTPException(status_code=400, detail="Attempt already submitted")
+
+    questions = {q.id: q for q in _active_questions(db, mock_test.id)}
+    for submission in payload.answers:
+        question = questions.get(submission.question_id)
+        if question is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Question {submission.question_id} not found in this mock test",
+            )
+        _save_answer(db, attempt, question, submission.selected_answer)
+
+    _grade_attempt(db, attempt)
+    db.commit()
+    return _build_result(attempt, db)
+
+
 @router.get("/{mock_test_ref}/attempts", response_model=list[TestAttemptResponse])
 def list_my_attempts(
     mock_test_ref: str,
@@ -309,13 +496,19 @@ def list_my_attempts(
     return [_attempt_view(a) for a in attempts]
 
 
-@router.get("/attempts/{attempt_id}", response_model=AttemptDetailResponse)
+@router.get("/{mock_test_ref}/attempts/{attempt_id}", response_model=AttemptDetailResponse)
 def get_attempt(
+    mock_test_ref: str,
     attempt_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    mock_test = _find_mock_test(db, mock_test_ref)
+    if mock_test is None:
+        raise HTTPException(status_code=404, detail="Mock test not found")
     attempt = _find_attempt(db, attempt_id, user)
+    if attempt.mock_test_id != mock_test.id:
+        raise HTTPException(status_code=404, detail="Attempt not found for this mock test")
     _finalize_if_expired(db, attempt)
     db.commit()
 
@@ -350,17 +543,23 @@ def get_attempt(
 
 
 @router.put(
-    "/attempts/{attempt_id}/answers/{question_id}",
+    "/{mock_test_ref}/attempts/{attempt_id}/answers/{question_id}",
     response_model=ResultQuestionResponse,
 )
 def save_answer(
+    mock_test_ref: str,
     attempt_id: int,
     question_id: int,
     payload: SaveAnswerRequest,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    mock_test = _find_mock_test(db, mock_test_ref)
+    if mock_test is None:
+        raise HTTPException(status_code=404, detail="Mock test not found")
     attempt = _find_attempt(db, attempt_id, user)
+    if attempt.mock_test_id != mock_test.id:
+        raise HTTPException(status_code=404, detail="Attempt not found for this mock test")
     if attempt.status == "submitted":
         raise HTTPException(
             status_code=400, detail="Attempt already submitted"
@@ -379,30 +578,7 @@ def save_answer(
     if question is None:
         raise HTTPException(status_code=404, detail="Question not found")
 
-    answer = db.scalar(
-        select(TestAnswer).where(
-            TestAnswer.attempt_id == attempt.id,
-            TestAnswer.question_id == question.id,
-        )
-    )
-    if answer is None:
-        answer = TestAnswer(
-            attempt_id=attempt.id,
-            question_id=question.id,
-        )
-        db.add(answer)
-
-    answer.selected_answer = payload.selected_answer
-    answer.answered_at = (
-        datetime.now(timezone.utc) if payload.selected_answer is not None else None
-    )
-    is_correct = _is_answer_correct(attempt, question, answer)
-    answer.is_correct = is_correct
-    answer.marks_awarded = (
-        _marks_for(attempt, question, is_correct)
-        if is_correct is not None
-        else None
-    )
+    answer = _save_answer(db, attempt, question, payload.selected_answer)
     db.commit()
     db.refresh(answer)
 
@@ -424,15 +600,21 @@ def save_answer(
 
 
 @router.post(
-    "/attempts/{attempt_id}/submit",
+    "/{mock_test_ref}/attempts/{attempt_id}/submit",
     response_model=TestResultResponse,
 )
 def submit_attempt(
+    mock_test_ref: str,
     attempt_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    mock_test = _find_mock_test(db, mock_test_ref)
+    if mock_test is None:
+        raise HTTPException(status_code=404, detail="Mock test not found")
     attempt = _find_attempt(db, attempt_id, user)
+    if attempt.mock_test_id != mock_test.id:
+        raise HTTPException(status_code=404, detail="Attempt not found for this mock test")
     if attempt.status == "in_progress":
         _grade_attempt(db, attempt)
         db.commit()
@@ -440,15 +622,21 @@ def submit_attempt(
 
 
 @router.get(
-    "/attempts/{attempt_id}/result",
+    "/{mock_test_ref}/attempts/{attempt_id}/result",
     response_model=TestResultResponse,
 )
 def get_attempt_result(
+    mock_test_ref: str,
     attempt_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    mock_test = _find_mock_test(db, mock_test_ref)
+    if mock_test is None:
+        raise HTTPException(status_code=404, detail="Mock test not found")
     attempt = _find_attempt(db, attempt_id, user)
+    if attempt.mock_test_id != mock_test.id:
+        raise HTTPException(status_code=404, detail="Attempt not found for this mock test")
     _finalize_if_expired(db, attempt)
     if attempt.status != "submitted":
         raise HTTPException(
@@ -489,6 +677,115 @@ def _build_result(attempt: TestAttempt, db: Session) -> TestResultResponse:
                 marks_awarded=grade_by_question.get(q.id, (None, None))[1],
                 correct_answer=q.correct_answer,
                 explanation=q.explanation,
+            )
+            for q in questions
+        ],
+    )
+
+
+@router.get(
+    "/admin/all",
+    response_model=list[MockTestResponse],
+    dependencies=[Depends(require_role(*CONTENT_ROLES))],
+)
+def admin_list_mock_tests(
+    exam_id: int | None = None,
+    course_id: int | None = None,
+    subject: str | None = None,
+    difficulty: str | None = None,
+    test_type: str | None = None,
+    is_active: bool | None = None,
+    q: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+):
+    query = (
+        select(MockTest, func.count(TestQuestion.id).label("question_count"))
+        .outerjoin(TestQuestion, TestQuestion.mock_test_id == MockTest.id)
+        .options(selectinload(MockTest.exam), selectinload(MockTest.course))
+    )
+    if exam_id:
+        query = query.where(MockTest.exam_id == exam_id)
+    if course_id:
+        query = query.where(MockTest.course_id == course_id)
+    if subject:
+        query = query.where(MockTest.subject == subject)
+    if difficulty:
+        query = query.where(MockTest.difficulty == difficulty)
+    if test_type:
+        query = query.where(MockTest.test_type == test_type)
+    if is_active is not None:
+        query = query.where(MockTest.is_active == is_active)
+    if q:
+        term = f"%{q.strip()}%"
+        query = query.where(MockTest.name.ilike(term))
+
+    rows = db.execute(
+        query.group_by(MockTest.id).order_by(MockTest.name).limit(limit).offset(offset)
+    ).all()
+    return [_to_response(m, count) for m, count in rows]
+
+
+@router.get(
+    "/admin/all/{mock_test_ref}",
+    response_model=MockTestAdminDetailResponse,
+    dependencies=[Depends(require_role(*CONTENT_ROLES))],
+)
+def admin_get_mock_test(mock_test_ref: str, db: Session = Depends(get_db)):
+    mock_test = _find_mock_test_admin(db, mock_test_ref)
+    if mock_test is None:
+        raise HTTPException(status_code=404, detail="Mock test not found")
+
+    questions = db.scalars(
+        select(TestQuestion)
+        .where(TestQuestion.mock_test_id == mock_test.id)
+        .order_by(TestQuestion.sort_order, TestQuestion.id)
+    ).all()
+
+    attempt_count = db.scalar(
+        select(func.count(TestAttempt.id)).where(
+            TestAttempt.mock_test_id == mock_test.id
+        )
+    )
+
+    return MockTestAdminDetailResponse(
+        id=mock_test.id,
+        name=mock_test.name,
+        slug=mock_test.slug,
+        exam_id=mock_test.exam_id,
+        exam_name=mock_test.exam.name if mock_test.exam else None,
+        course_id=mock_test.course_id,
+        course_name=mock_test.course.name if mock_test.course else None,
+        subject=mock_test.subject,
+        difficulty=mock_test.difficulty,
+        question_type=mock_test.question_type,
+        duration_minutes=mock_test.duration_minutes,
+        total_marks=mock_test.total_marks,
+        negative_marking=mock_test.negative_marking,
+        negative_marks_value=mock_test.negative_marks_value,
+        attempts_allowed=mock_test.attempts_allowed,
+        question_randomization=mock_test.question_randomization,
+        option_randomization=mock_test.option_randomization,
+        instructions=mock_test.instructions,
+        result_visibility=mock_test.result_visibility,
+        test_type=mock_test.test_type,
+        question_count=len(questions),
+        is_active=mock_test.is_active,
+        attempt_count=attempt_count,
+        questions=[
+            AdminQuestionResponse(
+                id=q.id,
+                question_text=q.question_text,
+                question_type=q.question_type,
+                options=q.options,
+                correct_answer=q.correct_answer,
+                marks=q.marks,
+                negative_marks=q.negative_marks,
+                difficulty=q.difficulty,
+                explanation=q.explanation,
+                sort_order=q.sort_order,
+                is_active=q.is_active,
             )
             for q in questions
         ],

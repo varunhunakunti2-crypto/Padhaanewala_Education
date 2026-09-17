@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from app.database import SessionLocal
 from app.main import app
-from app.models import MockTest, TestQuestion
+from app.models import MockTest, Role, TestQuestion, User
 
 client = TestClient(app)
 
@@ -120,7 +120,7 @@ def test_full_attempt_flow():
         q1, q2, q3 = [q["id"] for q in body["questions"]]
 
         correct = client.put(
-            f"/api/v1/mock-tests/attempts/{attempt_id}/answers/{q1}",
+            f"/api/v1/mock-tests/{mock_test.slug}/attempts/{attempt_id}/answers/{q1}",
             json={"selected_answer": "A"},
             headers=headers,
         )
@@ -129,7 +129,7 @@ def test_full_attempt_flow():
         assert float(correct.json()["marks_awarded"]) == 2
 
         wrong = client.put(
-            f"/api/v1/mock-tests/attempts/{attempt_id}/answers/{q2}",
+            f"/api/v1/mock-tests/{mock_test.slug}/attempts/{attempt_id}/answers/{q2}",
             json={"selected_answer": "B"},
             headers=headers,
         )
@@ -144,7 +144,7 @@ def test_full_attempt_flow():
             assert "correct_answer" not in q
 
         submit = client.post(
-            f"/api/v1/mock-tests/attempts/{attempt_id}/submit",
+            f"/api/v1/mock-tests/{mock_test.slug}/attempts/{attempt_id}/submit",
             headers=headers,
         )
         assert submit.status_code == 200, submit.text
@@ -163,7 +163,7 @@ def test_full_attempt_flow():
         assert q1_result["explanation"] == "Explanation 1"
 
         result_again = client.get(
-            f"/api/v1/mock-tests/attempts/{attempt_id}/result",
+            f"/api/v1/mock-tests/{mock_test.slug}/attempts/{attempt_id}/result",
             headers=headers,
         )
         assert result_again.status_code == 200
@@ -183,7 +183,7 @@ def test_result_before_submit_rejected():
         ).json()
         attempt_id = start["attempt"]["id"]
         response = client.get(
-            f"/api/v1/mock-tests/attempts/{attempt_id}/result",
+            f"/api/v1/mock-tests/{mock_test.slug}/attempts/{attempt_id}/result",
             headers=headers,
         )
         assert response.status_code == 400
@@ -205,7 +205,7 @@ def test_attempt_limit_enforced():
         first_attempt = first.json()["attempt"]["id"]
 
         client.post(
-            f"/api/v1/mock-tests/attempts/{first_attempt}/submit",
+            f"/api/v1/mock-tests/{mock_test.slug}/attempts/{first_attempt}/submit",
             headers=headers,
         )
 
@@ -241,13 +241,13 @@ def test_attempt_ownership_enforced():
 
         intruder_headers = _auth_headers(intruder["access_token"])
         response = client.get(
-            f"/api/v1/mock-tests/attempts/{attempt_id}",
+            f"/api/v1/mock-tests/{mock_test.slug}/attempts/{attempt_id}",
             headers=intruder_headers,
         )
         assert response.status_code == 403
 
         submit = client.post(
-            f"/api/v1/mock-tests/attempts/{attempt_id}/submit",
+            f"/api/v1/mock-tests/{mock_test.slug}/attempts/{attempt_id}/submit",
             headers=intruder_headers,
         )
         assert submit.status_code == 403
@@ -276,7 +276,7 @@ def test_save_answer_not_your_question():
             ).id
 
         response = client.put(
-            f"/api/v1/mock-tests/attempts/{attempt_id}/answers/{other_qid}",
+            f"/api/v1/mock-tests/{mock_test.slug}/attempts/{attempt_id}/answers/{other_qid}",
             json={"selected_answer": "A"},
             headers=headers,
         )
@@ -284,3 +284,229 @@ def test_save_answer_not_your_question():
     finally:
         _cleanup(mock_test.id)
         _cleanup(other.id)
+
+
+def test_submit_endpoint_bulk_flow():
+    mock_test = _create_mock_test(attempts_allowed=2)
+    try:
+        user = _register_user()
+        headers = _auth_headers(user["access_token"])
+
+        question_bank = client.get(
+            f"/api/v1/mock-tests/{mock_test.slug}/questions"
+        ).json()
+        assert len(question_bank) == 3
+        q1, q2, q3 = [q["id"] for q in question_bank]
+
+        submit = client.post(
+            f"/api/v1/mock-tests/{mock_test.slug}/submit",
+            json={
+                "answers": [
+                    {"question_id": q1, "selected_answer": "A"},
+                    {"question_id": q2, "selected_answer": "B"},
+                ]
+            },
+            headers=headers,
+        )
+        assert submit.status_code == 200, submit.text
+        result = submit.json()
+        assert result["attempt"]["status"] == "submitted"
+        assert result["attempt"]["correct_count"] == 1
+        assert result["attempt"]["incorrect_count"] == 1
+        assert result["attempt"]["unanswered_count"] == 1
+        assert float(result["attempt"]["score"]) == 2
+        assert float(result["attempt"]["total_marks"]) == 6
+        assert float(result["attempt"]["percentage"]) == 33.33
+        assert len(result["questions"]) == 3
+        q1_result = next(q for q in result["questions"] if q["id"] == q1)
+        assert q1_result["is_correct"] is True
+        assert q1_result["correct_answer"] == "A"
+        assert q1_result["explanation"] == "Explanation 1"
+
+        attempts = client.get(
+            f"/api/v1/mock-tests/{mock_test.slug}/attempts",
+            headers=headers,
+        )
+        assert attempts.status_code == 200
+        assert len(attempts.json()) == 1
+        assert attempts.json()[0]["status"] == "submitted"
+    finally:
+        _cleanup(mock_test.id)
+
+
+def test_submit_endpoint_uses_in_progress_attempt():
+    mock_test = _create_mock_test(attempts_allowed=3)
+    try:
+        user = _register_user()
+        headers = _auth_headers(user["access_token"])
+
+        start = client.post(
+            f"/api/v1/mock-tests/{mock_test.slug}/start",
+            headers=headers,
+        ).json()
+        attempt_id = start["attempt"]["id"]
+        q1, q2, q3 = [q["id"] for q in start["questions"]]
+
+        client.put(
+            f"/api/v1/mock-tests/{mock_test.slug}/attempts/{attempt_id}/answers/{q1}",
+            json={"selected_answer": "A"},
+            headers=headers,
+        )
+
+        submit = client.post(
+            f"/api/v1/mock-tests/{mock_test.slug}/submit",
+            json={"answers": [{"question_id": q2, "selected_answer": "B"}]},
+            headers=headers,
+        )
+        assert submit.status_code == 200, submit.text
+        result = submit.json()
+        assert result["attempt"]["id"] == attempt_id
+        assert result["attempt"]["correct_count"] == 1
+        assert result["attempt"]["incorrect_count"] == 1
+        assert float(result["attempt"]["score"]) == 2
+
+        attempts = client.get(
+            f"/api/v1/mock-tests/{mock_test.slug}/attempts",
+            headers=headers,
+        ).json()
+        assert len(attempts) == 1
+    finally:
+        _cleanup(mock_test.id)
+
+
+def test_submit_endpoint_invalid_question():
+    mock_test = _create_mock_test()
+    try:
+        user = _register_user()
+        headers = _auth_headers(user["access_token"])
+        question_bank = client.get(
+            f"/api/v1/mock-tests/{mock_test.slug}/questions"
+        ).json()
+        q1 = question_bank[0]["id"]
+
+        response = client.post(
+            f"/api/v1/mock-tests/{mock_test.slug}/submit",
+            json={
+                "answers": [
+                    {"question_id": q1, "selected_answer": "A"},
+                    {"question_id": 987654321, "selected_answer": "B"},
+                ]
+            },
+            headers=headers,
+        )
+        assert response.status_code == 404
+    finally:
+        _cleanup(mock_test.id)
+
+
+def test_submit_endpoint_resubmit_rejected():
+    mock_test = _create_mock_test(attempts_allowed=2)
+    try:
+        user = _register_user()
+        headers = _auth_headers(user["access_token"])
+        question_bank = client.get(
+            f"/api/v1/mock-tests/{mock_test.slug}/questions"
+        ).json()
+        answers = {"answers": [{"question_id": q["id"], "selected_answer": "A"} for q in question_bank]}
+
+        first = client.post(
+            f"/api/v1/mock-tests/{mock_test.slug}/submit",
+            json=answers,
+            headers=headers,
+        )
+        assert first.status_code == 200
+
+        second = client.post(
+            f"/api/v1/mock-tests/{mock_test.slug}/submit",
+            json=answers,
+            headers=headers,
+        )
+        assert second.status_code == 400
+        assert "already submitted" in second.json()["detail"]
+    finally:
+        _cleanup(mock_test.id)
+
+
+def _make_admin(email: str) -> None:
+    with SessionLocal() as db:
+        role = db.scalar(select(Role).where(Role.name == "admin"))
+        if role is None:
+            role = Role(name="admin", description="Seed role: admin")
+            db.add(role)
+            db.flush()
+        user = db.scalar(select(User).where(User.email == email))
+        user.roles.append(role)
+        db.commit()
+
+
+def test_admin_endpoints():
+    mock_test = _create_mock_test()
+    try:
+        regular = _register_user()
+        headers = _auth_headers(regular["access_token"])
+        forbidden = client.get("/api/v1/mock-tests/admin/all", headers=headers)
+        assert forbidden.status_code == 403
+
+        admin = _register_user()
+        _make_admin(admin["email"])
+        admin_headers = _auth_headers(admin["access_token"])
+
+        listing = client.get("/api/v1/mock-tests/admin/all", headers=admin_headers)
+        assert listing.status_code == 200, listing.text
+        assert any(t["slug"] == mock_test.slug for t in listing.json())
+
+        detail = client.get(
+            f"/api/v1/mock-tests/admin/all/{mock_test.slug}",
+            headers=admin_headers,
+        )
+        assert detail.status_code == 200, detail.text
+        body = detail.json()
+        assert body["slug"] == mock_test.slug
+        assert len(body["questions"]) == 3
+        assert body["attempt_count"] == 0
+        for q in body["questions"]:
+            assert q["correct_answer"] == "A"
+            assert q["explanation"] == f"Explanation {q['sort_order']}"
+
+        inactive = client.get(
+            "/api/v1/mock-tests/admin/all",
+            params={"is_active": False},
+            headers=admin_headers,
+        )
+        assert inactive.status_code == 200
+    finally:
+        _cleanup(mock_test.id)
+
+
+def test_attempt_detail_nested_path():
+    mock_test = _create_mock_test()
+    try:
+        user = _register_user()
+        headers = _auth_headers(user["access_token"])
+        start = client.post(
+            f"/api/v1/mock-tests/{mock_test.slug}/start",
+            headers=headers,
+        ).json()
+        attempt_id = start["attempt"]["id"]
+
+        detail = client.get(
+            f"/api/v1/mock-tests/{mock_test.slug}/attempts/{attempt_id}",
+            headers=headers,
+        )
+        assert detail.status_code == 200, detail.text
+        assert detail.json()["attempt"]["id"] == attempt_id
+        assert len(detail.json()["questions"]) == 3
+        for q in detail.json()["questions"]:
+            assert "correct_answer" not in q
+
+        other_test = _create_mock_test()
+        try:
+            wrong = client.get(
+                f"/api/v1/mock-tests/{other_test.slug}/attempts/{attempt_id}",
+                headers=headers,
+            )
+            assert wrong.status_code == 404
+        finally:
+            _cleanup(other_test.id)
+    finally:
+        _cleanup(mock_test.id)

@@ -41,6 +41,7 @@ class UniversityResponse(BaseModel):
     type: str
     is_deemed: bool
     website: str | None
+    is_active: bool = True
 
     model_config = {"from_attributes": True}
 
@@ -316,6 +317,15 @@ class SaveAnswerRequest(BaseModel):
     selected_answer: str | None = None
 
 
+class AnswerSubmission(BaseModel):
+    question_id: int
+    selected_answer: str | None = None
+
+
+class SubmitAttemptRequest(BaseModel):
+    answers: list[AnswerSubmission] = []
+
+
 class AttemptDetailResponse(BaseModel):
     attempt: TestAttemptResponse
     questions: list[AttemptQuestionResponse]
@@ -324,6 +334,161 @@ class AttemptDetailResponse(BaseModel):
 class TestResultResponse(BaseModel):
     attempt: TestAttemptResponse
     questions: list[ResultQuestionResponse]
+
+
+class AdminQuestionResponse(BaseModel):
+    id: int
+    question_text: str
+    question_type: str
+    options: list | None
+    correct_answer: str | None = None
+    marks: Decimal
+    negative_marks: Decimal
+    difficulty: str
+    explanation: str | None = None
+    sort_order: int
+    is_active: bool
+
+    model_config = {"from_attributes": True}
+
+
+class MockTestAdminDetailResponse(MockTestResponse):
+    attempt_count: int = 0
+    questions: list[AdminQuestionResponse] = []
+
+
+class ExamCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=255)
+    conducting_authority: str = Field(min_length=2, max_length=255)
+    exam_type: str = Field(default="national", max_length=50)
+    eligibility: str | None = None
+    application_start_date: date | None = None
+    application_deadline: date | None = None
+    exam_date: date | None = None
+    admit_card_date: date | None = None
+    result_date: date | None = None
+    official_website: str | None = None
+    official_notification: str | None = None
+    syllabus: dict | None = None
+    faqs: list | None = None
+    is_active: bool = True
+
+
+class ExamUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=255)
+    conducting_authority: str | None = Field(default=None, min_length=2, max_length=255)
+    exam_type: str | None = Field(default=None, max_length=50)
+    eligibility: str | None = None
+    application_start_date: date | None = None
+    application_deadline: date | None = None
+    exam_date: date | None = None
+    admit_card_date: date | None = None
+    result_date: date | None = None
+    official_website: str | None = None
+    official_notification: str | None = None
+    syllabus: dict | None = None
+    faqs: list | None = None
+    is_active: bool | None = None
+
+
+class UniversityCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=255)
+    state_id: int | None = None
+    city: str | None = Field(default=None, max_length=100)
+    type: str = Field(default="university", max_length=50)
+    is_deemed: bool = False
+    website: str | None = None
+    is_active: bool = True
+
+
+class UniversityUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=255)
+    state_id: int | None = None
+    city: str | None = Field(default=None, max_length=100)
+    type: str | None = Field(default=None, max_length=50)
+    is_deemed: bool | None = None
+    website: str | None = None
+    is_active: bool | None = None
+
+
+class ScholarshipCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=255)
+    provider: str = Field(min_length=2, max_length=255)
+    ownership: str = Field(default="government", max_length=20)
+    eligibility: str | None = None
+    state_id: int | None = None
+    course: str | None = Field(default=None, max_length=255)
+    category: str | None = Field(default=None, max_length=100)
+    income_criteria: str | None = Field(default=None, max_length=255)
+    amount: str | None = Field(default=None, max_length=255)
+    application_deadline: date | None = None
+    documents_required: list | None = None
+    application_procedure: str | None = None
+    official_website: str | None = None
+    verification_status: str = Field(default="unverified", max_length=20)
+    last_verified_date: date | None = None
+    next_verification_date: date | None = None
+    is_active: bool = True
+
+
+class ScholarshipUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=255)
+    provider: str | None = Field(default=None, min_length=2, max_length=255)
+    ownership: str | None = Field(default=None, max_length=20)
+    eligibility: str | None = None
+    state_id: int | None = None
+    course: str | None = Field(default=None, max_length=255)
+    category: str | None = Field(default=None, max_length=100)
+    income_criteria: str | None = Field(default=None, max_length=255)
+    amount: str | None = Field(default=None, max_length=255)
+    application_deadline: date | None = None
+    documents_required: list | None = None
+    application_procedure: str | None = None
+    official_website: str | None = None
+    verification_status: str | None = Field(default=None, max_length=20)
+    last_verified_date: date | None = None
+    next_verification_date: date | None = None
+    is_active: bool | None = None
+
+
+class MockTestCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=255)
+    exam_id: int | None = None
+    course_id: int | None = None
+    subject: str | None = Field(default=None, max_length=100)
+    difficulty: str = Field(default="medium", max_length=20)
+    question_type: str = Field(default="mcq", max_length=20)
+    duration_minutes: int = Field(default=60, ge=1)
+    total_marks: Decimal = Field(default=Decimal("0"))
+    negative_marking: bool = False
+    negative_marks_value: Decimal = Field(default=Decimal("0"))
+    attempts_allowed: int = Field(default=1, ge=0)
+    question_randomization: bool = False
+    option_randomization: bool = False
+    instructions: str | None = None
+    result_visibility: str = Field(default="immediate", max_length=20)
+    test_type: str = Field(default="standard", max_length=20)
+    is_active: bool = True
+
+
+class MockTestUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=255)
+    exam_id: int | None = None
+    course_id: int | None = None
+    subject: str | None = Field(default=None, max_length=100)
+    difficulty: str | None = Field(default=None, max_length=20)
+    question_type: str | None = Field(default=None, max_length=20)
+    duration_minutes: int | None = Field(default=None, ge=1)
+    total_marks: Decimal | None = None
+    negative_marking: bool | None = None
+    negative_marks_value: Decimal | None = None
+    attempts_allowed: int | None = Field(default=None, ge=0)
+    question_randomization: bool | None = None
+    option_randomization: bool | None = None
+    instructions: str | None = None
+    result_visibility: str | None = Field(default=None, max_length=20)
+    test_type: str | None = Field(default=None, max_length=20)
+    is_active: bool | None = None
 
 
 class EnquiryCreate(BaseModel):

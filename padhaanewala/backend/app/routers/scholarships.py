@@ -1,3 +1,4 @@
+import re
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -5,10 +6,19 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
+from app.dependencies import require_role
 from app.models import Scholarship
-from app.schemas.catalog import ScholarshipResponse
+from app.schemas.catalog import (
+    ScholarshipCreate,
+    ScholarshipResponse,
+    ScholarshipUpdate,
+)
 
 router = APIRouter(prefix="/api/v1/scholarships", tags=["scholarships"])
+
+
+def _slugify(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", text.strip().lower()).strip("-")
 
 
 def _to_response(scholarship: Scholarship) -> ScholarshipResponse:
@@ -89,3 +99,75 @@ def get_scholarship(scholarship_ref: str, db: Session = Depends(get_db)):
     if scholarship is None:
         raise HTTPException(status_code=404, detail="Scholarship not found")
     return _to_response(scholarship)
+
+
+def _find_scholarship(db: Session, ref: str) -> Scholarship | None:
+    cond = (
+        Scholarship.id == int(ref)
+        if ref.isdigit()
+        else Scholarship.slug == ref
+    )
+    return db.scalar(select(Scholarship).where(cond))
+
+
+@router.post(
+    "",
+    response_model=ScholarshipResponse,
+    status_code=201,
+    dependencies=[Depends(require_role("admin", "super_admin", "content_manager"))],
+)
+def create_scholarship(payload: ScholarshipCreate, db: Session = Depends(get_db)):
+    slug = _slugify(payload.name)
+    if db.scalar(select(Scholarship).where(Scholarship.slug == slug)):
+        raise HTTPException(status_code=400, detail="Scholarship with this name exists")
+    scholarship = Scholarship(
+        **payload.model_dump(exclude={"name"}), name=payload.name, slug=slug
+    )
+    db.add(scholarship)
+    db.commit()
+    db.refresh(scholarship)
+    return _to_response(scholarship)
+
+
+@router.put(
+    "/{scholarship_ref}",
+    response_model=ScholarshipResponse,
+    dependencies=[Depends(require_role("admin", "super_admin", "content_manager"))],
+)
+def update_scholarship(
+    scholarship_ref: str, payload: ScholarshipUpdate, db: Session = Depends(get_db)
+):
+    scholarship = _find_scholarship(db, scholarship_ref)
+    if scholarship is None:
+        raise HTTPException(status_code=404, detail="Scholarship not found")
+
+    data = payload.model_dump(exclude_unset=True)
+    if "name" in data and data["name"] != scholarship.name:
+        slug = _slugify(data["name"])
+        if db.scalar(
+            select(Scholarship).where(
+                Scholarship.slug == slug, Scholarship.id != scholarship.id
+            )
+        ):
+            raise HTTPException(
+                status_code=400, detail="Scholarship with this name exists"
+            )
+        scholarship.slug = slug
+    for field, value in data.items():
+        setattr(scholarship, field, value)
+    db.commit()
+    db.refresh(scholarship)
+    return _to_response(scholarship)
+
+
+@router.delete(
+    "/{scholarship_ref}",
+    status_code=204,
+    dependencies=[Depends(require_role("admin", "super_admin"))],
+)
+def delete_scholarship(scholarship_ref: str, db: Session = Depends(get_db)):
+    scholarship = _find_scholarship(db, scholarship_ref)
+    if scholarship is None:
+        raise HTTPException(status_code=404, detail="Scholarship not found")
+    db.delete(scholarship)
+    db.commit()

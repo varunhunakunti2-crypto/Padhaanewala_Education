@@ -110,7 +110,13 @@ def search(
 
 
 @router.get("/{college_ref}/courses", response_model=list[CollegeCourseResponse])
-def get_college_courses(college_ref: str, db: Session = Depends(get_db)):
+def get_college_courses(
+    college_ref: str,
+    course_id: int | None = None,
+    q: str | None = None,
+    include_inactive: bool = False,
+    db: Session = Depends(get_db),
+):
     college = db.scalar(
         select(College).where(
             College.is_active,
@@ -124,11 +130,26 @@ def get_college_courses(college_ref: str, db: Session = Depends(get_db)):
     if college is None:
         raise HTTPException(status_code=404, detail="College not found")
 
-    college_courses = db.scalars(
+    conditions = [CollegeCourse.college_id == college.id]
+    if not include_inactive:
+        conditions.append(CollegeCourse.is_active.is_(True))
+    if course_id is not None:
+        conditions.append(CollegeCourse.course_id == course_id)
+
+    query = (
         select(CollegeCourse)
         .options(selectinload(CollegeCourse.course))
-        .where(CollegeCourse.college_id == college.id, CollegeCourse.is_active)
-    ).all()
+        .where(*conditions)
+    )
+    if q is not None:
+        term = f"%{q.strip()}%"
+        query = (
+            query.join(Course, Course.id == CollegeCourse.course_id)
+            .where(Course.name.ilike(term))
+            .distinct()
+        )
+
+    college_courses = db.scalars(query.order_by(CollegeCourse.id)).all()
     return [
         CollegeCourseResponse(
             id=cc.id,
