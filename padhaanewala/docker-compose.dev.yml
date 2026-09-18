@@ -1,7 +1,8 @@
-version: '3.8'
 services:
   db:
-    image: postgres:15
+    build:
+      context: ./docker/db
+    image: padhaanewala-db:dev
     environment:
       POSTGRES_DB: padhaanewala_dev
       POSTGRES_USER: padhaanewala
