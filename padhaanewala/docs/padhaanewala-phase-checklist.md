@@ -3,16 +3,19 @@ Generated from: `padhaanewala-complete.md` (Master Plan V5.0)
 
 ## STATUS UPDATE — Last reviewed: 13 September 2026 (re-verified against project code)
 
-**Current progress: 3 of 105 phases completed — Phase 1 ✅ (gate PASSED), Phase 8 ✅ (backend complete), Phase 11 ✅ (College CRUD API verified).** Backend models + migration chain now cover Phases 2, 4–11 (users/auth/roles, locations, universities, colleges/courses/fees, scholarships/exams, reviews/blogs/FAQs/media/SEO/notifications/audit/banners, mock tests/questions, enquiries/leads/saved/consent, placement/NIRF/cutoff/seat matrix). Frontend static pages now cover home, listing + detail pages for colleges/courses/scholarships/exams/blog/mock-tests, college predictor, compare, login UI, about/contact/privacy/terms static pages + Jobhire landing — **every known route renders (no 404s)**.
+**Current progress: 4 of 105 phases completed — Phase 1 ✅ (gate PASSED), Phase 2 ✅ (Users/Auth/Roles backend + tests), Phase 8 ✅ (backend complete), Phase 11 ✅ (College CRUD API verified).** Backend models + migration chain now cover Phases 2, 4–11 (users/auth/roles, locations, universities, colleges/courses/fees, scholarships/exams, reviews/blogs/FAQs/media/SEO/notifications/audit/banners, mock tests/questions, enquiries/leads/saved/consent, placement/NIRF/cutoff/seat matrix). Frontend static pages now cover home, listing + detail pages for colleges/courses/scholarships/exams/blog/mock-tests, college predictor, compare, login UI, about/contact/privacy/terms static pages + Jobhire landing — **every known route renders (no 404s)**. Frontend got a premium UX pass (`daa1ac2`): shared reveal/stagger motion, reduced-motion support, mobile sticky counselling CTA, a **live lead form on `/contact` wired to the Phase 9 enquiry API**, plus `robots.ts`, `sitemap.xml` and Organization JSON-LD.
 
 > Re-verified 11 Sep 2026: Docker stack live (PostgreSQL 15 on host port 5433 + Redis 7). Homepage built with placeholder data (API-swap later). **Discovery:** `origin/develop` already contained Phase 2/4/6 code (users/auth/roles `bbe7820`, locations/universities/colleges/courses/fees/scholarships/exams `605b88f`, test fix `bce279f`). Migrations applied to live Docker PG (head `63603ea2106d`), seeds run (36 states/755 districts/105 cities, 155 universities, 14 roles, 20 courses/10 colleges, 6 exams, 6 scholarships), and **Phase 11 verified: 37/37 backend tests green + live CRUD smoke test** (fixes: `ErrorDetail` ordering in `schemas/common.py`; Bengaluru city district mapping in `seed_locations.py`).
 
-> Re-verified 12 Sep 2026: backend grew 4 migrations + 10 routers + 2 test files; frontend grew 4 routes. Suite is now **52 tests** (auth 14 / catalog 23 / content 15). **Docker Desktop was NOT running at last review** — the 4 new migrations (`4e7270c87f0c` mock tests/questions, `2ce8d337ae09` content & engagement, `8cc76261fbc7` enquiries/leads/saved/consent, `68d5258b08f1` placement/NIRF/cutoff/seat matrix) and the full 52-test suite still need to be applied/re-run against the live Docker PG before Block B/C gates are declared PASSED.
+> Re-verified 12 Sep 2026: backend grew 4 migrations + 10 routers + 2 test files; frontend grew 4 routes. Suite was **52 tests** (auth 14 / catalog 23 / content 15). **Docker Desktop was NOT running at last review** — the 4 new migrations (`4e7270c87f0c` mock tests/questions, `2ce8d337ae09` content & engagement, `8cc76261fbc7` enquiries/leads/saved/consent, `68d5258b08f1` placement/NIRF/cutoff/seat matrix) and the full suite still needed to be applied/re-run live.
+
+> Re-verified 13 Sep 2026 (backend, live PG): Docker is down, so a dedicated **`.env.test`** was added pointing at the **native Windows PostgreSQL 16 (port 5432, `padhaanewala_test` DB)**. Fresh schema → all 8 Alembic migrations applied → all seeds run (36 states / 755 districts / 105 cities, 155 universities, 14 roles, 20 courses + 10 colleges, 6 scholarships, 6 exams). **Phase 2 (auth) completed + tested: 70/70 backend tests green on the live database** — this clears the previously-pending "run full suite against live DB" checklist item.
 
 ### Completed so far
 - ☑ **M1 (GitHub account)** — private repo `Padhaanewala_Education` created, connected, code pushed. Other accounts (AWS, OpenAI, MSG91, SendGrid, Sentry, Cloudflare, GA4, Search Console) **PENDING**.
 - ☑ **M3 (Developer engaged)** — developer working; master doc handed over; repo `main` + `develop` branches active.
 - ✅ **Phase 1 (Setup Environment) — COMPLETE — Completion Gate PASSED (11 Sep 2026)**
+- ✅ **Phase 2 (Users, Auth, Roles) — COMPLETE — 13 Sep 2026** (register/login/refresh/logout, profile + change-password, roles list, admin user & role management with RBAC, email normalization; verified end-to-end on live PostgreSQL)
 - ✅ **Phase 11 (College CRUD API) — COMPLETE — verified 11 Sep 2026** (full list/filter/search/detail + admin create/update/delete with RBAC; 37/37 backend tests green against live Docker PG; bug fixes: `ErrorDetail` ordering, Bengaluru city district seed mapping)
 - ✅ **Phase 8 (Reviews, Blogs, FAQs, Media, SEO, Notifications, Audit) — BACKEND COMPLETE — 11–12 Sep 2026** (models `d1c6f8a`, routers `0a9decf`; 15 content tests on `develop`; frontend surface deferred to Blocks E/H)
 
@@ -51,6 +54,17 @@ Generated from: `padhaanewala-complete.md` (Master Plan V5.0)
 - ✅ **Floating AI chat assistant widget** — `AIFloatingAssistant.tsx` on all site pages (rule-based Q&A over local data; real AI swap at Phase 41).
 - ✅ **Pricing page** built (static tiers). `next build` + ESLint pass against Next.js 16.3.4 (project already on Next 16 / React 19 / Tailwind 4).
 - ℹ️ Frontend remains a high-fidelity static prototype on `src/data/*.ts` — real API-swap happens at each page's actual phase (16/17/19/20/21/42/65).
+
+### 13 September 2026 (later, `daa1ac2`) — premium UX upgrade: animations, lead form, SEO (no phase gates passed, dev prep for Blocks D/F + Phase 26)
+- ✅ **Shared motion system** — `src/components/motion.tsx` (`Reveal`, `StaggerGroup`, `StaggerItem`) with one easing/duration token set; scroll reveals are `once: true`, transform/opacity only, negative viewport margin. **No new animation library added** (reused existing `framer-motion`).
+- ✅ **Reduced-motion respected globally** — `<MotionConfig reducedMotion="user">` in `(site)/layout.tsx` disables transform animations for users who request it (Framer) + CSS smooth-scroll gated on `prefers-reduced-motion`.
+- ✅ **Hero entrance + trust strip** — staggered fade/rise for badge → H1 → subcopy → search → CTAs; white legibility overlay on hero image; "1,000+ verified colleges · 100+ scholarships · Free admission counselling" trust row.
+- ✅ **Section/card staggers** — popular courses, featured colleges, scholarships, exams, mock tests, why-us, latest articles grids now reveal with ~80ms card stagger; footer entrance; header active-link highlight (`aria-current`) + keyboard focus rings.
+- ✅ **Lead capture (Phase 26 surface → wired to Phase 9 backend)** — new `ContactForm.tsx` on `/contact` posts to existing `POST /api/v1/enquiries` (name/mobile required, email optional, interest/message, UTMs, device, honeypot spam bait); validation, inline errors, success + error states with WhatsApp/email fallbacks; trust badges; **WhatsApp number unified** across the site.
+- ✅ **Mobile sticky counselling CTA** — `StickyCta.tsx`, mobile-only pill ("Get Free Counselling" → `/contact`) appears after hero scroll, hides near page bottom.
+- ✅ **SEO/technical** — `robots.ts`, `sitemap.xml` (89 URLs incl. dynamic detail pages), `Organization` JSON-LD in layout head, `metadataBase`, Twitter + OG locale metadata, `robots: index/follow`; SSR HTML keeps visible headings/copy (content not hidden behind animation).
+- ✅ **Accessibility/performance** — global keyboard `:focus-visible` outline, brand `::selection`, lazy `img` decoding on review avatars, cards fill grid rows (`h-full`). `next build` + ESLint + `tsc` pass; smoke-tested `/`, `/contact`, `/colleges`, `/sitemap.xml`, `/robots.txt` all HTTP 200.
+- ℹ️ Contact form needs the FastAPI backend reachable (API base from `NEXT_PUBLIC_API_BASE_URL`); gracefully suggests WhatsApp/email if the API is down. WhatsApp number is still a placeholder (`919000000000`) — client must supply the real number.
 
 ### 11–12 September 2026 — backend Phase 7/8/9/10 models + migrations, Phase 8 routers, 52-test suite
 - ✅ **Phase 8 routers + tests** (`0a9decf`) — reviews (submit + admin moderation + moderation queue), blog (categories + CRUD), FAQs (CRUD), media (CRUD), SEO (entity-scoped upsert/list), notifications (per-user inbox, unread count, mark read/all), audit logs (admin list), banners (CRUD) — all RBAC-guarded; 15 content tests in `tests/test_content.py`.
@@ -123,7 +137,7 @@ Generated from: `padhaanewala-complete.md` (Master Plan V5.0)
 ### BLOCK B — Database Layer 1 (Phases 2–10)
 | # | Phase | Mandatory before | Done |
 |---|---|---|---|
-| 2 | Users, Auth, Roles [DEV] | Phase 1 | ☐ |
+| 2 | Users, Auth, Roles [DEV] | Phase 1 | ✅ **COMPLETE 13 Sep 2026** — register/login/refresh/logout, profile + change-password, roles list, admin user list/search/detail + activate/deactivate + role assignment (`require_role` RBAC), email-normalization hardening; suite now **70 tests** green on live PG (see 13 Sep status) |
 | 3 | Email, SMS, OTP [BOTH] | Phase 2 + **M1 (MSG91 + SendGrid/SES credentials BEFORE developer starts)** | ☐ |  this is paid 
 | 4 | States, Districts, Universities [DEV] | Phase 1 (*parallel* with 2, 3) | ☐ |
 | 5 | Colleges, Courses, Fees [DEV] | Phase 4 (college → state/district/university FK) | ☐ |

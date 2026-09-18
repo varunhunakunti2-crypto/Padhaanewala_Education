@@ -11,6 +11,11 @@ class RegisterRequest(BaseModel):
     mobile: str = Field(..., min_length=10, max_length=15)
     password: str = Field(..., min_length=8, max_length=128)
 
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        return value.strip().lower() if isinstance(value, str) else value
+
     @field_validator("mobile")
     @classmethod
     def validate_mobile(cls, value: str) -> str:
@@ -23,6 +28,11 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        return value.strip().lower() if isinstance(value, str) else value
 
 
 class RefreshRequest(BaseModel):
@@ -79,3 +89,32 @@ class UpdateProfileResponse(ProfileResponse):
 class ChangePasswordRequest(BaseModel):
     current_password: str = Field(..., min_length=1)
     new_password: str = Field(..., min_length=8, max_length=128)
+
+
+class RoleResponse(BaseModel):
+    id: int
+    name: str
+    description: str | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class UserRolesResponse(BaseModel):
+    roles: list[str]
+
+
+class AdminUpdateUserRequest(BaseModel):
+    is_active: bool | None = None
+    role_ids: list[int] | None = None
+
+
+class UserAdminResponse(BaseModel):
+    id: int
+    email: EmailStr
+    mobile: str
+    is_active: bool
+    is_email_verified: bool
+    is_mobile_verified: bool
+    created_at: datetime
+    last_login_at: datetime | None
+    roles: list[str]

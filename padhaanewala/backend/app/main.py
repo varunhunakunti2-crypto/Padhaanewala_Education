@@ -26,6 +26,7 @@ from app.routers import (
     notifications,
     predictor,
     reviews,
+    roles,
     saved_colleges,
     scholarships,
     seo,
@@ -57,6 +58,7 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(users.router)
+app.include_router(roles.router)
 app.include_router(locations.router)
 app.include_router(universities.router)
 app.include_router(colleges.router)
