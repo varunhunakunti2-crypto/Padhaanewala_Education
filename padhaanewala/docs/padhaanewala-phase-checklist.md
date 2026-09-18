@@ -1,7 +1,7 @@
 # PADHAANEWALA — MASTER PHASE CHECKLIST + MANDATORY PREREQUISITES
 Generated from: `padhaanewala-complete.md` (Master Plan V5.0)
 
-## STATUS UPDATE — Last reviewed: 13 September 2026 (re-verified against project code)
+## STATUS UPDATE — Last reviewed: 18 September 2026 (re-verified against project code)
 
 **Current progress: 4 of 105 phases completed — Phase 1 ✅ (gate PASSED), Phase 2 ✅ (Users/Auth/Roles backend + tests), Phase 8 ✅ (backend complete), Phase 11 ✅ (College CRUD API verified).** Backend models + migration chain now cover Phases 2, 4–11 (users/auth/roles, locations, universities, colleges/courses/fees, scholarships/exams, reviews/blogs/FAQs/media/SEO/notifications/audit/banners, mock tests/questions, enquiries/leads/saved/consent, placement/NIRF/cutoff/seat matrix). Frontend static pages now cover home, listing + detail pages for colleges/courses/scholarships/exams/blog/mock-tests, college predictor, compare, login UI, about/contact/privacy/terms static pages + Jobhire landing — **every known route renders (no 404s)**. Frontend got a premium UX pass (`daa1ac2`): shared reveal/stagger motion, reduced-motion support, mobile sticky counselling CTA, a **live lead form on `/contact` wired to the Phase 9 enquiry API**, plus `robots.ts`, `sitemap.xml` and Organization JSON-LD.
 
@@ -10,6 +10,8 @@ Generated from: `padhaanewala-complete.md` (Master Plan V5.0)
 > Re-verified 12 Sep 2026: backend grew 4 migrations + 10 routers + 2 test files; frontend grew 4 routes. Suite was **52 tests** (auth 14 / catalog 23 / content 15). **Docker Desktop was NOT running at last review** — the 4 new migrations (`4e7270c87f0c` mock tests/questions, `2ce8d337ae09` content & engagement, `8cc76261fbc7` enquiries/leads/saved/consent, `68d5258b08f1` placement/NIRF/cutoff/seat matrix) and the full suite still needed to be applied/re-run live.
 
 > Re-verified 13 Sep 2026 (backend, live PG): Docker is down, so a dedicated **`.env.test`** was added pointing at the **native Windows PostgreSQL 16 (port 5432, `padhaanewala_test` DB)**. Fresh schema → all 8 Alembic migrations applied → all seeds run (36 states / 755 districts / 105 cities, 155 universities, 14 roles, 20 courses + 10 colleges, 6 scholarships, 6 exams). **Phase 2 (auth) completed + tested: 70/70 backend tests green on the live database** — this clears the previously-pending "run full suite against live DB" checklist item.
+
+> **Re-verified 18 Sep 2026 (full project re-read, live PG):** no new commits since `003efb4` (13 Sep, working tree clean). Backend re-ran **70/70 tests green** on live native PG (`.env.test`, head `68d5258b08f1`); seed counts re-confirmed in code (36 states / 755 districts in `india_locations.py` with 105 cities DB-seeded, 155 universities, 14 roles, 20 courses / 10 colleges, 6 scholarships, 6 exams). Frontend re-verified: **`next build` succeeds (Next 16.3.4, all 90+ routes incl. sitemap/robots), ESLint + `tsc --noEmit` clean**; on-disk `src/app` routes exactly match the checklist's no-404 list. Docker stack still not running (native PG 5432 + `next dev` on 3000 are the live services). No phase gates passed in this window — Blocks B/C/D/E frontend work remains placeholder-data dev prep as recorded below.
 
 ### Completed so far
 - ☑ **M1 (GitHub account)** — private repo `Padhaanewala_Education` created, connected, code pushed. Other accounts (AWS, OpenAI, MSG91, SendGrid, Sentry, Cloudflare, GA4, Search Console) **PENDING**.
@@ -40,7 +42,7 @@ Generated from: `padhaanewala-complete.md` (Master Plan V5.0)
 ### 12 September 2026 (later, `9bfaebe`) — detail + static pages kill all 404s; backend auth hardening
 - ✅ **Detail pages added** (placeholder data) — `/college/[slug]`, `/courses/[slug]`, `/exams/[slug]`, `/scholarships/[slug]`, `/mock-tests/[slug]`, `/blog/[slug]`; listing pages now link through (Phase 18/19/20/21/42/65 UI surfaces).
 - ✅ **Static pages added** — `/about`, `/contact`, `/privacy-policy`, `/terms-conditions` (M5 legal-page drafts, Phase 65/76+97 surface; copy still placeholder).
-- ✅ **Login page** `/auth/login` — form UI (Phase 15 surface; real flow waits on Phase 2/3 backend enablement).
+- ✅ **Login + Signup pages** `/auth/login`, `/auth/signup` — full forms wired to the **live Phase 2 auth API** (`src/lib/api.ts`: `POST /api/v1/auth/login`, `/register`; token store/clear, inline validation, `?next=` redirect) — Phase 15 UI surface already functional once the FastAPI backend is up.
 - ✅ **Compare page** `/compare` — college comparison UI starter (Phase 24 surface).
 - ✅ **Every route renders** — header/menu wired to all pages; quick-action + home sections extended; no 404 routes remain.
 - ✅ **Backend auth/token hardening** — refresh tokens signed with dedicated `JWT_REFRESH_SECRET_KEY`; optional-bearer dependency (`get_optional_current_user`) so public endpoints hide drafts from non-content users; malformed-`sub` guards on `get_current_user`/refresh; production config guard rejects dev default JWT/DB creds (`PADHAANEWALA_ENV_FILE` env override added); review rating recalc committed properly; profile auto-fills display name; `TestQuestion.__test__ = False` stops pytest collecting the model. No new tests (still 52).
@@ -130,7 +132,7 @@ Generated from: `padhaanewala-complete.md` (Master Plan V5.0)
 ### BLOCK A — Foundation
 | # | Phase | Prerequisites aIready met | Done |
 |---|---|---|---|
-| 1 | Setup Environment [BOTH] | **M1 (GitHub), M3** + Node 18, Python 3.11, Docker, Git, VS Code installed. Domain NOT required yet. | ◐ PARTIAL (~95%) — see Status Update above |
+| 1 | Setup Environment [BOTH] | **M1 (GitHub), M3** + Node 18, Python 3.11, Docker, Git, VS Code installed. Domain NOT required yet. | ✅ **COMPLETE — 11 Sep 2026** (difference to PREREQ table below: live Docker/Redis off; native PG used instead) |
 
 **Completion Gate:** node/python/git/docker verified ✅; private GitHub repo `padhaanewala` ✅; `docker compose up` runs PostgreSQL+Redis ✅; backend `/health` returns OK ✅; frontend loads at localhost:3000 ✅; code pushed to `develop` ✅ (pushed 11 Sep 2026). → **✅ PASSED — Phase 1 COMPLETE.** Phase 2/4/6 code on `develop` has migrations applied to live Docker PG (head `63603ea2106d`); Block B gate (API login + seeding + tests) still to be verified.
 
