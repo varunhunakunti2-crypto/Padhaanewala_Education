@@ -49,7 +49,7 @@ export default async function MockTestDetailPage({ params }: Props) {
               Mock tests
             </Link>{" "}
             /{" "}
-            <Link href="/mock-tests?exam=all" className="hover:text-neutral-900">
+            <Link href="/mock-tests" className="hover:text-neutral-900">
               {test.examName}
             </Link>{" "}
             / <span className="text-neutral-900">{test.name}</span>

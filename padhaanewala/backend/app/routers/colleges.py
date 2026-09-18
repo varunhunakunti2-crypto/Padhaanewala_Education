@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
 from app.dependencies import require_role
-from app.models import College, CollegeCourse, Course
+from app.models import College, CollegeCourse, Course, District
 from app.schemas.catalog import (
     CollegeCourseResponse,
     CollegeCreate,
@@ -301,6 +301,15 @@ def update_college(
         college.slug = slug
     for field, value in data.items():
         setattr(college, field, value)
+    if (
+        "state_id" in data
+        and data["state_id"] is not None
+        and college.district_id is not None
+        and "district_id" not in data
+    ):
+        district = db.get(District, college.district_id)
+        if district is None or district.state_id != college.state_id:
+            college.district_id = None
     db.commit()
     db.refresh(college)
     return _get_detail(college, db)

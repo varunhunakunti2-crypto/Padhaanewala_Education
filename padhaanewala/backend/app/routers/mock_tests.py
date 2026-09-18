@@ -352,6 +352,24 @@ def start_mock_test(
     if mock_test is None:
         raise HTTPException(status_code=404, detail="Mock test not found")
 
+    existing = db.scalars(
+        select(TestAttempt)
+        .where(
+            TestAttempt.mock_test_id == mock_test.id,
+            TestAttempt.user_id == user.id,
+            TestAttempt.status == "in_progress",
+        )
+        .order_by(TestAttempt.started_at.desc())
+    ).all()
+    if existing:
+        expired = False
+        for attempt in existing:
+            if attempt.time_remaining_seconds == 0:
+                _finalize_if_expired(db, attempt)
+                expired = True
+        if expired:
+            db.commit()
+
     used = db.scalar(
         select(func.count(TestAttempt.id)).where(
             TestAttempt.mock_test_id == mock_test.id,
@@ -544,7 +562,7 @@ def get_attempt(
 
 @router.put(
     "/{mock_test_ref}/attempts/{attempt_id}/answers/{question_id}",
-    response_model=ResultQuestionResponse,
+    response_model=AttemptQuestionResponse,
 )
 def save_answer(
     mock_test_ref: str,
@@ -582,20 +600,18 @@ def save_answer(
     db.commit()
     db.refresh(answer)
 
-    return ResultQuestionResponse(
+    return AttemptQuestionResponse(
         id=question.id,
         question_text=question.question_text,
         question_type=question.question_type,
-        options=question.options,
+        options=_shuffled_options(question)
+        if attempt.mock_test.option_randomization
+        else question.options,
         marks=question.marks,
         negative_marks=question.negative_marks,
         difficulty=question.difficulty,
         sort_order=question.sort_order,
         selected_answer=answer.selected_answer,
-        is_correct=answer.is_correct,
-        marks_awarded=answer.marks_awarded,
-        correct_answer=question.correct_answer,
-        explanation=question.explanation,
     )
 
 
@@ -658,6 +674,7 @@ def _build_result(attempt: TestAttempt, db: Session) -> TestResultResponse:
         a.question_id: (a.is_correct, a.marks_awarded)
         for a in answers.values()
     }
+    show_key = attempt.mock_test is not None and attempt.mock_test.result_visibility == "immediate"
     return TestResultResponse(
         attempt=_attempt_view(attempt),
         questions=[
@@ -675,8 +692,8 @@ def _build_result(attempt: TestAttempt, db: Session) -> TestResultResponse:
                 else None,
                 is_correct=grade_by_question.get(q.id, (None, None))[0],
                 marks_awarded=grade_by_question.get(q.id, (None, None))[1],
-                correct_answer=q.correct_answer,
-                explanation=q.explanation,
+                correct_answer=q.correct_answer if show_key else None,
+                explanation=q.explanation if show_key else None,
             )
             for q in questions
         ],

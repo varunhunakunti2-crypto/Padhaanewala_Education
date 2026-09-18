@@ -480,14 +480,14 @@ def delete_placement(
 
 def _to_ranking(
     ranking_type: str,
-    college: College,
+    college: College | None,
     item,
 ) -> RankingResponse:
     return RankingResponse(
         id=item.id,
         ranking_type=ranking_type,
-        college_id=college.id,
-        college_name=college.name,
+        college_id=college.id if college else item.college_id,
+        college_name=college.name if college else None,
         ranking_body=getattr(item, "ranking_body", None),
         category=item.category,
         year=item.year,

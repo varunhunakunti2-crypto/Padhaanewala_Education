@@ -74,6 +74,8 @@ def update_my_profile(
         db.flush()
 
     for field, value in updates.items():
+        if value is None and field == "name":
+            continue
         setattr(profile, field, value)
 
     if "name" in updates and updates["name"]:

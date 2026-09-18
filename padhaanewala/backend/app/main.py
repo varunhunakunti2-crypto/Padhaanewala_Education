@@ -10,16 +10,18 @@ from app.middleware.logging import (
 )
 from app.middleware.ratelimit import RateLimitMiddleware
 from app.routers import (
-    audit,
+audit,
     auth,
     banners,
     blogs,
     colleges,
+    consent,
     courses,
     enquiries,
+    enrichment,
     exams,
     faqs,
-    enrichment,
+    leads,
     locations,
     media,
     mock_tests,
@@ -63,7 +65,9 @@ app.include_router(locations.router)
 app.include_router(universities.router)
 app.include_router(colleges.router)
 app.include_router(courses.router)
+app.include_router(consent.router)
 app.include_router(enquiries.router)
+app.include_router(leads.router)
 app.include_router(enrichment.router)
 app.include_router(enrichment.catalog_router)
 app.include_router(scholarships.router)

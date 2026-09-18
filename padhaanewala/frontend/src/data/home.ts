@@ -122,7 +122,7 @@ export const popularCourses: Course[] = [
   { id: "c2", name: "BDS", tag: "Dental", colleges: 310, slug: "bds" },
   { id: "c3", name: "BAMS", tag: "Ayurveda", colleges: 410, slug: "bams" },
   { id: "c4", name: "BHMS", tag: "Homeopathy", colleges: 210, slug: "bhms" },
-  { id: "c5", name: "B.Sc Nursing", tag: "Nursing", colleges: 540, slug: "b-sc-nursing" },
+  { id: "c5", name: "B.Sc Nursing", tag: "Nursing", colleges: 540, slug: "bsc-nursing" },
   { id: "c6", name: "B.Pharm", tag: "Pharmacy", colleges: 470, slug: "b-pharm" },
   { id: "c7", name: "BCA", tag: "Computer Applications", colleges: 380, slug: "bca" },
   { id: "c8", name: "B.Tech", tag: "Engineering", colleges: 690, slug: "b-tech" },
@@ -214,16 +214,16 @@ export const scholarships: Scholarship[] = [
 ];
 
 export const upcomingExams: Exam[] = [
-  { id: "e1", name: "NEET UG 2026", date: "03 May 2026", status: "Application Open", slug: "neet-2026" },
-  { id: "e2", name: "JEE Main 2026 Session 2", date: "02 Apr 2026", status: "Application Open", slug: "jee-main-2026" },
+  { id: "e1", name: "NEET UG 2026", date: "03 May 2026", status: "Application Open", slug: "neet-ug-2026" },
+  { id: "e2", name: "JEE Main 2026 Session 2", date: "02 Apr 2026", status: "Application Open", slug: "jee-main-2026-session-2" },
   { id: "e3", name: "KCET 2026", date: "20 Apr 2026", status: "Registration Open", slug: "kcet-2026" },
-  { id: "e4", name: "CUET UG 2026", date: "15 May 2026", status: "Expected", slug: "cuet-2026" },
+  { id: "e4", name: "CUET UG 2026", date: "15 May 2026", status: "Expected", slug: "cuet-ug-2026" },
 ];
 
 export const mockTests: MockTest[] = [
   { id: "m1", name: "NEET UG Full Mock Test", questions: 200, duration: 180, mode: "Standard", slug: "neet-full-mock" },
   { id: "m2", name: "NEET UG Proctored Mock", questions: 200, duration: 180, mode: "Proctored", slug: "neet-proctored-mock" },
-  { id: "m3", name: "JEE Main Sectional Test", questions: 75, duration: 90, mode: "Standard", slug: "jee-sectional-mock" },
+  { id: "m3", name: "JEE Main Sectional Test", questions: 75, duration: 90, mode: "Standard", slug: "jee-mathematics-sectional" },
   { id: "m4", name: "KCET Full Mock Test", questions: 180, duration: 150, mode: "Standard", slug: "kcet-full-mock" },
 ];
 

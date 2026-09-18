@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -56,7 +57,14 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
         is_mobile_verified=False,
     )
     db.add(user)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Email or mobile already registered",
+        )
 
     role = db.scalar(select(Role).where(Role.name == "student"))
     if role is not None:

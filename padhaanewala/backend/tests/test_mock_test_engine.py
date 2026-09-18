@@ -125,8 +125,10 @@ def test_full_attempt_flow():
             headers=headers,
         )
         assert correct.status_code == 200, correct.text
-        assert correct.json()["is_correct"] is True
-        assert float(correct.json()["marks_awarded"]) == 2
+        assert correct.json()["selected_answer"] == "A"
+        assert "is_correct" not in correct.json()
+        assert "correct_answer" not in correct.json()
+        assert "explanation" not in correct.json()
 
         wrong = client.put(
             f"/api/v1/mock-tests/{mock_test.slug}/attempts/{attempt_id}/answers/{q2}",
@@ -134,7 +136,7 @@ def test_full_attempt_flow():
             headers=headers,
         )
         assert wrong.status_code == 200
-        assert wrong.json()["is_correct"] is False
+        assert wrong.json()["selected_answer"] == "B"
 
         question_bank = client.get(
             f"/api/v1/mock-tests/{mock_test.slug}/questions"
