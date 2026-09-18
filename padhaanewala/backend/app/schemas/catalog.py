@@ -110,6 +110,28 @@ class CourseResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class CourseCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=255)
+    degree: str | None = Field(default=None, max_length=100)
+    duration: str | None = Field(default=None, max_length=50)
+    category: str | None = Field(default=None, max_length=100)
+    overview: str | None = None
+    eligibility: str | None = None
+    career_information: str | None = None
+    is_active: bool = True
+
+
+class CourseUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=255)
+    degree: str | None = Field(default=None, max_length=100)
+    duration: str | None = Field(default=None, max_length=50)
+    category: str | None = Field(default=None, max_length=100)
+    overview: str | None = None
+    eligibility: str | None = None
+    career_information: str | None = None
+    is_active: bool | None = None
+
+
 class SearchResult(BaseModel):
     colleges: list[CollegeListItemResponse] = []
     courses: list[CourseResponse] = []

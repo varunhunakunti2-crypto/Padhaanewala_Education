@@ -1,12 +1,19 @@
+import re
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.dependencies import require_role
 from app.models import CollegeCourse, Course
-from app.schemas.catalog import CourseResponse
+from app.schemas.catalog import CourseCreate, CourseResponse, CourseUpdate
 
 router = APIRouter(prefix="/api/v1/courses", tags=["courses"])
+
+
+def _slugify(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", text.strip().lower()).strip("-")
 
 
 class CourseDetailResponse(CourseResponse):
@@ -81,3 +88,63 @@ def get_course(course_ref: str, db: Session = Depends(get_db)):
         career_information=course.career_information,
         college_count=college_count,
     )
+
+
+def _find_course(db: Session, ref: str) -> Course | None:
+    cond = Course.id == int(ref) if ref.isdigit() else Course.slug == ref
+    return db.scalar(select(Course).where(cond))
+
+
+@router.post(
+    "",
+    response_model=CourseDetailResponse,
+    status_code=201,
+    dependencies=[Depends(require_role("admin", "super_admin", "content_manager"))],
+)
+def create_course(payload: CourseCreate, db: Session = Depends(get_db)):
+    slug = _slugify(payload.name)
+    if db.scalar(select(Course).where(Course.slug == slug)):
+        raise HTTPException(status_code=400, detail="Course with this name exists")
+    course = Course(**payload.model_dump(exclude={"name"}), name=payload.name, slug=slug)
+    db.add(course)
+    db.commit()
+    db.refresh(course)
+    return course
+
+
+@router.put(
+    "/{course_ref}",
+    response_model=CourseDetailResponse,
+    dependencies=[Depends(require_role("admin", "super_admin", "content_manager"))],
+)
+def update_course(
+    course_ref: str, payload: CourseUpdate, db: Session = Depends(get_db)
+):
+    course = _find_course(db, course_ref)
+    if course is None:
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    data = payload.model_dump(exclude_unset=True)
+    if "name" in data and data["name"] != course.name:
+        slug = _slugify(data["name"])
+        if db.scalar(select(Course).where(Course.slug == slug, Course.id != course.id)):
+            raise HTTPException(status_code=400, detail="Course with this name exists")
+        course.slug = slug
+    for field, value in data.items():
+        setattr(course, field, value)
+    db.commit()
+    db.refresh(course)
+    return course
+
+
+@router.delete(
+    "/{course_ref}",
+    status_code=204,
+    dependencies=[Depends(require_role("admin", "super_admin"))],
+)
+def delete_course(course_ref: str, db: Session = Depends(get_db)):
+    course = _find_course(db, course_ref)
+    if course is None:
+        raise HTTPException(status_code=404, detail="Course not found")
+    db.delete(course)
+    db.commit()

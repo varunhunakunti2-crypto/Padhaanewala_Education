@@ -253,3 +253,106 @@ def test_get_mock_test_by_slug():
         response = client.get(f"/api/v1/mock-tests/{slug}")
         assert response.status_code == 200
         assert response.json()["slug"] == slug
+
+
+def test_create_course_requires_admin():
+    response = client.post("/api/v1/courses", json={"name": "Test Course"})
+    assert response.status_code in (401, 403)
+
+
+def test_admin_course_crud():
+    token = _make_admin_token()
+    headers = {"Authorization": f"Bearer {token}"}
+    name = f"Test Course {uuid.uuid4().hex[:6]}"
+
+    create = client.post(
+        "/api/v1/courses",
+        json={"name": name, "degree": "B.Sc", "category": "Science"},
+        headers=headers,
+    )
+    assert create.status_code == 201, create.text
+    body = create.json()
+    assert body["slug"] == name.lower().replace(" ", "-")
+    course_ref = body["id"]
+
+    update = client.put(
+        f"/api/v1/courses/{course_ref}",
+        json={"overview": "Updated course overview", "duration": "3 Years"},
+        headers=headers,
+    )
+    assert update.status_code == 200
+    assert update.json()["overview"] == "Updated course overview"
+    assert update.json()["duration"] == "3 Years"
+
+    detail = client.get(f"/api/v1/courses/{course_ref}")
+    assert detail.status_code == 200
+    assert detail.json()["name"] == name
+
+    duplicate = client.post(
+        "/api/v1/courses", json={"name": name}, headers=headers
+    )
+    assert duplicate.status_code == 400
+
+    delete = client.delete(f"/api/v1/courses/{course_ref}", headers=headers)
+    assert delete.status_code == 204
+    assert client.get(f"/api/v1/courses/{course_ref}").status_code == 404
+
+
+def test_admin_scholarship_crud():
+    token = _make_admin_token()
+    headers = {"Authorization": f"Bearer {token}"}
+    name = f"Test Scholarship {uuid.uuid4().hex[:6]}"
+
+    create = client.post(
+        "/api/v1/scholarships",
+        json={"name": name, "provider": "Test Board", "ownership": "government"},
+        headers=headers,
+    )
+    assert create.status_code == 201, create.text
+    body = create.json()
+    assert body["slug"] == name.lower().replace(" ", "-")
+    ref = body["id"]
+
+    update = client.put(
+        f"/api/v1/scholarships/{ref}",
+        json={"amount": "₹50,000/year", "category": "Merit"},
+        headers=headers,
+    )
+    assert update.status_code == 200
+    assert update.json()["amount"] == "₹50,000/year"
+
+    detail = client.get(f"/api/v1/scholarships/{ref}")
+    assert detail.status_code == 200
+
+    delete = client.delete(f"/api/v1/scholarships/{ref}", headers=headers)
+    assert delete.status_code == 204
+
+
+def test_admin_exam_crud():
+    token = _make_admin_token()
+    headers = {"Authorization": f"Bearer {token}"}
+    name = f"Test Exam {uuid.uuid4().hex[:6]}"
+
+    create = client.post(
+        "/api/v1/exams",
+        json={"name": name, "conducting_authority": "Test Authority"},
+        headers=headers,
+    )
+    assert create.status_code == 201, create.text
+    body = create.json()
+    assert body["slug"] == name.lower().replace(" ", "-")
+    ref = body["id"]
+
+    update = client.put(
+        f"/api/v1/exams/{ref}",
+        json={"exam_type": "state", "eligibility": "Graduation"},
+        headers=headers,
+    )
+    assert update.status_code == 200
+    assert update.json()["exam_type"] == "state"
+
+    detail = client.get(f"/api/v1/exams/{ref}")
+    assert detail.status_code == 200
+
+    delete = client.delete(f"/api/v1/exams/{ref}", headers=headers)
+    assert delete.status_code == 204
