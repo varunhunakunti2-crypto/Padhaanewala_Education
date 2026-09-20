@@ -85,6 +85,17 @@ html.dark .bg-white {
   color: #f3f4f6;
 }
 
+/* Ensure native select dropdown options have explicit contrast in light & dark mode */
+option {
+  background-color: #ffffff;
+  color: #111827;
+}
+
+html.dark option {
+  background-color: #111827 !important;
+  color: #f3f4f6 !important;
+}
+
 html.dark .bg-gray-50 {
   background-color: #0f172a !important;
 }
@@ -203,8 +214,8 @@ h5 {
 }
 
 ::selection {
-  background: rgba(124, 58, 237, 0.18);
-  color: #4c1d95;
+  background: #7c3aed;
+  color: #ffffff;
 }
 
 /* Scrollbar */
@@ -438,6 +449,11 @@ select:focus-visible {
   background-size: 800px 100%;
   animation: shimmer 1.4s linear infinite;
   border-radius: 12px;
+}
+
+html.dark .skeleton {
+  background: linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%);
+  background-size: 800px 100%;
 }
 
 /* Reveal on scroll (JS helper sets .is-visible) */

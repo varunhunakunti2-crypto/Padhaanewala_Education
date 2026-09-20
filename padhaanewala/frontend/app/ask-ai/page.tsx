@@ -14,7 +14,7 @@ export const metadata: Metadata = {
 
 export default function AskAiPage() {
   return (
-    <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+    <section className="mx-auto max-w-7xl px-4 pt-28 pb-8 sm:px-6 sm:pt-32 lg:px-8 lg:pt-36">
       <div className="mx-auto mb-6 max-w-3xl text-center">
         <h1 className="font-display text-3xl font-extrabold tracking-tight text-purple-950 dark:text-white sm:text-4xl">
           Ask Padhaanewala AI

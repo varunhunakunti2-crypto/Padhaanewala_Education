@@ -147,7 +147,7 @@ export function CollegeCard({ college }: CollegeCardProps) {
         <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-gray-100 dark:border-slate-800 pt-3">
           <Link
             href={`/colleges/${college.slug}`}
-            className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg bg-brand-gradient text-sm font-semibold text-white transition hover:brightness-110"
+            className="inline-flex h-9.5 flex-1 items-center justify-center gap-1.5 rounded-xl bg-brand-gradient text-sm font-semibold text-white shadow-sm transition hover:brightness-110 active:scale-[0.98]"
           >
             View College <ArrowRight className="h-4 w-4" />
           </Link>
@@ -155,7 +155,7 @@ export function CollegeCard({ college }: CollegeCardProps) {
             aria-pressed={comparing}
             onClick={() => toggleCompare(college.id, college.shortName)}
             className={cn(
-              "inline-flex h-9 items-center justify-center gap-1.5 rounded-lg px-3.5 text-sm font-semibold ring-1 ring-inset transition",
+              "inline-flex h-9.5 items-center justify-center gap-1.5 rounded-xl px-3.5 text-sm font-semibold ring-1 ring-inset transition active:scale-[0.98]",
               comparing
                 ? "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 ring-emerald-300 dark:ring-emerald-700 animate-pop-in"
                 : "bg-white dark:bg-slate-800 text-blue-700 dark:text-blue-300 ring-blue-200 dark:ring-slate-700 hover:bg-blue-50 dark:hover:bg-slate-700",

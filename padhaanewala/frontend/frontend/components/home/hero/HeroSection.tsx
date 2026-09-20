@@ -9,7 +9,7 @@ export function HeroSection() {
   return (
     <section
       aria-label="Find your college — CampusMap hero"
-      className="relative isolate flex min-h-[100svh] flex-col overflow-hidden bg-navy"
+      className="relative z-30 flex min-h-[100svh] flex-col bg-navy"
     >
       <HeroBackground imageUrl="/hero-bd.png" />
 

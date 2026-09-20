@@ -76,7 +76,7 @@ export function StickyMobileActions({ collegeId, shortName }: { collegeId: strin
   const comparing = isComparing(collegeId);
 
   return (
-    <div className="fixed inset-x-0 bottom-16 z-40 border-t border-purple-100 bg-white/95 px-4 py-3 backdrop-blur lg:hidden">
+    <div className="fixed inset-x-0 bottom-16 z-40 border-t border-purple-100 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 px-4 py-3 backdrop-blur lg:hidden">
       <div className="mx-auto flex max-w-3xl gap-2">
         <button
           onClick={() => toggleSave(collegeId, shortName)}
@@ -84,7 +84,7 @@ export function StickyMobileActions({ collegeId, shortName }: { collegeId: strin
             "flex h-11 flex-1 items-center justify-center gap-2 rounded-xl text-sm font-bold transition",
             saved
               ? "bg-warm-gradient text-white"
-              : "bg-purple-50 text-purple-700 ring-1 ring-purple-200 hover:bg-purple-100",
+              : "bg-purple-50 dark:bg-slate-800 text-purple-700 dark:text-purple-300 ring-1 ring-purple-200 dark:ring-slate-700 hover:bg-purple-100 dark:hover:bg-slate-700",
           )}
         >
           <Heart className={cn("h-4 w-4", saved && "fill-current animate-pop-in")} />

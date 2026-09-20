@@ -21,7 +21,7 @@ export function BottomNav() {
   return (
     <nav
       aria-label="Bottom navigation"
-      className="fixed inset-x-0 bottom-0 z-40 border-t border-purple-100 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
+      className="fixed inset-x-0 bottom-0 z-40 border-t border-purple-100 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
     >
       <ul className="grid grid-cols-5">
         {ITEMS.map((item) => {
@@ -42,7 +42,9 @@ export function BottomNav() {
                 aria-label={item.label}
                 className={cn(
                   "relative flex flex-col items-center gap-0.5 py-2.5 text-[11px] font-medium transition-colors",
-                  active ? "text-purple-700" : "text-gray-400 hover:text-purple-600",
+                  active
+                    ? "text-purple-700 dark:text-purple-400 font-bold"
+                    : "text-gray-400 dark:text-slate-400 hover:text-purple-600 dark:hover:text-purple-300",
                 )}
               >
                 <span className="relative">

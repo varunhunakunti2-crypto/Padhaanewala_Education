@@ -14,16 +14,16 @@ interface SortBarProps {
 export function SortBar({ total, shown, sortBy, onSort, activeFilters, onOpenFilters }: SortBarProps) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <p className="text-sm text-gray-500">
-        <span className="font-display font-bold text-gray-900 tabular-nums">{shown}</span>{" "}
-        of <span className="font-display font-bold text-gray-900 tabular-nums">{total}</span>{" "}
+      <p className="text-sm text-gray-500 dark:text-slate-400">
+        <span className="font-display font-bold text-gray-900 dark:text-white tabular-nums">{shown}</span>{" "}
+        of <span className="font-display font-bold text-gray-900 dark:text-white tabular-nums">{total}</span>{" "}
         colleges
       </p>
 
       <div className="flex items-center gap-2">
         <button
           onClick={onOpenFilters}
-          className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-purple-600 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-purple-700 lg:hidden"
+          className="inline-flex h-9.5 items-center gap-1.5 rounded-xl bg-purple-600 px-3.5 text-sm font-semibold text-white shadow-sm transition hover:bg-purple-700 active:scale-95 lg:hidden"
         >
           <SlidersHorizontal className="h-4 w-4" />
           Filters
@@ -34,16 +34,20 @@ export function SortBar({ total, shown, sortBy, onSort, activeFilters, onOpenFil
           )}
         </button>
 
-        <label className="flex h-9 items-center gap-2 rounded-lg bg-white px-2.5 ring-1 ring-inset ring-gray-200">
-          <ArrowUpDown className="h-4 w-4 shrink-0 text-purple-500" />
+        <label className="flex h-9.5 items-center gap-2 rounded-xl bg-white dark:bg-slate-900 px-3 ring-1 ring-inset ring-gray-200 dark:ring-slate-800 transition-colors shadow-sm">
+          <ArrowUpDown className="h-4 w-4 shrink-0 text-purple-500 dark:text-purple-400" />
           <span className="sr-only">Sort colleges by</span>
           <select
             value={sortBy}
             onChange={(e) => onSort(e.target.value as SortKey)}
-            className="cursor-pointer bg-transparent text-sm font-medium text-gray-700 focus:outline-none"
+            className="cursor-pointer bg-transparent text-sm font-medium text-gray-700 dark:text-slate-200 focus:outline-none"
           >
             {SORT_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
+              <option
+                key={o.value}
+                value={o.value}
+                className="bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100"
+              >
                 {o.label}
               </option>
             ))}

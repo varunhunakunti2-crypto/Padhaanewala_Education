@@ -35,12 +35,12 @@ export default function ResourcesPage() {
   const guides = BLOG_POSTS.slice(0, 6);
 
   return (
-    <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8 lg:py-16">
+    <section className="mx-auto max-w-7xl px-4 pt-28 pb-12 sm:px-6 sm:pt-32 lg:px-8 lg:pt-36 lg:pb-16">
       <div className="max-w-2xl">
-        <p className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.14em] text-blue-600">
+        <p className="mb-2.5 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.14em] text-blue-600 dark:text-blue-400">
           <BookOpen className="h-4 w-4" /> Student resource hub
         </p>
-        <h1 className="font-display text-3xl font-extrabold tracking-tight text-purple-950 sm:text-4xl">
+        <h1 className="font-display text-3xl font-extrabold tracking-tight text-purple-950 dark:text-white sm:text-4xl">
           Resources
         </h1>
         <p className="mt-3 text-sm leading-relaxed text-gray-600 sm:text-base">

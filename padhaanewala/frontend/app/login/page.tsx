@@ -88,7 +88,7 @@ export default function LoginPage() {
   };
 
   return (
-    <section className="mx-auto flex max-w-lg flex-col items-center px-4 py-16 sm:px-6 lg:px-8">
+    <section className="mx-auto flex max-w-lg flex-col items-center px-4 pt-28 pb-16 sm:px-6 sm:pt-32 lg:px-8 lg:pt-36">
       <div className="mb-8">
         <Logo />
       </div>

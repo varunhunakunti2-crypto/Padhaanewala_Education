@@ -6,6 +6,7 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 import { getAiResponse, AI_SUGGESTED_QUESTIONS } from "@/lib/data/notifications";
+import { RobotViewer } from "@/components/ai/RobotViewer";
 
 interface ChatMessage {
   id: string;
@@ -66,9 +67,9 @@ export function AIChat() {
       {/* Header */}
       <div className="flex items-center justify-between border-b border-purple-100 dark:border-slate-800 bg-gradient-to-r from-purple-700 to-indigo-700 px-5 py-4">
         <div className="flex items-center gap-3">
-          <span className="grid h-10 w-10 place-items-center rounded-full bg-white/15 text-white ring-1 ring-white/25">
-            <Sparkles className="h-5 w-5" />
-          </span>
+          <div className="relative h-12 w-12 flex-shrink-0 flex items-center justify-center pointer-events-none">
+            <RobotViewer className="h-full w-full" animated={false} autoRotate={false} modelScale={1.75} />
+          </div>
           <div>
             <p className="text-sm font-bold text-white">Ask Padhaanewala AI</p>
             <p className="text-xs text-white/70">Education assistant · online</p>
@@ -90,13 +91,15 @@ export function AIChat() {
           <div key={m.id} className={cn("flex gap-3", m.role === "user" && "flex-row-reverse")}>
             <span
               className={cn(
-                "mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full",
-                m.role === "ai"
-                  ? "bg-purple-100 dark:bg-purple-950/80 text-purple-600 dark:text-purple-300"
-                  : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300",
+                "mt-0.5 relative flex h-12 w-12 shrink-0 items-center justify-center",
+                m.role === "user" && "rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300 shadow-sm",
               )}
             >
-              {m.role === "ai" ? <Bot className="h-4 w-4" /> : <User className="h-4 w-4" />}
+              {m.role === "ai" ? (
+                <RobotViewer className="h-full w-full" autoRotate={false} modelScale={1.15} />
+              ) : (
+                <User className="h-5 w-5" />
+              )}
             </span>
             <div
               className={cn(
@@ -112,8 +115,8 @@ export function AIChat() {
         ))}
         {loading && (
           <div className="flex gap-3">
-            <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-purple-100 dark:bg-purple-950/80 text-purple-600 dark:text-purple-300">
-              <Bot className="h-4 w-4" />
+            <span className="mt-0.5 relative flex h-12 w-12 shrink-0 items-center justify-center">
+              <RobotViewer className="h-full w-full" autoRotate={false} modelScale={1.15} />
             </span>
             <div className="flex items-center gap-1.5 rounded-2xl rounded-tl-sm border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/80 px-4 py-3">
               <Loader2 className="h-4 w-4 animate-spin text-purple-500 dark:text-purple-400" />

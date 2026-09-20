@@ -831,7 +831,7 @@ export default function DashboardExplorer() {
   ];
 
   return (
-    <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8 lg:py-16">
+    <section className="mx-auto max-w-7xl px-4 pt-28 pb-10 sm:px-6 sm:pt-32 lg:px-8 lg:pt-36 lg:pb-16">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="mb-1 flex items-center gap-2 text-sm text-gray-500">

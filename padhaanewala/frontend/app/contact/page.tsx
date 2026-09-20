@@ -18,7 +18,7 @@ const CHANNELS = [
 
 export default function ContactPage() {
   return (
-    <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8 lg:py-16">
+    <section className="mx-auto max-w-7xl px-4 pt-28 pb-12 sm:px-6 sm:pt-32 lg:px-8 lg:pt-36 lg:pb-16">
       <SectionHeading
         eyebrow="We're here to help"
         title="Contact Padhaanewala"

@@ -70,14 +70,14 @@ function AnchorNav({ college }: { college: College }) {
   return (
     <nav
       aria-label="College sections"
-      className="no-scrollbar sticky top-[68px] z-30 -mx-4 mt-6 overflow-x-auto border-y border-purple-100/70 bg-white/90 px-4 backdrop-blur lg:top-[78px]"
+      className="no-scrollbar sticky top-[68px] z-30 mt-6 overflow-x-auto rounded-2xl border border-purple-100/80 dark:border-slate-800/80 bg-white/90 dark:bg-slate-900/90 px-2 py-1.5 backdrop-blur-md shadow-lg shadow-purple-950/5 dark:shadow-slate-950/30 lg:top-[78px] transition-all"
     >
-      <ul className="flex gap-1 whitespace-nowrap py-2.5">
+      <ul className="flex items-center gap-1.5 whitespace-nowrap">
         {anchors.map((a) => (
           <li key={a.id}>
             <a
               href={`#${a.id}`}
-              className="rounded-lg px-3 py-1.5 text-sm font-medium text-gray-600 transition hover:bg-purple-50 hover:text-purple-700"
+              className="rounded-xl px-3.5 py-1.5 text-sm font-medium text-gray-600 dark:text-slate-300 transition-all hover:bg-purple-50 dark:hover:bg-purple-950/70 hover:text-purple-700 dark:hover:text-purple-300 active:scale-95"
             >
               {a.label}
             </a>
@@ -102,22 +102,22 @@ function QuickFacts({ college }: { college: College }) {
         { label: "Placement rate", value: `${college.placement.placementRate}% (${college.placement.year})`, icon: Briefcase },
       ].map((f) => (
         <div key={f.label} className="flex items-start gap-3">
-          <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-purple-50 text-purple-600">
+          <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-300">
             <f.icon className="h-4 w-4" />
           </span>
           <div>
-            <dt className="text-xs font-medium text-gray-400">{f.label}</dt>
-            <dd className="text-sm font-semibold text-gray-900 tabular-nums">{f.value}</dd>
+            <dt className="text-xs font-medium text-gray-400 dark:text-slate-400">{f.label}</dt>
+            <dd className="text-sm font-semibold text-gray-900 dark:text-white tabular-nums">{f.value}</dd>
           </div>
         </div>
       ))}
       <li className="flex items-start gap-3">
-        <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-purple-50 text-purple-600">
+        <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-300">
           <MapPin className="h-4 w-4" />
         </span>
         <div>
-          <dt className="text-xs font-medium text-gray-400">Address</dt>
-          <dd className="text-sm font-semibold text-gray-900">
+          <dt className="text-xs font-medium text-gray-400 dark:text-slate-400">Address</dt>
+          <dd className="text-sm font-semibold text-gray-900 dark:text-white">
             {college.city}, {college.state} — {college.pincode}
           </dd>
         </div>
@@ -135,39 +135,39 @@ function HeroInfo({ college }: { college: College }) {
         className="h-44 w-full sm:h-60 lg:h-72"
         ariaLabel={`${college.shortName} campus`}
       />
-      <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
-        <div className="-mt-12 rounded-t-2xl bg-white px-5 pb-5 pt-4 ring-1 ring-purple-100/60 sm:rounded-2xl sm:px-7 md:-mt-16">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="flex min-w-0 items-start gap-4">
+      <div className="relative z-10 mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+        <div className="relative z-10 -mt-10 rounded-t-2xl bg-white dark:bg-slate-900 px-5 pb-6 pt-6 ring-1 ring-purple-100/60 dark:ring-slate-800 sm:rounded-2xl sm:px-7 sm:pb-7 sm:pt-7 md:-mt-14 shadow-lg shadow-purple-950/5 dark:shadow-slate-950/20">
+          <div className="flex flex-wrap items-start justify-between gap-6">
+            <div className="flex min-w-0 items-start gap-4 sm:gap-5">
               <CollegeLogo
                 initials={college.initials}
                 gradientId={college.gradientId}
                 size="lg"
-                className="-mt-8 ring-4 ring-white md:-mt-12 md:h-20 md:w-20 md:text-xl"
+                className="-mt-10 ring-4 ring-white dark:ring-slate-900 md:-mt-14 md:h-20 md:w-20 md:text-xl shrink-0 shadow-md"
               />
-              <div className="min-w-0">
-                <h1 className="font-display text-2xl font-extrabold tracking-tight text-gray-900 sm:text-3xl">
+              <div className="min-w-0 pt-0.5">
+                <h1 className="font-display text-2xl font-extrabold tracking-tight text-gray-900 dark:text-white sm:text-3xl leading-snug">
                   {college.name}
                 </h1>
-                <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-gray-500">
-                  <span className="font-medium text-gray-700">{college.tagline}</span>
+                <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-gray-500 dark:text-slate-400">
+                  <span className="font-medium text-gray-700 dark:text-slate-200">{college.tagline}</span>
                 </p>
-                <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
-                  <span className="inline-flex items-center gap-1 text-gray-500">
-                    <MapPin className="h-4 w-4 text-purple-500" />
+                <div className="mt-2.5 flex flex-wrap items-center gap-2 text-sm text-gray-600 dark:text-slate-300">
+                  <span className="inline-flex items-center gap-1 text-gray-500 dark:text-slate-400">
+                    <MapPin className="h-4 w-4 text-purple-500 dark:text-purple-400" />
                     {college.city}, {college.state}
                   </span>
-                  <span className="text-gray-300">•</span>
+                  <span className="text-gray-300 dark:text-slate-600">•</span>
                   <span>{college.sector}</span>
-                  <span className="text-gray-300">•</span>
+                  <span className="text-gray-300 dark:text-slate-600">•</span>
                   <span>{college.type}</span>
                 </div>
-                <div className="mt-3 flex flex-wrap items-center gap-2">
+                <div className="mt-3.5 flex flex-wrap items-center gap-2">
                   <span className="match-badge rounded-full px-2.5 py-0.5 font-accent text-[11px] font-bold">
                     {matchScore(college.id)}% Match for you
                   </span>
                   <Rating value={college.rating} showValue />
-                  <span className="text-xs text-gray-400">
+                  <span className="text-xs text-gray-400 dark:text-slate-400">
                     {formatCount(college.reviewCount)} reviews
                   </span>
                   {college.rankings.slice(0, 2).map((r) => (
@@ -183,7 +183,7 @@ function HeroInfo({ college }: { college: College }) {
                 </div>
               </div>
             </div>
-            <div className="hidden flex-col gap-2 lg:flex">
+            <div className="hidden flex-col gap-2 lg:flex pt-1">
               <CollegeActions collegeId={college.id} shortName={college.shortName} className="w-52" />
             </div>
           </div>
@@ -201,11 +201,11 @@ function CoursesFees({ college }: { college: College }) {
         title="Courses & Programs"
         subtitle="Popular programs, seats and annual fees"
       />
-      <div className="mt-5 overflow-hidden rounded-2xl bg-white ring-1 ring-purple-100/60 card-shadow">
+      <div className="mt-5 overflow-hidden rounded-2xl bg-white dark:bg-slate-900 ring-1 ring-purple-100/60 dark:ring-slate-800 card-shadow">
         <div className="overflow-x-auto scroll-thin">
           <table className="w-full min-w-[640px] text-left text-sm">
             <thead>
-              <tr className="border-b border-gray-100 bg-purple-50/50 text-xs font-semibold uppercase tracking-wide text-gray-500">
+              <tr className="border-b border-gray-100 dark:border-slate-800 bg-purple-50/50 dark:bg-slate-800/70 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-300">
                 <th className="px-5 py-3.5">Program</th>
                 <th className="px-5 py-3.5">Degree</th>
                 <th className="px-5 py-3.5">Duration</th>
@@ -215,15 +215,15 @@ function CoursesFees({ college }: { college: College }) {
             </thead>
             <tbody>
               {college.courses.map((course) => (
-                <tr key={course.name} className="border-b border-gray-50 last:border-0 hover:bg-purple-50/30">
+                <tr key={course.name} className="border-b border-gray-50 dark:border-slate-800/50 last:border-0 hover:bg-purple-50/30 dark:hover:bg-slate-800/40">
                   <td className="px-5 py-4">
-                    <p className="font-semibold text-gray-900">{course.name}</p>
+                    <p className="font-semibold text-gray-900 dark:text-white">{course.name}</p>
                     {course.tag && <Badge variant="yellow" className="mt-1">{course.tag}</Badge>}
                   </td>
-                  <td className="px-5 py-4 text-gray-600">{course.degree}</td>
-                  <td className="px-5 py-4 text-gray-600">{course.duration}</td>
-                  <td className="px-5 py-4 text-gray-600 tabular-nums">{course.seats}</td>
-                  <td className="px-5 py-4 text-right font-semibold text-purple-700 tabular-nums">
+                  <td className="px-5 py-4 text-gray-600 dark:text-slate-300">{course.degree}</td>
+                  <td className="px-5 py-4 text-gray-600 dark:text-slate-300">{course.duration}</td>
+                  <td className="px-5 py-4 text-gray-600 dark:text-slate-300 tabular-nums">{course.seats}</td>
+                  <td className="px-5 py-4 text-right font-semibold text-purple-700 dark:text-purple-400 tabular-nums">
                     {formatINR(course.feePerYear)}/yr
                   </td>
                 </tr>
@@ -231,7 +231,7 @@ function CoursesFees({ college }: { college: College }) {
             </tbody>
           </table>
         </div>
-        <p className="border-t border-gray-100 bg-gray-50/60 px-5 py-3 text-xs text-gray-500">
+        <p className="border-t border-gray-100 dark:border-slate-800 bg-gray-50/60 dark:bg-slate-900/90 px-5 py-3 text-xs text-gray-500 dark:text-slate-400">
           * Fees are indicative for the current academic year. Hostel and mess charges are extra.
         </p>
       </div>
@@ -248,13 +248,13 @@ function Admissions({ college }: { college: College }) {
         subtitle="How to apply, what you need, and expected cutoffs"
       />
       <div className="mt-5 grid gap-5 lg:grid-cols-2">
-        <div className="rounded-2xl bg-white p-6 ring-1 ring-purple-100/60 card-shadow">
-          <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-gray-700">
-            <Clock className="h-4 w-4 text-blue-500" /> Process
+        <div className="rounded-2xl bg-white dark:bg-slate-900 p-6 ring-1 ring-purple-100/60 dark:ring-slate-800 card-shadow">
+          <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-gray-700 dark:text-slate-200">
+            <Clock className="h-4 w-4 text-blue-500 dark:text-blue-400" /> Process
           </h3>
-          <p className="mt-3 text-sm leading-relaxed text-gray-600">{college.admission.process}</p>
-          <div className="mt-4 flex items-center gap-2 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            <BadgeCheck className="h-4 w-4 shrink-0" />
+          <p className="mt-3 text-sm leading-relaxed text-gray-600 dark:text-slate-300">{college.admission.process}</p>
+          <div className="mt-4 flex items-center gap-2 rounded-xl bg-amber-50 dark:bg-amber-950/60 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
+            <BadgeCheck className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
             Application deadline:{" "}
             <span className="font-bold">
               {new Date(college.admission.applicationDeadline + "T00:00:00").toLocaleDateString("en-IN", {
@@ -264,27 +264,27 @@ function Admissions({ college }: { college: College }) {
               })}
             </span>
           </div>
-          <p className="mt-2 text-xs text-gray-400">
+          <p className="mt-2 text-xs text-gray-400 dark:text-slate-400">
             Application fee: {formatINRFull(college.admission.applicationFee)}
           </p>
         </div>
 
-        <div className="rounded-2xl bg-white p-6 ring-1 ring-purple-100/60 card-shadow">
-          <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-gray-700">
-            <CheckCircle2 className="h-4 w-4 text-emerald-500" /> Eligibility
+        <div className="rounded-2xl bg-white dark:bg-slate-900 p-6 ring-1 ring-purple-100/60 dark:ring-slate-800 card-shadow">
+          <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-gray-700 dark:text-slate-200">
+            <CheckCircle2 className="h-4 w-4 text-emerald-500 dark:text-emerald-400" /> Eligibility
           </h3>
           <ul className="mt-3 space-y-3">
             {college.admission.eligibility.map((e) => (
-              <li key={e.program} className="text-sm text-gray-600">
-                <span className="font-semibold text-gray-900">{e.program}:</span> {e.criteria}
+              <li key={e.program} className="text-sm text-gray-600 dark:text-slate-300">
+                <span className="font-semibold text-gray-900 dark:text-white">{e.program}:</span> {e.criteria}
               </li>
             ))}
           </ul>
         </div>
       </div>
 
-      <div className="mt-5 rounded-2xl bg-white p-6 ring-1 ring-purple-100/60 card-shadow">
-        <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-gray-700">
+      <div className="mt-5 rounded-2xl bg-white dark:bg-slate-900 p-6 ring-1 ring-purple-100/60 dark:ring-slate-800 card-shadow">
+        <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-gray-700 dark:text-slate-200">
           <FileCheck2 className="h-4 w-4 text-orange-500" /> Entrance exams accepted
         </h3>
         <div className="mt-3 flex flex-wrap gap-2">
@@ -296,13 +296,13 @@ function Admissions({ college }: { college: College }) {
         </div>
         {college.admission.cutoffs.length > 0 && (
           <>
-            <h3 className="mt-6 flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-gray-700">
+            <h3 className="mt-6 flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-gray-700 dark:text-slate-200">
               <Scale className="h-4 w-4 text-blue-500" /> Recent cutoffs
             </h3>
             <div className="mt-3 overflow-x-auto scroll-thin">
               <table className="w-full min-w-[420px] text-left text-sm">
                 <thead>
-                  <tr className="border-b border-gray-100 text-xs font-semibold uppercase tracking-wide text-gray-400">
+                  <tr className="border-b border-gray-100 dark:border-slate-800 text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-slate-400">
                     <th className="py-2.5 pr-4">Program</th>
                     <th className="py-2.5 pr-4">Category</th>
                     <th className="py-2.5">Cutoff</th>
@@ -310,10 +310,10 @@ function Admissions({ college }: { college: College }) {
                 </thead>
                 <tbody>
                   {college.admission.cutoffs.map((c, i) => (
-                    <tr key={i} className="border-b border-gray-50 last:border-0">
-                      <td className="py-2.5 pr-4 font-semibold text-gray-700">{c.program}</td>
-                      <td className="py-2.5 pr-4 text-gray-500">{c.category}</td>
-                      <td className="py-2.5 font-bold text-purple-700 tabular-nums">{c.value}</td>
+                    <tr key={i} className="border-b border-gray-50 dark:border-slate-800/50 last:border-0">
+                      <td className="py-2.5 pr-4 font-semibold text-gray-700 dark:text-white">{c.program}</td>
+                      <td className="py-2.5 pr-4 text-gray-500 dark:text-slate-300">{c.category}</td>
+                      <td className="py-2.5 font-bold text-purple-700 dark:text-purple-400 tabular-nums">{c.value}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -329,10 +329,10 @@ function Admissions({ college }: { college: College }) {
 function Placements({ college }: { college: College }) {
   const p = college.placement;
   const stats = [
-    { label: "Placement rate", value: `${p.placementRate}%`, icon: Briefcase, tone: "text-purple-700 bg-purple-50" },
-    { label: "Highest package", value: formatINR(p.highestPackage), icon: TrendingUp, tone: "text-amber-700 bg-amber-50" },
-    { label: "Average package", value: formatINR(p.averagePackage), icon: Wallet, tone: "text-blue-700 bg-blue-50" },
-    { label: "Companies visited", value: formatCount(p.companiesVisited), icon: Building2, tone: "text-orange-700 bg-orange-50" },
+    { label: "Placement rate", value: `${p.placementRate}%`, icon: Briefcase, tone: "text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/60" },
+    { label: "Highest package", value: formatINR(p.highestPackage), icon: TrendingUp, tone: "text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60" },
+    { label: "Average package", value: formatINR(p.averagePackage), icon: Wallet, tone: "text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60" },
+    { label: "Companies visited", value: formatCount(p.companiesVisited), icon: Building2, tone: "text-orange-700 dark:text-orange-300 bg-orange-50 dark:bg-orange-950/60" },
   ];
   return (
     <section id="placements" className="scroll-mt-28 py-8">
@@ -343,17 +343,17 @@ function Placements({ college }: { college: College }) {
       />
       <div className="mt-5 grid grid-cols-2 gap-4 lg:grid-cols-4">
         {stats.map((s) => (
-          <div key={s.label} className="rounded-2xl bg-white p-5 ring-1 ring-purple-100/60 card-shadow">
-            <span className={`grid h-9 w-9 place-items-center rounded-xl ${s.tone}`}>
+          <div key={s.label} className="rounded-2xl bg-white dark:bg-slate-900 p-5 ring-1 ring-purple-100/60 dark:ring-slate-800 card-shadow">
+            <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl ${s.tone}`}>
               <s.icon className="h-4.5 w-4.5" />
             </span>
-            <p className="font-display mt-3 text-2xl font-extrabold text-gray-900 tabular-nums">{s.value}</p>
-            <p className="text-xs font-medium text-gray-500">{s.label}</p>
+            <p className="font-display mt-3 text-2xl font-extrabold text-gray-900 dark:text-white tabular-nums">{s.value}</p>
+            <p className="text-xs font-medium text-gray-500 dark:text-slate-400">{s.label}</p>
           </div>
         ))}
       </div>
-      <div className="mt-5 rounded-2xl bg-white p-6 ring-1 ring-purple-100/60 card-shadow">
-        <h3 className="text-sm font-bold uppercase tracking-wide text-gray-700">Top recruiters</h3>
+      <div className="mt-5 rounded-2xl bg-white dark:bg-slate-900 p-6 ring-1 ring-purple-100/60 dark:ring-slate-800 card-shadow">
+        <h3 className="text-sm font-bold uppercase tracking-wide text-gray-700 dark:text-slate-200">Top recruiters</h3>
         <div className="mt-3 flex flex-wrap gap-2">
           {p.topRecruiters.map((r) => (
             <Badge key={r} variant="purple" className="px-3 py-1 text-sm">
@@ -382,14 +382,14 @@ function Facilities({ college }: { college: College }) {
               key={f.key}
               className={`flex items-center gap-3 rounded-2xl p-4 ring-1 ${
                 available
-                  ? "bg-white ring-emerald-200/70 card-shadow"
-                  : "bg-gray-50 ring-gray-100 opacity-60"
+                  ? "bg-white dark:bg-slate-900 ring-emerald-200/70 dark:ring-emerald-900/60 card-shadow"
+                  : "bg-gray-50 dark:bg-slate-900/40 ring-gray-100 dark:ring-slate-800/80 opacity-60"
               }`}
             >
-              <f.icon className={`h-5 w-5 ${available ? "text-emerald-500" : "text-gray-400"}`} />
+              <f.icon className={`h-5 w-5 ${available ? "text-emerald-500 dark:text-emerald-400" : "text-gray-400 dark:text-slate-500"}`} />
               <div>
-                <p className="text-sm font-semibold text-gray-800">{f.label}</p>
-                <p className={`text-xs ${available ? "text-emerald-600" : "text-gray-400"}`}>
+                <p className="text-sm font-semibold text-gray-800 dark:text-slate-100">{f.label}</p>
+                <p className={`text-xs ${available ? "text-emerald-600 dark:text-emerald-400" : "text-gray-400 dark:text-slate-400"}`}>
                   {available ? "Available" : "Not available"}
                 </p>
               </div>
@@ -397,11 +397,11 @@ function Facilities({ college }: { college: College }) {
           );
         })}
       </div>
-      <div className="mt-5 rounded-2xl bg-gradient-to-r from-purple-50 to-blue-50 p-6 ring-1 ring-purple-100/60">
-        <p className="text-sm text-gray-600">
-          <span className="font-display font-bold text-purple-800">{college.studentCount.toLocaleString("en-IN")} students</span>{" "}
+      <div className="mt-5 rounded-2xl bg-gradient-to-r from-purple-50 via-blue-50 to-purple-50 dark:from-purple-950/40 dark:via-slate-900 dark:to-blue-950/40 border border-purple-100/60 dark:border-slate-800 p-6">
+        <p className="text-sm text-gray-600 dark:text-slate-300">
+          <span className="font-display font-bold text-purple-800 dark:text-purple-300">{college.studentCount.toLocaleString("en-IN")} students</span>{" "}
           enrolled across programs, supported by{" "}
-          <span className="font-display font-bold text-blue-800">{college.facultyCount.toLocaleString("en-IN")} faculty members</span>{" "}
+          <span className="font-display font-bold text-blue-800 dark:text-blue-300">{college.facultyCount.toLocaleString("en-IN")} faculty members</span>{" "}
           and a {college.founded ? `${new Date().getFullYear() - college.founded}-year` : ""}-old legacy of academic excellence.
         </p>
       </div>
@@ -419,11 +419,11 @@ function Scholarships({ college }: { college: College }) {
       />
       <div className="mt-5 grid gap-3 sm:grid-cols-2">
         {college.scholarships.map((s) => (
-          <div key={s} className="flex items-center gap-3 rounded-2xl bg-white p-4 ring-1 ring-orange-200/60 card-shadow">
-            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-orange-50 text-orange-500">
+          <div key={s} className="flex items-center gap-3 rounded-2xl bg-white dark:bg-slate-900 p-4 ring-1 ring-orange-200/60 dark:ring-slate-800 card-shadow">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-orange-50 dark:bg-orange-950/60 text-orange-500 dark:text-orange-400">
               <Award className="h-4.5 w-4.5" />
             </span>
-            <p className="text-sm font-semibold text-gray-800">{s}</p>
+            <p className="text-sm font-semibold text-gray-800 dark:text-slate-100">{s}</p>
           </div>
         ))}
       </div>
@@ -445,28 +445,28 @@ function Reviews({ college }: { college: College }) {
         subtitle={`Based on ${formatCount(college.reviewCount)} verified reviews`}
       />
       <div className="mt-5 grid gap-5 lg:grid-cols-[22rem_1fr]">
-        <div className="rounded-2xl bg-white p-6 ring-1 ring-purple-100/60 card-shadow lg:sticky lg:top-36">
+        <div className="rounded-2xl bg-white dark:bg-slate-900 p-6 ring-1 ring-purple-100/60 dark:ring-slate-800 card-shadow lg:sticky lg:top-36">
           <div className="flex items-end gap-3">
-            <span className="font-display text-5xl font-extrabold text-amber-600 tabular-nums">
+            <span className="font-display text-5xl font-extrabold text-amber-600 dark:text-amber-400 tabular-nums">
               {avg.toFixed(1)}
             </span>
             <div className="pb-1">
               <Rating value={avg} />
-              <p className="mt-1 text-xs text-gray-400">{formatCount(college.reviewCount)} reviews overall</p>
+              <p className="mt-1 text-xs text-gray-400 dark:text-slate-400">{formatCount(college.reviewCount)} reviews overall</p>
             </div>
           </div>
           <div className="mt-5 space-y-2">
             {breakdown.map((b) => (
               <div key={b.star} className="flex items-center gap-2">
-                <span className="w-3 text-xs font-semibold text-gray-600 tabular-nums">{b.star}</span>
+                <span className="w-3 text-xs font-semibold text-gray-600 dark:text-slate-300 tabular-nums">{b.star}</span>
                 <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
-                <div className="h-2 flex-1 overflow-hidden rounded-full bg-gray-100">
+                <div className="h-2 flex-1 overflow-hidden rounded-full bg-gray-100 dark:bg-slate-800">
                   <div
                     className="h-full rounded-full bg-amber-400"
                     style={{ width: `${Math.max(b.pct * 100, 4)}%` }}
                   />
                 </div>
-                <span className="w-10 text-right text-xs text-gray-400">{Math.round(b.pct * 100)}%</span>
+                <span className="w-10 text-right text-xs text-gray-400 dark:text-slate-400">{Math.round(b.pct * 100)}%</span>
               </div>
             ))}
           </div>
@@ -474,7 +474,7 @@ function Reviews({ college }: { college: College }) {
 
         <div className="space-y-4">
           {college.reviews.map((r) => (
-            <article key={r.id} className="rounded-2xl bg-white p-5 ring-1 ring-purple-100/60 card-shadow">
+            <article key={r.id} className="rounded-2xl bg-white dark:bg-slate-900 p-5 ring-1 ring-purple-100/60 dark:ring-slate-800 card-shadow">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-center gap-3">
                   <span
@@ -483,22 +483,22 @@ function Reviews({ college }: { college: College }) {
                     {r.initials}
                   </span>
                   <div>
-                    <p className="text-sm font-bold text-gray-900">
+                    <p className="text-sm font-bold text-gray-900 dark:text-white">
                       {r.author}
                       {r.verified && <BadgeCheck className="ml-1.5 inline h-3.5 w-3.5 text-blue-500" />}
                     </p>
-                    <p className="text-xs text-gray-400">
+                    <p className="text-xs text-gray-400 dark:text-slate-400">
                       {r.role} · {r.program}
                     </p>
                   </div>
                 </div>
                 <div className="text-right">
                   <Rating value={r.rating} />
-                  <p className="mt-1 text-[11px] text-gray-400">{r.date}</p>
+                  <p className="mt-1 text-[11px] text-gray-400 dark:text-slate-400">{r.date}</p>
                 </div>
               </div>
-              <h3 className="mt-3 text-sm font-bold text-gray-800">{r.title}</h3>
-              <p className="mt-1.5 text-sm leading-relaxed text-gray-600">{r.body}</p>
+              <h3 className="mt-3 text-sm font-bold text-gray-800 dark:text-slate-100">{r.title}</h3>
+              <p className="mt-1.5 text-sm leading-relaxed text-gray-600 dark:text-slate-300">{r.body}</p>
               <HelpfulButton count={r.helpful} />
             </article>
           ))}
@@ -511,11 +511,11 @@ function Reviews({ college }: { college: College }) {
 function Overview({ college }: { college: College }) {
   return (
     <section id="overview" className="scroll-mt-28 py-8">
-      <h2 className="font-display text-2xl font-extrabold tracking-tight text-purple-950 lg:text-3xl">
+      <h2 className="font-display text-2xl font-extrabold tracking-tight text-purple-950 dark:text-white lg:text-3xl">
         Overview
       </h2>
-      <p className="mt-4 text-[15px] leading-7 text-gray-600">{college.overview}</p>
-      <p className="mt-3 text-[15px] leading-7 text-gray-600">
+      <p className="mt-4 text-[15px] leading-7 text-gray-600 dark:text-slate-300">{college.overview}</p>
+      <p className="mt-3 text-[15px] leading-7 text-gray-600 dark:text-slate-300">
         Established in {college.founded}, {college.shortName} is a {college.sector.toLowerCase()} {college.type.toLowerCase()}{" "}
         located in {college.city}, {college.state}. The institute is well regarded for {college.tagline.toLowerCase()}.
       </p>
@@ -534,26 +534,26 @@ function SectionTitle({
 }) {
   return (
     <div>
-      <h2 className="flex items-center gap-2.5 font-display text-2xl font-extrabold tracking-tight text-purple-950 lg:text-3xl">
-        <span className="grid h-9 w-9 place-items-center rounded-xl bg-purple-50 text-purple-600">{icon}</span>
+      <h2 className="flex items-center gap-2.5 font-display text-2xl font-extrabold tracking-tight text-purple-950 dark:text-white lg:text-3xl">
+        <span className="grid h-9 w-9 place-items-center rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-300">{icon}</span>
         {title}
       </h2>
-      <p className="mt-1.5 text-sm text-gray-500">{subtitle}</p>
+      <p className="mt-1.5 text-sm text-gray-500 dark:text-slate-400">{subtitle}</p>
     </div>
   );
 }
 
 function Breadcrumb({ college }: { college: College }) {
   return (
-    <nav aria-label="Breadcrumb" className="mx-auto max-w-6xl px-4 pt-6 sm:px-6 lg:px-8">
-      <ol className="flex flex-wrap items-center gap-1.5 text-xs text-gray-400">
-        <li><Link href="/" className="hover:text-purple-700">Home</Link></li>
+    <nav aria-label="Breadcrumb" className="mx-auto max-w-6xl px-4 pt-28 sm:px-6 sm:pt-32 lg:px-8 lg:pt-36">
+      <ol className="flex flex-wrap items-center gap-1.5 text-xs text-gray-400 dark:text-slate-400">
+        <li><Link href="/" className="hover:text-purple-700 dark:hover:text-purple-300">Home</Link></li>
         <li>/</li>
-        <li><Link href="/colleges" className="hover:text-purple-700">Colleges</Link></li>
+        <li><Link href="/colleges" className="hover:text-purple-700 dark:hover:text-purple-300">Colleges</Link></li>
         <li>/</li>
-        <li><Link href={`/colleges?state=${encodeURIComponent(college.state)}`} className="hover:text-purple-700">{college.state}</Link></li>
+        <li><Link href={`/colleges?state=${encodeURIComponent(college.state)}`} className="hover:text-purple-700 dark:hover:text-purple-300">{college.state}</Link></li>
         <li>/</li>
-        <li aria-current="page" className="font-medium text-gray-700">{college.shortName}</li>
+        <li aria-current="page" className="font-medium text-gray-700 dark:text-slate-200">{college.shortName}</li>
       </ol>
     </nav>
   );
@@ -598,7 +598,7 @@ export default function CollegeDetailContent({ college }: { college: College }) 
           </div>
 
           <aside className="hidden w-[19rem] shrink-0 lg:block">
-            <div className="sticky top-24 space-y-4">
+            <div className="sticky top-36 space-y-4">
               <div className="rounded-2xl bg-white p-6 ring-1 ring-purple-100/60 card-shadow">
                 <h3 className="mb-4 text-sm font-bold uppercase tracking-wide text-gray-700">Quick facts</h3>
                 <QuickFacts college={college} />

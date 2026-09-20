@@ -123,7 +123,7 @@ export default function ScholarshipsExplorer() {
   const eligible = (sch: Scholarship) => tag === "All" || sch.tags.includes(tag);
 
   return (
-    <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8 lg:py-16">
+    <section className="mx-auto max-w-7xl px-4 pt-28 pb-12 sm:px-6 sm:pt-32 lg:px-8 lg:pt-36 lg:pb-16">
       <div className="max-w-2xl">
         <p className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.14em] text-orange-600">
           <GraduationCap className="h-4 w-4" /> Financial support

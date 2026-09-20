@@ -1,0 +1,240 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { Sparkles } from "lucide-react";
+
+interface RobotViewerProps {
+  className?: string;
+  autoRotate?: boolean;
+  interactive?: boolean;
+  rotationY?: number;
+  modelScale?: number;
+  animationSpeed?: number;
+  animationOffset?: number;
+  animated?: boolean;
+}
+
+export function RobotViewer({
+  className = "h-10 w-10",
+  autoRotate = false,
+  interactive = false,
+  rotationY = 0,
+  modelScale = 1.25,
+  animationSpeed = 1.0,
+  animationOffset,
+  animated = true,
+}: RobotViewerProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState(false);
+  // Unique random animation phase offset per instance if animationOffset isn't specified
+  const instanceOffsetRef = useRef<number>(
+    animationOffset !== undefined ? animationOffset : Math.random() * 10
+  );
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    let animationFrameId: number;
+    let renderer: THREE.WebGLRenderer | null = null;
+    let mixer: THREE.AnimationMixer | null = null;
+
+    try {
+      const width = container.clientWidth || 44;
+      const height = container.clientHeight || 44;
+
+      // 1. Scene
+      const scene = new THREE.Scene();
+
+      // 2. Fixed camera with medium-wide field of view - 0 cropping from head to feet
+      const camera = new THREE.PerspectiveCamera(38, width / height, 0.1, 100);
+      camera.position.set(0, 0, 3.4);
+
+      // 3. WebGL Renderer with antialias and alpha transparency
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      renderer.setSize(width, height);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      container.appendChild(renderer.domElement);
+
+      // 4. Studio Lighting setup — crisp, professional 3D character illumination
+      const ambientLight = new THREE.AmbientLight(0xffffff, 2.6);
+      scene.add(ambientLight);
+
+      const keyLight = new THREE.DirectionalLight(0xffffff, 3.0);
+      keyLight.position.set(1, 3, 5);
+      scene.add(keyLight);
+
+      const fillLight = new THREE.DirectionalLight(0xa855f7, 1.8);
+      fillLight.position.set(-3, 1, 3);
+      scene.add(fillLight);
+
+      const backLight = new THREE.DirectionalLight(0x3b82f6, 2.0);
+      backLight.position.set(0, 4, -4);
+      scene.add(backLight);
+
+      // 5. Load GLTF model
+      const loader = new GLTFLoader();
+      const clock = new THREE.Clock();
+      let robotModel: THREE.Group | null = null;
+      let initialY = 0;
+
+      loader.load(
+        "/bot_robot.glb",
+        (gltf) => {
+          robotModel = gltf.scene;
+
+          // Compute exact bounding box of the 3D model
+          const box = new THREE.Box3().setFromObject(robotModel);
+          const center = box.getCenter(new THREE.Vector3());
+          const size = box.getSize(new THREE.Vector3());
+          const maxDim = Math.max(size.x, size.y, size.z);
+          // Scale factor calibrated so full character from head to feet fits within camera frustum with safety margin
+          const scale = (1.05 * modelScale) / maxDim;
+
+          robotModel.scale.setScalar(scale);
+
+          // Center model geometry perfectly around origin (0, 0, 0)
+          robotModel.position.x = -center.x * scale;
+          robotModel.position.y = -center.y * scale;
+          robotModel.position.z = -center.z * scale;
+
+          // Initial rotation facing front
+          robotModel.rotation.set(0, rotationY, 0);
+          initialY = robotModel.position.y;
+
+          // Enable & play all skeletal animation tracks smoothly with phase desynchronization
+          if (animated && gltf.animations && gltf.animations.length > 0) {
+            mixer = new THREE.AnimationMixer(robotModel);
+            const offset = instanceOffsetRef.current;
+            gltf.animations.forEach((clip) => {
+              const action = mixer?.clipAction(clip);
+              if (action) {
+                action.setLoop(THREE.LoopRepeat, Infinity);
+                action.clampWhenFinished = false;
+                action.enabled = true;
+                action.play();
+                if (clip.duration > 0) {
+                  action.time = offset % clip.duration;
+                }
+              }
+            });
+          }
+
+          scene.add(robotModel);
+          setLoaded(true);
+        },
+        undefined,
+        (err) => {
+          console.error("Failed to load 3D bot model:", err);
+          setError(true);
+        }
+      );
+
+      // Mouse interaction handlers
+      let mouseX = 0;
+      let mouseY = 0;
+      const handleMouseMove = (e: MouseEvent) => {
+        if (!interactive) return;
+        const rect = container.getBoundingClientRect();
+        mouseX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        mouseY = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
+      };
+
+      if (interactive) {
+        window.addEventListener("mousemove", handleMouseMove);
+      }
+
+      // 6. Animation render loop with smooth idle motion and desynchronized phase timing
+      const animate = () => {
+        animationFrameId = requestAnimationFrame(animate);
+        const delta = clock.getDelta();
+        const elapsedTime = clock.getElapsedTime() + instanceOffsetRef.current;
+
+        if (animated && mixer) mixer.update(delta * animationSpeed);
+
+        if (robotModel) {
+          if (autoRotate) {
+            robotModel.rotation.y += 0.008;
+          } else {
+            robotModel.rotation.y = rotationY;
+          }
+
+          if (animated) {
+            // Gentle, seamless mechanical idle bobbing (desynchronized)
+            robotModel.position.y = initialY + Math.sin(elapsedTime * 1.5) * 0.015;
+          }
+
+          if (interactive) {
+            robotModel.rotation.x = THREE.MathUtils.lerp(
+              robotModel.rotation.x,
+              mouseY * 0.15,
+              0.06
+            );
+            robotModel.rotation.y = THREE.MathUtils.lerp(
+              robotModel.rotation.y,
+              rotationY + mouseX * 0.2,
+              0.06
+            );
+          }
+        }
+
+        if (renderer && scene && camera) {
+          renderer.render(scene, camera);
+        }
+      };
+
+      animate();
+
+      // Handle canvas resize
+      const handleResize = () => {
+        if (!container || !renderer) return;
+        const newW = container.clientWidth;
+        const newH = container.clientHeight;
+        camera.aspect = newW / newH;
+        camera.updateProjectionMatrix();
+        renderer.setSize(newW, newH);
+      };
+
+      const resizeObserver = new ResizeObserver(handleResize);
+      resizeObserver.observe(container);
+
+      return () => {
+        cancelAnimationFrame(animationFrameId);
+        resizeObserver.disconnect();
+        if (interactive) {
+          window.removeEventListener("mousemove", handleMouseMove);
+        }
+        if (renderer && renderer.domElement) {
+          container.removeChild(renderer.domElement);
+          renderer.dispose();
+        }
+      };
+    } catch (e) {
+      console.error("3D WebGL initialization error:", e);
+      setError(true);
+    }
+  }, [autoRotate, interactive]);
+
+  if (error) {
+    return (
+      <span className={`grid place-items-center rounded-full bg-purple-500/20 text-white ${className}`}>
+        <Sparkles className="h-5 w-5" />
+      </span>
+    );
+  }
+
+  return (
+    <div className={`relative flex items-center justify-center overflow-hidden ${className}`}>
+      {!loaded && (
+        <span className="absolute inset-0 grid place-items-center rounded-full bg-purple-500/20 text-white animate-pulse">
+          <Sparkles className="h-4 w-4" />
+        </span>
+      )}
+      <div ref={containerRef} className="h-full w-full" />
+    </div>
+  );
+}
