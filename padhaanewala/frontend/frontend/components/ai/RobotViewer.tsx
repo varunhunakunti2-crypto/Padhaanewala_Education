@@ -14,7 +14,7 @@ interface RobotViewerProps {
   animationSpeed?: number;
   animationOffset?: number;
   animated?: boolean;
-  animationMode?: "idle" | "sway" | "bounce" | "wave" | "spin";
+  animationMode?: "idle" | "sway" | "bounce" | "wave" | "spin" | "middle";
 }
 
 export function RobotViewer({
@@ -164,6 +164,9 @@ export function RobotViewer({
           } else if (animationMode === "sway" || animationMode === "wave") {
             robotModel.rotation.y = rotationY + Math.sin(elapsedTime * 2.2) * 0.25;
             robotModel.rotation.z = Math.sin(elapsedTime * 1.8) * 0.08;
+          } else if (animationMode === "middle") {
+            robotModel.rotation.y = rotationY + Math.sin(elapsedTime * 1.4) * 0.1;
+            robotModel.rotation.z = Math.sin(elapsedTime * 1.2) * 0.03;
           } else {
             robotModel.rotation.y = rotationY;
             robotModel.rotation.z = 0;
@@ -174,6 +177,8 @@ export function RobotViewer({
               robotModel.position.y = initialY + Math.abs(Math.sin(elapsedTime * 3.2)) * 0.025;
             } else if (animationMode === "sway" || animationMode === "wave") {
               robotModel.position.y = initialY + Math.sin(elapsedTime * 2.0) * 0.015;
+            } else if (animationMode === "middle") {
+              robotModel.position.y = initialY + Math.sin(elapsedTime * 1.6) * 0.012;
             } else {
               // Gentle, seamless mechanical idle bobbing (desynchronized)
               robotModel.position.y = initialY + Math.sin(elapsedTime * 1.5) * 0.015;
