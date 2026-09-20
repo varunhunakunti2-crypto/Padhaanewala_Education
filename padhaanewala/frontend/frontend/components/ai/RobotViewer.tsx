@@ -62,25 +62,27 @@ export function RobotViewer({
       renderer.outputColorSpace = THREE.SRGBColorSpace;
       container.appendChild(renderer.domElement);
 
-      // 4. Studio Lighting setup — crisp, professional 3D character illumination
-      const ambientLight = new THREE.AmbientLight(0xffffff, 2.6);
+      // 4. High-Luminance Studio Lighting setup — ultra-crisp 3D character illumination
+      const ambientLight = new THREE.AmbientLight(0xffffff, 3.6);
       scene.add(ambientLight);
 
-      const keyLight = new THREE.DirectionalLight(0xffffff, 3.0);
-      keyLight.position.set(1, 3, 5);
+      const keyLight = new THREE.DirectionalLight(0xffffff, 4.5);
+      keyLight.position.set(2, 4, 5);
       scene.add(keyLight);
 
-      const fillLight = new THREE.DirectionalLight(0xa855f7, 1.8);
-      fillLight.position.set(-3, 1, 3);
+      const fillLight = new THREE.DirectionalLight(0xc084fc, 2.8);
+      fillLight.position.set(-3.5, 2, 3);
       scene.add(fillLight);
 
-      const backLight = new THREE.DirectionalLight(0x3b82f6, 2.0);
+      const backLight = new THREE.DirectionalLight(0x38bdf8, 3.2);
       backLight.position.set(0, 4, -4);
       scene.add(backLight);
 
-      // Helper to tint 3D model black in White/Light mode and restore silver/white in Dark mode
+      // Helper to apply stealth black metallic palette in White mode matching reference image
       const applyThemeColor = (model: THREE.Group) => {
         const isDark = document.documentElement.classList.contains("dark");
+        const hsl = { h: 0, s: 0, l: 0 };
+
         model.traverse((child) => {
           if ((child as THREE.Mesh).isMesh) {
             const mesh = child as THREE.Mesh;
@@ -92,12 +94,35 @@ export function RobotViewer({
                   if (!m.userData.origColor) {
                     m.userData.origColor = m.color.clone();
                   }
+
                   if (!isDark) {
-                    // White mode (light theme): turn model sleek dark charcoal black
-                    m.color.setHex(0x18181b);
+                    // White mode: stealth dark metallic black (as shown in image media_1789937995166)
+                    const nameLower = mesh.name.toLowerCase();
+                    m.userData.origColor.getHSL(hsl);
+
+                    if (nameLower.includes("eye") || nameLower.includes("visor") || nameLower.includes("light")) {
+                      // Visor eyes -> Electric Cyan #00F0FF
+                      m.color.setHex(0x00f0ff);
+                    } else if (hsl.l > 0.5) {
+                      // Head, helmet, hands, limbs -> Stealth Dark Metallic Black #18181B
+                      m.color.setHex(0x18181b);
+                    } else if (hsl.l > 0.15 || nameLower.includes("chest") || nameLower.includes("torso")) {
+                      // Chest torso armor -> Dark Charcoal #27272A
+                      m.color.setHex(0x27272a);
+                    } else {
+                      // Joints & inner frame -> Deep Midnight Black #090D16
+                      m.color.setHex(0x090d16);
+                    }
+                    m.roughness = 0.35;
+                    m.metalness = 0.25;
                   } else {
-                    // Dark mode: restore original light/silver color
+                    // Dark mode: restore original ceramic white & graphite model colors
                     m.color.copy(m.userData.origColor);
+                    if (mesh.name.toLowerCase().includes("eye") || mesh.name.toLowerCase().includes("visor")) {
+                      m.color.setHex(0x38bdf8);
+                    }
+                    m.roughness = 0.35;
+                    m.metalness = 0.1;
                   }
                 }
               });
