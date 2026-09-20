@@ -62,6 +62,8 @@ export function AIChat() {
     }
   };
 
+  const lastAiMsgId = [...messages].reverse().find((m) => m.role === "ai")?.id;
+
   return (
     <div className="mx-auto flex h-[calc(100dvh-8.5rem)] max-w-3xl flex-col overflow-hidden rounded-3xl border border-purple-100 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xl shadow-purple-900/5 dark:shadow-purple-950/20">
       {/* Header */}
@@ -96,7 +98,11 @@ export function AIChat() {
               )}
             >
               {m.role === "ai" ? (
-                <RobotViewer className="h-full w-full" autoRotate={false} modelScale={1.15} />
+                !loading && m.id === lastAiMsgId ? (
+                  <RobotViewer className="h-full w-full" autoRotate={false} modelScale={1.15} />
+                ) : (
+                  <span className="h-2 w-2 rounded-full bg-purple-400/40 dark:bg-purple-600/40" />
+                )
               ) : (
                 <User className="h-5 w-5" />
               )}
