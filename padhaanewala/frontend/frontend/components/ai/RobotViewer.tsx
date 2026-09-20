@@ -78,6 +78,34 @@ export function RobotViewer({
       backLight.position.set(0, 4, -4);
       scene.add(backLight);
 
+      // Helper to tint 3D model black in White/Light mode and restore silver/white in Dark mode
+      const applyThemeColor = (model: THREE.Group) => {
+        const isDark = document.documentElement.classList.contains("dark");
+        model.traverse((child) => {
+          if ((child as THREE.Mesh).isMesh) {
+            const mesh = child as THREE.Mesh;
+            if (mesh.material) {
+              const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+              materials.forEach((mat) => {
+                if (mat && "color" in mat && (mat as THREE.MeshStandardMaterial).color) {
+                  const m = mat as THREE.MeshStandardMaterial;
+                  if (!m.userData.origColor) {
+                    m.userData.origColor = m.color.clone();
+                  }
+                  if (!isDark) {
+                    // White mode (light theme): turn model sleek dark charcoal black
+                    m.color.setHex(0x18181b);
+                  } else {
+                    // Dark mode: restore original light/silver color
+                    m.color.copy(m.userData.origColor);
+                  }
+                }
+              });
+            }
+          }
+        });
+      };
+
       // 5. Load GLTF model
       const loader = new GLTFLoader();
       const clock = new THREE.Clock();
@@ -108,6 +136,9 @@ export function RobotViewer({
           robotModel.rotation.set(0, rotationY, 0);
           initialY = robotModel.position.y;
 
+          // Apply initial theme color (black in white mode, original in dark mode)
+          applyThemeColor(robotModel);
+
           // Enable & play all skeletal animation tracks smoothly with phase desynchronization
           if (animated && gltf.animations && gltf.animations.length > 0) {
             mixer = new THREE.AnimationMixer(robotModel);
@@ -135,6 +166,18 @@ export function RobotViewer({
           setError(true);
         }
       );
+
+      // Listen to theme mode changes (dark <-> light toggle)
+      const themeObserver = new MutationObserver(() => {
+        if (robotModel) {
+          applyThemeColor(robotModel);
+        }
+      });
+
+      themeObserver.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ["class"],
+      });
 
       // Mouse interaction handlers
       let mouseX = 0;
@@ -222,6 +265,7 @@ export function RobotViewer({
       return () => {
         cancelAnimationFrame(animationFrameId);
         resizeObserver.disconnect();
+        themeObserver.disconnect();
         if (interactive) {
           window.removeEventListener("mousemove", handleMouseMove);
         }
