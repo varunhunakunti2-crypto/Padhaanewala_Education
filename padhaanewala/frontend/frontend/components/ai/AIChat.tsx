@@ -23,15 +23,21 @@ export function AIChat() {
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const endRef = useRef<HTMLDivElement | null>(null);
+  const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const counterRef = useRef(0);
   const avatarRefs = useRef<Record<string, HTMLSpanElement | null>>({});
   const [robotTop, setRobotTop] = useState<number | null>(null);
 
   const lastAiMsgId = [...messages].reverse().find((m) => m.role === "ai")?.id;
 
+  // Scroll ONLY the internal chat container to the latest message, leaving main page fixed
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTo({
+        top: messagesContainerRef.current.scrollHeight,
+        behavior: "smooth",
+      });
+    }
   }, [messages, loading]);
 
   useEffect(() => {
@@ -106,7 +112,7 @@ export function AIChat() {
       </div>
 
       {/* Messages */}
-      <div className="relative flex-1 space-y-4 overflow-y-auto px-4 py-5 scroll-thin">
+      <div ref={messagesContainerRef} className="relative flex-1 space-y-4 overflow-y-auto px-4 py-5 scroll-thin">
         {/* Smooth sliding 3D Robot model */}
         {robotTop !== null && (
           <div
@@ -164,7 +170,6 @@ export function AIChat() {
             </div>
           </div>
         )}
-        <div ref={endRef} />
       </div>
 
       {/* Suggested questions */}
