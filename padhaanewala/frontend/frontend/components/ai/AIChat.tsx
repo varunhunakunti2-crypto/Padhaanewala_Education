@@ -94,7 +94,7 @@ export function AIChat() {
       <div className="flex items-center justify-between border-b border-purple-100 dark:border-slate-800 bg-gradient-to-r from-purple-700 to-indigo-700 px-5 py-4">
         <div className="flex items-center gap-3">
           <div className="relative h-12 w-12 flex-shrink-0 flex items-center justify-center pointer-events-none">
-            <RobotViewer className="h-full w-full" animated={false} autoRotate={false} modelScale={1.75} />
+            <RobotViewer className="h-full w-full" animated={true} autoRotate={true} modelScale={1.75} />
           </div>
           <div>
             <p className="text-sm font-bold text-white">Ask Padhaanewala AI</p>
