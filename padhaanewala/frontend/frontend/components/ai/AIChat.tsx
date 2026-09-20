@@ -25,10 +25,30 @@ export function AIChat() {
   const [loading, setLoading] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
   const counterRef = useRef(0);
+  const avatarRefs = useRef<Record<string, HTMLSpanElement | null>>({});
+  const [robotTop, setRobotTop] = useState<number | null>(null);
+
+  const lastAiMsgId = [...messages].reverse().find((m) => m.role === "ai")?.id;
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
+
+  useEffect(() => {
+    const targetId = loading ? "loading" : lastAiMsgId;
+    if (!targetId) return;
+
+    const updatePosition = () => {
+      const el = avatarRefs.current[targetId];
+      if (el) {
+        setRobotTop(el.offsetTop);
+      }
+    };
+
+    updatePosition();
+    const timer = setTimeout(updatePosition, 60);
+    return () => clearTimeout(timer);
+  }, [messages, loading, lastAiMsgId]);
 
   const nextId = () => `m-${counterRef.current++}`;
 
@@ -62,8 +82,6 @@ export function AIChat() {
     }
   };
 
-  const lastAiMsgId = [...messages].reverse().find((m) => m.role === "ai")?.id;
-
   return (
     <div className="mx-auto flex h-[calc(100dvh-8.5rem)] max-w-3xl flex-col overflow-hidden rounded-3xl border border-purple-100 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xl shadow-purple-900/5 dark:shadow-purple-950/20">
       {/* Header */}
@@ -88,21 +106,32 @@ export function AIChat() {
       </div>
 
       {/* Messages */}
-      <div className="flex-1 space-y-4 overflow-y-auto px-4 py-5 scroll-thin">
+      <div className="relative flex-1 space-y-4 overflow-y-auto px-4 py-5 scroll-thin">
+        {/* Smooth sliding 3D Robot model */}
+        {robotTop !== null && (
+          <div
+            className="absolute left-4 h-12 w-12 z-20 pointer-events-none transition-all duration-500 cubic-bezier(0.34, 1.56, 0.64, 1)"
+            style={{ top: `${robotTop}px` }}
+          >
+            <RobotViewer className="h-full w-full" autoRotate={false} modelScale={1.15} />
+          </div>
+        )}
+
         {messages.map((m) => (
           <div key={m.id} className={cn("flex gap-3", m.role === "user" && "flex-row-reverse")}>
             <span
+              ref={(el) => {
+                if (m.role === "ai") {
+                  avatarRefs.current[m.id] = el;
+                }
+              }}
               className={cn(
                 "mt-0.5 relative flex h-12 w-12 shrink-0 items-center justify-center",
                 m.role === "user" && "rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300 shadow-sm",
               )}
             >
               {m.role === "ai" ? (
-                !loading && m.id === lastAiMsgId ? (
-                  <RobotViewer className="h-full w-full" autoRotate={false} modelScale={1.15} />
-                ) : (
-                  <span className="h-2 w-2 rounded-full bg-purple-400/40 dark:bg-purple-600/40" />
-                )
+                <span className="h-2 w-2 rounded-full bg-purple-400/40 dark:bg-purple-600/40" />
               ) : (
                 <User className="h-5 w-5" />
               )}
@@ -121,8 +150,13 @@ export function AIChat() {
         ))}
         {loading && (
           <div className="flex gap-3">
-            <span className="mt-0.5 relative flex h-12 w-12 shrink-0 items-center justify-center">
-              <RobotViewer className="h-full w-full" autoRotate={false} modelScale={1.15} />
+            <span
+              ref={(el) => {
+                avatarRefs.current["loading"] = el;
+              }}
+              className="mt-0.5 relative flex h-12 w-12 shrink-0 items-center justify-center"
+            >
+              <span className="h-2 w-2 rounded-full bg-purple-400/40 dark:bg-purple-600/40" />
             </span>
             <div className="flex items-center gap-1.5 rounded-2xl rounded-tl-sm border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/80 px-4 py-3">
               <Loader2 className="h-4 w-4 animate-spin text-purple-500 dark:text-purple-400" />
