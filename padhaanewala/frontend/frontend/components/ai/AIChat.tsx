@@ -119,7 +119,7 @@ export function AIChat() {
             className="absolute left-4 h-12 w-12 z-20 pointer-events-none transition-all duration-500 cubic-bezier(0.34, 1.56, 0.64, 1)"
             style={{ top: `${robotTop}px` }}
           >
-            <RobotViewer className="h-full w-full" autoRotate={false} modelScale={1.15} />
+            <RobotViewer className="h-full w-full" autoRotate={false} modelScale={1.15} animationMode="sway" />
           </div>
         )}
 

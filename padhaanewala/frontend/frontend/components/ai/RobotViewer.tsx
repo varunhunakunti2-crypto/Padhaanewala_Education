@@ -14,6 +14,7 @@ interface RobotViewerProps {
   animationSpeed?: number;
   animationOffset?: number;
   animated?: boolean;
+  animationMode?: "idle" | "sway" | "bounce" | "wave" | "spin";
 }
 
 export function RobotViewer({
@@ -25,6 +26,7 @@ export function RobotViewer({
   animationSpeed = 1.0,
   animationOffset,
   animated = true,
+  animationMode = "idle",
 }: RobotViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [loaded, setLoaded] = useState(false);
@@ -157,15 +159,25 @@ export function RobotViewer({
         if (animated && mixer) mixer.update(delta * animationSpeed);
 
         if (robotModel) {
-          if (autoRotate) {
+          if (autoRotate || animationMode === "spin") {
             robotModel.rotation.y += 0.008;
+          } else if (animationMode === "sway" || animationMode === "wave") {
+            robotModel.rotation.y = rotationY + Math.sin(elapsedTime * 2.2) * 0.25;
+            robotModel.rotation.z = Math.sin(elapsedTime * 1.8) * 0.08;
           } else {
             robotModel.rotation.y = rotationY;
+            robotModel.rotation.z = 0;
           }
 
           if (animated) {
-            // Gentle, seamless mechanical idle bobbing (desynchronized)
-            robotModel.position.y = initialY + Math.sin(elapsedTime * 1.5) * 0.015;
+            if (animationMode === "bounce") {
+              robotModel.position.y = initialY + Math.abs(Math.sin(elapsedTime * 3.2)) * 0.025;
+            } else if (animationMode === "sway" || animationMode === "wave") {
+              robotModel.position.y = initialY + Math.sin(elapsedTime * 2.0) * 0.015;
+            } else {
+              // Gentle, seamless mechanical idle bobbing (desynchronized)
+              robotModel.position.y = initialY + Math.sin(elapsedTime * 1.5) * 0.015;
+            }
           }
 
           if (interactive) {
