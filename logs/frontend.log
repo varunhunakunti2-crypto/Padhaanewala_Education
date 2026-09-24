@@ -1,0 +1,52 @@
+
+> campus-pulse@0.1.0 dev
+> next dev
+
+⚠ Port 3000 is in use by process 13740, using available port 3001 instead.
+▲ Next.js 16.3.5 (Turbopack)
+- Local:         http://localhost:3001
+- Network:       http://10.215.86.193:3001
+✓ Ready in 2.8s
+✓ Running next.config.ts took 6.9s
+
+○ Compiling / ...
+ GET / 200 in 14.7s (next.js: 11.6s, application-code: 3.0s)
+ GET / 200 in 1306ms (next.js: 325ms, application-code: 981ms)
+[browser] THREE.Clock: This module has been deprecated. Please use THREE.Timer instead. (frontend/components/ai/RobotViewer.tsx:136:21)
+[browser] THREE.Clock: This module has been deprecated. Please use THREE.Timer instead. (frontend/components/ai/RobotViewer.tsx:136:21)
+ GET / 200 in 2.1s (next.js: 8ms, application-code: 2.1s)
+[browser] THREE.Clock: This module has been deprecated. Please use THREE.Timer instead. (frontend/components/ai/RobotViewer.tsx:136:21)
+[browser] THREE.Clock: This module has been deprecated. Please use THREE.Timer instead. (frontend/components/ai/RobotViewer.tsx:136:21)
+○ Compiling /ask-ai ...
+ GET /ask-ai 200 in 5.1s (next.js: 4.8s, application-code: 355ms)
+[browser] Detected `scroll-behavior: smooth` on the `<html>` element. To disable smooth scrolling during route transitions, add `data-scroll-behavior="smooth"` to your <html> element. Learn more: https://nextjs.org/docs/messages/missing-data-scroll-behavior
+[browser] THREE.Clock: This module has been deprecated. Please use THREE.Timer instead. (frontend/components/ai/RobotViewer.tsx:136:21)
+[browser] THREE.Clock: This module has been deprecated. Please use THREE.Timer instead. (frontend/components/ai/RobotViewer.tsx:136:21)
+[browser] THREE.Clock: This module has been deprecated. Please use THREE.Timer instead. (frontend/components/ai/RobotViewer.tsx:136:21)
+[browser] THREE.Clock: This module has been deprecated. Please use THREE.Timer instead. (frontend/components/ai/RobotViewer.tsx:136:21)
+ POST /api/ai 200 in 1275ms (next.js: 1170ms, application-code: 105ms)
+ POST /api/ai 200 in 33ms (next.js: 10ms, application-code: 23ms)
+ POST /api/ai 200 in 22ms (next.js: 4ms, application-code: 18ms)
+ GET / 200 in 284ms (next.js: 22ms, application-code: 262ms)
+ GET /dashboard 200 in 930ms (next.js: 896ms, application-code: 33ms)
+[browser] Detected `scroll-behavior: smooth` on the `<html>` element. To disable smooth scrolling during route transitions, add `data-scroll-behavior="smooth"` to your <html> element. Learn more: https://nextjs.org/docs/messages/missing-data-scroll-behavior
+ GET /login?next=%2Fdashboard 200 in 453ms (next.js: 394ms, application-code: 59ms)
+ GET /login?next=%2Fdashboard 200 in 28ms (next.js: 6ms, application-code: 23ms)
+ GET /contact 200 in 624ms (next.js: 570ms, application-code: 54ms)
+ GET /dashboard 200 in 36ms (next.js: 5ms, application-code: 31ms)
+ GET /login?next=%2Fdashboard 200 in 73ms (next.js: 9ms, application-code: 64ms)
+ GET /login?next=%2Fdashboard 200 in 37ms (next.js: 7ms, application-code: 30ms)
+ GET /contact 200 in 45ms (next.js: 4ms, application-code: 40ms)
+ GET /about 200 in 458ms (next.js: 364ms, application-code: 94ms)
+ GET /resources 200 in 640ms (next.js: 571ms, application-code: 69ms)
+ GET /blog 200 in 400ms (next.js: 336ms, application-code: 64ms)
+ GET /reviews 200 in 777ms (next.js: 719ms, application-code: 58ms)
+ GET /ask-ai 200 in 30ms (next.js: 4ms, application-code: 25ms)
+[browser] THREE.Clock: This module has been deprecated. Please use THREE.Timer instead. (frontend/components/ai/RobotViewer.tsx:136:21)
+[browser] THREE.Clock: This module has been deprecated. Please use THREE.Timer instead. (frontend/components/ai/RobotViewer.tsx:136:21)
+[browser] THREE.Clock: This module has been deprecated. Please use THREE.Timer instead. (frontend/components/ai/RobotViewer.tsx:136:21)
+[browser] THREE.Clock: This module has been deprecated. Please use THREE.Timer instead. (frontend/components/ai/RobotViewer.tsx:136:21)
+ GET /compare 200 in 522ms (next.js: 473ms, application-code: 49ms)
+ GET /exams 200 in 431ms (next.js: 380ms, application-code: 50ms)
+ GET /colleges 200 in 581ms (next.js: 541ms, application-code: 40ms)
+ GET / 200 in 157ms (next.js: 46ms, application-code: 111ms)
