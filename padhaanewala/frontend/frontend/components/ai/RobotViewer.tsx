@@ -32,9 +32,14 @@ export function RobotViewer({
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
   // Unique random animation phase offset per instance if animationOffset isn't specified
-  const instanceOffsetRef = useRef<number>(
-    animationOffset !== undefined ? animationOffset : Math.random() * 10
-  );
+  const needsRandomOffsetRef = useRef(animationOffset === undefined);
+  const instanceOffsetRef = useRef<number>(animationOffset ?? 0);
+
+  useEffect(() => {
+    if (needsRandomOffsetRef.current) {
+      instanceOffsetRef.current = Math.random() * 10;
+    }
+  }, []);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -301,7 +306,7 @@ export function RobotViewer({
       };
     } catch (e) {
       console.error("3D WebGL initialization error:", e);
-      setError(true);
+      queueMicrotask(() => setError(true));
     }
   }, [autoRotate, interactive]);
 

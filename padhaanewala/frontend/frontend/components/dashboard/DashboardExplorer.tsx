@@ -414,16 +414,23 @@ function RecentTab() {
 }
 
 function SearchesTab() {
-  const { recentSearches, recentLocations } = useApp();
+  const { recentSearches, recentLocations, clearRecentSearches, clearRecentLocations } = useApp();
   return (
     <div className="space-y-8">
       <div>
-        <h3 className="flex items-center gap-2 font-display text-lg font-bold text-gray-900">
-          <Search className="h-5 w-5 text-purple-500" /> Recent searches
-        </h3>
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="flex items-center gap-2 font-display text-lg font-bold text-gray-900">
+            <Search className="h-5 w-5 text-purple-500" /> Recent searches
+          </h3>
+          {recentSearches.length > 0 && (
+            <button type="button" onClick={clearRecentSearches} className="text-xs font-semibold text-gray-400 transition hover:text-red-500">
+              Clear all
+            </button>
+          )}
+        </div>
         <div className="mt-3 flex flex-wrap gap-2">
           {recentSearches.length === 0 ? (
-            <p className="text-sm text-gray-400">No searches yet.</p>
+            <p className="text-sm text-gray-400">No searches yet — try searching for a college or course.</p>
           ) : (
             recentSearches.map((s) => (
               <Link
@@ -438,12 +445,19 @@ function SearchesTab() {
         </div>
       </div>
       <div>
-        <h3 className="flex items-center gap-2 font-display text-lg font-bold text-gray-900">
-          <MapPin className="h-5 w-5 text-blue-500" /> Recent locations
-        </h3>
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="flex items-center gap-2 font-display text-lg font-bold text-gray-900">
+            <MapPin className="h-5 w-5 text-blue-500" /> Recent locations
+          </h3>
+          {recentLocations.length > 0 && (
+            <button type="button" onClick={clearRecentLocations} className="text-xs font-semibold text-gray-400 transition hover:text-red-500">
+              Clear all
+            </button>
+          )}
+        </div>
         <div className="mt-3 flex flex-wrap gap-2">
           {recentLocations.length === 0 ? (
-            <p className="text-sm text-gray-400">No locations yet.</p>
+            <p className="text-sm text-gray-400">No locations yet — filter colleges by state or city.</p>
           ) : (
             recentLocations.map((l) => (
               <Link
@@ -462,7 +476,7 @@ function SearchesTab() {
 }
 
 function ComparisonsTab() {
-  const { toggleCompare, clearCompare } = useApp();
+  const { toggleCompare, clearCompare, showToast } = useApp();
   const [history] = useState<string[][]>(() => {
     if (typeof window === "undefined") return [];
     try {
@@ -479,6 +493,7 @@ function ComparisonsTab() {
       const c = getCollegeById(id);
       if (c) toggleCompare(c.id, c.shortName);
     });
+    showToast({ variant: "success", title: "Comparison loaded", description: "Colleges added to the compare bar." });
   };
 
   return (
@@ -517,7 +532,7 @@ function ComparisonsTab() {
 }
 
 function ProfileTab() {
-  const { profile, setProfile } = useApp();
+  const { profile, setProfile, showToast } = useApp();
   const [form, setForm] = useState({
     name: profile?.name ?? "",
     email: profile?.email ?? "",
@@ -546,6 +561,11 @@ function ProfileTab() {
       preferredCity: form.preferredCity,
       budgetMin: form.budgetMin ? Number(form.budgetMin) : null,
       budgetMax: form.budgetMax ? Number(form.budgetMax) : null,
+    });
+    showToast({
+      variant: "success",
+      title: "Profile saved",
+      description: "Your profile and preferences are up to date.",
     });
   };
 
@@ -739,7 +759,7 @@ function EnquiriesTab() {
 }
 
 function NotificationsTab() {
-  const { notifications, markNotificationRead, markAllNotificationsRead } = useApp();
+  const { notifications, markNotificationRead, markAllNotificationsRead, showToast } = useApp();
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
@@ -747,7 +767,14 @@ function NotificationsTab() {
           <Bell className="h-5 w-5 text-amber-500" /> Notifications
         </h3>
         {notifications.some((n) => !n.read) && (
-          <button type="button" onClick={markAllNotificationsRead} className="text-xs font-semibold text-purple-700 hover:text-purple-800">
+          <button
+            type="button"
+            onClick={() => {
+              markAllNotificationsRead();
+              showToast({ variant: "info", title: "All notifications marked as read" });
+            }}
+            className="text-xs font-semibold text-purple-700 hover:text-purple-800"
+          >
             Mark all as read
           </button>
         )}
@@ -780,7 +807,7 @@ function NotificationsTab() {
 }
 
 function SettingsTab() {
-  const { prefs, setPrefs } = useApp();
+  const { prefs, setPrefs, showToast } = useApp();
   const rows = [
     { label: "Admission deadline reminders", key: "admissionDeadlines" as const },
     { label: "Scholarship alerts", key: "scholarshipAlerts" as const },
@@ -798,7 +825,14 @@ function SettingsTab() {
           className="flex items-center justify-between gap-4 rounded-2xl bg-white px-5 py-4 ring-1 ring-purple-100/60 card-shadow"
         >
           <span className="text-sm font-medium text-gray-800">{r.label}</span>
-          <Switch checked={prefs[r.key]} onChange={(v) => setPrefs({ [r.key]: v })} label={r.label} />
+          <Switch
+            checked={prefs[r.key]}
+            onChange={(v) => {
+              setPrefs({ [r.key]: v });
+              showToast({ variant: "info", title: v ? "Preference enabled" : "Preference disabled", description: r.label });
+            }}
+            label={r.label}
+          />
         </div>
       ))}
     </div>
@@ -820,14 +854,14 @@ export default function DashboardExplorer() {
     : timeGreeting;
 
   const statItems = [
-    { icon: <Heart className="h-5 w-5 text-rose-500" />, label: "Saved colleges", value: savedColleges.length, tone: "bg-rose-50" },
-    { icon: <FileQuestion className="h-5 w-5 text-purple-500" />, label: "Mock tests", value: testHistory.length, tone: "bg-purple-50" },
-    { icon: <Award className="h-5 w-5 text-amber-500" />, label: "Scholarships", value: savedScholarships.length, tone: "bg-amber-50" },
-    { icon: <Scale className="h-5 w-5 text-blue-500" />, label: "In compare list", value: compareList.length, tone: "bg-blue-50" },
-    { icon: <CalendarClock className="h-5 w-5 text-orange-500" />, label: "Deadlines ahead", value: COLLEGES.filter((c) => new Date(c.admission.applicationDeadline) >= new Date()).length, tone: "bg-orange-50" },
-    { icon: <MessagesSquare className="h-5 w-5 text-green-500" />, label: "Enquiries", value: enquiries.length, tone: "bg-green-50" },
-    { icon: <Bell className="h-5 w-5 text-red-400" />, label: "Alerts", value: notifications.length, tone: "bg-red-50" },
-    { icon: <Building2 className="h-5 w-5 text-slate-500" />, label: "Colleges live", value: stats.colleges, tone: "bg-slate-100" },
+    { icon: <Heart className="h-5 w-5 text-rose-500" />, label: "Saved colleges", value: savedColleges.length, tone: "bg-rose-50", tab: "saved" },
+    { icon: <FileQuestion className="h-5 w-5 text-purple-500" />, label: "Mock tests", value: testHistory.length, tone: "bg-purple-50", tab: "tests" },
+    { icon: <Award className="h-5 w-5 text-amber-500" />, label: "Scholarships", value: savedScholarships.length, tone: "bg-amber-50", tab: "scholarships" },
+    { icon: <Scale className="h-5 w-5 text-blue-500" />, label: "In compare list", value: compareList.length, tone: "bg-blue-50", tab: "comparisons" },
+    { icon: <CalendarClock className="h-5 w-5 text-orange-500" />, label: "Deadlines ahead", value: COLLEGES.filter((c) => new Date(c.admission.applicationDeadline) >= new Date()).length, tone: "bg-orange-50", tab: "searches" },
+    { icon: <MessagesSquare className="h-5 w-5 text-green-500" />, label: "Enquiries", value: enquiries.length, tone: "bg-green-50", tab: "enquiries" },
+    { icon: <Bell className="h-5 w-5 text-red-400" />, label: "Alerts", value: notifications.length, tone: "bg-red-50", tab: "notifications" },
+    { icon: <Building2 className="h-5 w-5 text-slate-500" />, label: "Colleges live", value: stats.colleges, tone: "bg-slate-100", tab: "overview" },
   ];
 
   return (
@@ -851,16 +885,25 @@ export default function DashboardExplorer() {
         </ButtonLink>
       </div>
 
-      {/* quick stats */}
+      {/* quick stats — click to jump to the matching tab */}
       <div className="mt-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
         {statItems.map((s) => (
-          <div key={s.label} className="flex items-center gap-4 rounded-2xl bg-white p-5 ring-1 ring-purple-100/60 card-shadow">
-            <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${s.tone}`}>{s.icon}</span>
-            <div>
+          <button
+            key={s.label}
+            type="button"
+            onClick={() => setTab(s.tab)}
+            aria-label={`View ${s.label}`}
+            className="group flex items-center gap-4 rounded-2xl bg-white p-5 text-left ring-1 ring-purple-100/60 card-shadow transition hover:-translate-y-0.5 hover:card-shadow-hover hover:ring-purple-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-500"
+          >
+            <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl transition-transform group-hover:scale-105 ${s.tone}`}>{s.icon}</span>
+            <div className="min-w-0">
               <p className="font-display text-2xl font-extrabold tabular-nums text-gray-900">{s.value}</p>
-              <p className="text-[13px] text-gray-500">{s.label}</p>
+              <p className="flex items-center gap-1 text-[13px] text-gray-500 transition group-hover:text-purple-700">
+                {s.label}
+                <ArrowRight className="h-3 w-3 -translate-x-1 opacity-0 transition group-hover:translate-x-0 group-hover:opacity-100" />
+              </p>
             </div>
-          </div>
+          </button>
         ))}
       </div>
 

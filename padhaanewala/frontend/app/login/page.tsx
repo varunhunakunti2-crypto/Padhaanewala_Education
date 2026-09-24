@@ -190,10 +190,10 @@ export default function LoginPage() {
             </label>
             <div className="relative">
               <Lock className="absolute left-3 top-2.5 h-4.5 w-4.5 text-gray-400" />
-              <input
-                id="password"
-                type={showPw ? "text" : "password"}
-                value={password}
+<input
+                  id="password"
+                  type={showPw ? "text" : "password"}
+                  value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder={mode === "signup" ? "Min. 8 characters" : "Your password"}
                 className={cn(

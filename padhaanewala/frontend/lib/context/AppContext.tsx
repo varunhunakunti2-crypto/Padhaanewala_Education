@@ -70,6 +70,8 @@ interface AppContextValue {
   addRecentView: (id: string) => void;
   addRecentSearch: (query: string) => void;
   addRecentLocation: (loc: string) => void;
+  clearRecentSearches: () => void;
+  clearRecentLocations: () => void;
 
   setPrefs: (p: Partial<NotificationPrefs>) => void;
 
@@ -342,6 +344,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setRecentLocations((prev) => [loc, ...prev.filter((x) => x !== loc)].slice(0, 6));
   }, []);
 
+  const clearRecentSearches = useCallback(() => {
+    setRecentSearches([]);
+    showToast({ variant: "info", title: "Search history cleared", description: "Your recent searches are now empty." });
+  }, [showToast]);
+
+  const clearRecentLocations = useCallback(() => {
+    setRecentLocations([]);
+    showToast({ variant: "info", title: "Location history cleared", description: "Your recent locations are now empty." });
+  }, [showToast]);
+
   const setPrefs = useCallback((p: Partial<NotificationPrefs>) => {
     setPrefsState((prev) => ({ ...prev, ...p }));
   }, []);
@@ -456,6 +468,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       addRecentView,
       addRecentSearch,
       addRecentLocation,
+      clearRecentSearches,
+      clearRecentLocations,
       setPrefs,
       setProfile,
       addEnquiry,
@@ -497,6 +511,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       addRecentView,
       addRecentSearch,
       addRecentLocation,
+      clearRecentSearches,
+      clearRecentLocations,
       setPrefs,
       setProfile,
       addEnquiry,
