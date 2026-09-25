@@ -25,14 +25,9 @@ import {
   Home,
 } from "lucide-react";
 import { useApp } from "@/lib/context/AppContext";
-import { useToast } from "@/lib/hooks/useToast";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/Badge";
-import { Button, ButtonLink } from "@/components/ui/Button";
-import { ScrollArea } from "@radix-ui/react-scroll-area";
-import { Tabs, Switch } from "@/components/ui/Tabs";
-import { Avatar } from "@/components/ui/Avatar";
-import { useApp as useAppAlias, useToast as useToastAlias } from "@/lib/context/AppContext";
+import { Button } from "@/components/ui/Button";
 
 /* ---------- data ---------- */
 
@@ -80,8 +75,7 @@ const SAVED = [
 /* ============ main ============ */
 
 export default function DashboardExplorer() {
-  const { profile, savedColleges } = useAppAlias();
-  const { showToast } = useToastAlias();
+  const { profile, savedColleges, showToast } = useApp();
   const [chip, setChip] = useState<Chip>("All Saved");
   const name = profile?.name ?? "Pushkar";
   const firstName = (name || "there").trim().split(" ")[0];
