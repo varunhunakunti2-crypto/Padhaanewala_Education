@@ -16,8 +16,8 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { useApp } from "@/lib/context/AppContext";
-import { getSuggestions, POPULAR_SEARCHES } from "@/lib/data";
-import type { SearchSuggestion } from "@/lib/types";
+import { getSuggestions, POPULAR_SEARCHES, type CollegeFacets } from "@/lib/data";
+import type { College, SearchSuggestion } from "@/lib/types";
 import { cn, debounce } from "@/lib/utils";
 
 const TYPE_ICON = {
@@ -35,9 +35,21 @@ interface SearchBarProps {
   onSearch?: () => void;
   id?: string;
   variant?: "default" | "hero";
+  /** Dataset + facets to suggest from; defaults to the bundled college list. */
+  colleges?: College[];
+  facets?: CollegeFacets;
 }
 
-export function SearchBar({ placeholder, autoFocus, initial, onSearch, id, variant = "default" }: SearchBarProps) {
+export function SearchBar({
+  placeholder,
+  autoFocus,
+  initial,
+  onSearch,
+  id,
+  variant = "default",
+  colleges,
+  facets,
+}: SearchBarProps) {
   const router = useRouter();
   const { recentSearches, addRecentSearch, addRecentLocation } = useApp();
   const [value, setValue] = useState(initial ?? "");
@@ -50,10 +62,10 @@ export function SearchBar({ placeholder, autoFocus, initial, onSearch, id, varia
   const searchDeferred = useMemo(
     () =>
       debounce((q: string) => {
-        if (q.trim()) setSuggestions(getSuggestions(q));
+        if (q.trim()) setSuggestions(getSuggestions(q, colleges, facets));
         else setSuggestions([]);
       }, 180),
-    [],
+    [colleges, facets],
   );
 
   useEffect(() => {

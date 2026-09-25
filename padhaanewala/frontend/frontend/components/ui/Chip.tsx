@@ -10,15 +10,19 @@ interface ChipProps {
   onRemove?: () => void;
   href?: string;
   className?: string;
+  /** Compact tinted style used for removable active-filter chips. */
+  pill?: boolean;
 }
 
-export function Chip({ children, active, onClick, onRemove, href, className }: ChipProps) {
+export function Chip({ children, active, onClick, onRemove, href, className, pill }: ChipProps) {
   const cls = cn(
-    "inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium ring-1 ring-inset transition-all",
-    active
+    pill
+      ? "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset bg-purple-50 text-purple-700 ring-purple-200"
+      : "inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium ring-1 ring-inset transition-all",
+    !pill && (active
       ? "bg-purple-600 text-white ring-purple-600 shadow-sm"
-      : "bg-white text-gray-700 ring-gray-200 hover:ring-purple-300 hover:text-purple-700",
-    onClick || href ? "cursor-pointer" : "cursor-default",
+      : "bg-white text-gray-700 ring-gray-200 hover:ring-purple-300 hover:text-purple-700"),
+    !pill && (onClick || href ? "cursor-pointer" : "cursor-default"),
     className,
   );
 

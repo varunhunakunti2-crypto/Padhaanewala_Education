@@ -1,7 +1,24 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import Link from "next/link";
-import { RobotViewer } from "@/components/ai/RobotViewer";
+
+/**
+ * The 3D bot pulls in the whole three.js runtime plus a ~1 MB GLB. This FAB is
+ * mounted by the root layout, so an eager import meant every page in the app
+ * paid that cost. Loading it dynamically with `ssr: false` keeps three.js out of
+ * the initial bundle and defers both the JS and the model fetch until the FAB
+ * actually mounts.
+ */
+const RobotViewer = dynamic(
+  () => import("@/components/ai/RobotViewer").then((m) => m.RobotViewer),
+  {
+    ssr: false,
+    loading: () => (
+      <span className="grid h-full w-full place-items-center rounded-full bg-purple-500/15" />
+    ),
+  },
+);
 
 export function AskAiFab() {
   return (

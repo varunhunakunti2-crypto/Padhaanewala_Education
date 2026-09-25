@@ -1,3 +1,5 @@
+import Image from "next/image";
+
 interface HeroBackgroundProps {
   imageUrl?: string;
 }
@@ -5,21 +7,23 @@ interface HeroBackgroundProps {
 /**
  * Full-bleed cinematic background for the hero.
  *
- * By default it renders a premium, offline-safe dusk campus scene (SVG).
- * To use a real photograph instead, pass `imageUrl` — the layered navy
- * overlays keep white text readable on any photo.
+ * By default it renders a premium, offline-safe dusk campus scene (SVG) — no
+ * image request at all. Pass `imageUrl` to use a real photograph instead; it is
+ * served through next/image so the 1.5 MB source is resized and re-encoded to
+ * AVIF/WebP at the right size rather than shipped raw to every visitor.
  */
 export function HeroBackground({ imageUrl }: HeroBackgroundProps) {
   return (
     <div aria-hidden className="absolute inset-0 overflow-hidden">
       {imageUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element -- intentional: optional hero photo swap; requires next/image remotePatterns to use <Image>
-        <img
+        <Image
           src={imageUrl}
           alt=""
-          loading="eager"
-          fetchPriority="high"
-          className="h-full w-full object-cover object-center"
+          fill
+          priority
+          sizes="100vw"
+          quality={72}
+          className="object-cover object-center"
         />
       ) : (
         <svg

@@ -266,3 +266,133 @@ export function toStudentProfile(p: BackendProfile): StudentProfile {
     budgetMax: p.budget_max,
   };
 }
+
+/* ------------------------------------------------------------------ *
+ * Admin API
+ *
+ * Every endpoint below is role-gated server-side (see backend/app/dependencies.py
+ * `require_role`). The 403 handling here is for UX only — it is not a security
+ * boundary.
+ * ------------------------------------------------------------------ */
+
+export interface AdminUser {
+  id: number;
+  email: string;
+  mobile: string | null;
+  is_active: boolean;
+  is_email_verified: boolean;
+  created_at: string;
+  last_login_at: string | null;
+  roles: string[];
+}
+
+export interface AdminReview {
+  id: number;
+  college_id: number;
+  rating: number;
+  review_text: string | null;
+  status: string;
+  created_at: string;
+  student_name: string | null;
+}
+
+export interface AdminEnquiry {
+  id: number;
+  name: string;
+  mobile: string;
+  email: string | null;
+  status: string;
+  created_at: string;
+  source: string | null;
+}
+
+export interface AdminNotification {
+  id: number;
+  title: string;
+  message: string;
+  type: string;
+  is_read: boolean;
+  created_at: string;
+}
+
+export interface AdminBanner {
+  id: number;
+  title: string;
+  image_url: string | null;
+  link_url: string | null;
+  position: string;
+  display_order: number;
+  is_active: boolean;
+}
+
+export interface AdminBlog {
+  id: number;
+  title: string;
+  slug: string;
+  status: string;
+  view_count: number;
+  published_at: string | null;
+  created_at: string;
+  category_name: string | null;
+}
+
+export interface AdminAuditLog {
+  id: number;
+  action: string;
+  entity_type: string | null;
+  entity_id: string | null;
+  created_at: string;
+  user_email: string | null;
+}
+
+export const adminApi = {
+  users: (params = "") => apiFetch<AdminUser[]>(`/users${params}`),
+
+  reviews: (params = "") => apiFetch<AdminReview[]>(`/reviews${params}`),
+
+  moderateReview: (id: number, status: "approved" | "rejected", notes?: string) =>
+    apiFetch<AdminReview>(`/reviews/${id}/moderate`, {
+      method: "POST",
+      body: JSON.stringify({ status, moderation_notes: notes ?? null }),
+    }),
+
+  enquiries: () => apiFetch<AdminEnquiry[]>("/enquiries"),
+
+  leads: (params = "") => apiFetch<AdminEnquiry[]>(`/leads${params}`),
+
+  updateLeadStatus: (enquiryId: number, status: string) =>
+    apiFetch<AdminEnquiry>(`/leads/${enquiryId}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    }),
+
+  banners: () => apiFetch<AdminBanner[]>("/banners"),
+
+  createBanner: (payload: Partial<AdminBanner>) =>
+    apiFetch<AdminBanner>("/banners", { method: "POST", body: JSON.stringify(payload) }),
+
+  updateBanner: (id: number, payload: Partial<AdminBanner>) =>
+    apiFetch<AdminBanner>(`/banners/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
+
+  deleteBanner: (id: number) => apiFetch<void>(`/banners/${id}`, { method: "DELETE" }),
+
+  blogs: (params = "") => apiFetch<AdminBlog[]>(`/blogs${params}`),
+
+  notifications: () => apiFetch<AdminNotification[]>("/notifications"),
+
+  createNotification: (payload: { user_id?: number | null; title: string; message: string; type?: string }) =>
+    apiFetch<AdminNotification>("/notifications", { method: "POST", body: JSON.stringify(payload) }),
+
+  auditLogs: (params = "") => apiFetch<AdminAuditLog[]>(`/audit-logs${params}`),
+
+  mockTests: () => apiFetch<unknown[]>("/mock-tests/admin/all"),
+
+  media: () => apiFetch<unknown[]>("/media"),
+
+  faqs: () => apiFetch<unknown[]>("/faqs"),
+};
+
+/** True when an error is simply "you don't have the role for this". */
+export function isForbidden(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 403;
+}

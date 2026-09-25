@@ -1,3 +1,11 @@
+import sys
+from pathlib import Path
+
+# Allow `python scripts/seed_x.py` from any working directory: the repo root
+# (which contains the `app` package) is not on sys.path by default, because
+# Python puts the *script's* directory there instead.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import re
 
 from sqlalchemy import select
@@ -14,12 +22,17 @@ def slugify(text: str) -> str:
 def main() -> None:
     with SessionLocal() as db:
         course_map = {}
-        for name, slug, degree, duration, category in COURSES:
+        for name, short_label, degree, duration, category in COURSES:
+            # The second tuple element is a short display label (e.g. "B.Tech CSE"),
+            # not a slug. The URL slug is always derived from the full name, and the
+            # lookup must use that same value — looking up by `short_label` missed
+            # every existing row and made re-runs fail on the unique slug index.
+            slug = slugify(name)
             course = db.scalar(select(Course).where(Course.slug == slug))
             if course is None:
                 course = Course(
                     name=name,
-                    slug=slugify(name),
+                    slug=slug,
                     degree=degree,
                     duration=duration,
                     category=category,
@@ -27,7 +40,8 @@ def main() -> None:
                 )
                 db.add(course)
                 db.flush()
-            course_map[slug] = course.id
+            course_map[name] = course.id
+            course_map[short_label] = course.id
 
         created = 0
         for item in SAMPLE_COLLEGES:
@@ -62,8 +76,12 @@ def main() -> None:
             db.flush()
 
             for cc in item["courses"]:
-                course_id = course_map.get(cc["name"])
+                # Accept either the full course name or its short label.
+                course_id = course_map.get(cc["name"]) or course_map.get(
+                    str(cc["name"]).split("(")[0].strip()
+                )
                 if course_id is None:
+                    print(f"  ! no course match for {cc['name']!r} on {item['name']}")
                     continue
                 db.add(
                     CollegeCourse(

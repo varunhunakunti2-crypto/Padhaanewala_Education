@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Award,
   ExternalLink,
@@ -18,8 +18,6 @@ import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/lib/context/AppContext";
 import type { Scholarship } from "@/lib/types";
-
-const TAGS = ["All", "Merit", "Need", "Women", "Engineering", "Premier"];
 
 function ScholarshipDetail({ sch, onClose }: { sch: Scholarship; onClose: () => void }) {
   const { isScholarshipSaved, toggleScholarshipSave } = useApp();
@@ -116,10 +114,27 @@ function ScholarshipDetail({ sch, onClose }: { sch: Scholarship; onClose: () => 
   );
 }
 
-export default function ScholarshipsExplorer() {
+export default function ScholarshipsExplorer({
+  scholarships: dataset,
+}: {
+  /** Scholarship list resolved on the server. */
+  scholarships?: Scholarship[];
+}) {
   const [tag, setTag] = useState("All");
   const [selected, setSelected] = useState<Scholarship | null>(null);
   const { isScholarshipSaved, toggleScholarshipSave } = useApp();
+
+  const list = useMemo(
+    () => (dataset?.length ? dataset : SCHOLARSHIPS),
+    [dataset],
+  );
+
+  // Derive filter chips from the data so the panel never offers an empty filter.
+  const tags = useMemo(
+    () => ["All", ...Array.from(new Set(list.flatMap((s) => s.tags))).sort()],
+    [list],
+  );
+
   const eligible = (sch: Scholarship) => tag === "All" || sch.tags.includes(tag);
 
   return (
@@ -136,7 +151,7 @@ export default function ScholarshipsExplorer() {
           explore funding that can make your education more affordable.
         </p>
         <div className="mt-6 flex flex-wrap gap-2">
-          {TAGS.map((t) => (
+          {tags.map((t) => (
             <Chip key={t} active={tag === t} onClick={() => setTag(t)}>
               {t}
             </Chip>
@@ -145,7 +160,7 @@ export default function ScholarshipsExplorer() {
       </div>
 
       <div className="mt-8 grid gap-5 pb-10 sm:grid-cols-2 lg:grid-cols-3">
-        {SCHOLARSHIPS.filter(eligible).map((s) => {
+        {list.filter(eligible).map((s) => {
           const saved = isScholarshipSaved(s.id);
           return (
             <article

@@ -3,6 +3,7 @@
 import { Trash2, Scale, ArrowRight } from "lucide-react";
 import { useApp } from "@/lib/context/AppContext";
 import { getCollegesByIds } from "@/lib/data/colleges";
+import type { College } from "@/lib/types";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { AddCollegeButton } from "@/components/compare/parts";
@@ -10,9 +11,14 @@ import ComparisonTable from "@/components/compare/ComparisonTable";
 import ComparisonCards from "@/components/compare/ComparisonCards";
 import { MiniChat } from "@/components/ai/MiniChat";
 
-export default function CompareExplorer() {
+export default function CompareExplorer({
+  colleges: dataset,
+}: {
+  /** College dataset resolved on the server (API, with bundled fallback). */
+  colleges?: College[];
+}) {
   const { compareList, toggleCompare, clearCompare, compareHistory, recordComparison, showToast } = useApp();
-  const colleges = getCollegesByIds(compareList);
+  const colleges = getCollegesByIds(compareList, dataset);
 
   return (
     <section className="mx-auto max-w-7xl px-4 pt-28 pb-12 sm:px-6 sm:pt-32 lg:px-8 lg:pt-36 lg:pb-16">
@@ -52,7 +58,7 @@ export default function CompareExplorer() {
             <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-[1fr_auto]">
               <div className="hidden sm:block" />
               <div className="flex justify-end">
-                <AddCollegeButton onAdd={(c) => toggleCompare(c.id, c.shortName)} existing={compareList} />
+                <AddCollegeButton onAdd={(c) => toggleCompare(c.id, c.shortName)} existing={compareList} dataset={dataset} />
               </div>
             </div>
             <div className="hidden lg:block">
@@ -61,7 +67,7 @@ export default function CompareExplorer() {
             <div className="lg:hidden">
               <ComparisonCards colleges={colleges} />
               <div className="mt-5 flex justify-center">
-                <AddCollegeButton onAdd={(c) => toggleCompare(c.id, c.shortName)} existing={compareList} />
+                <AddCollegeButton onAdd={(c) => toggleCompare(c.id, c.shortName)} existing={compareList} dataset={dataset} />
               </div>
             </div>
             <button

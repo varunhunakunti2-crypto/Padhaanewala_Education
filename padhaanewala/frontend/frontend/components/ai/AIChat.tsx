@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Bot, Send, User, Sparkles, RotateCcw, Loader2, ArrowRight } from "lucide-react";
+import { Send, User, Sparkles, RotateCcw, Loader2, ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";

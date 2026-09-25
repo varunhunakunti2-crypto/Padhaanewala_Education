@@ -1,13 +1,13 @@
-import { COLLEGES, getFeaturedColleges } from "@/lib/data/colleges";
+import type { College } from "@/lib/types";
 import { CollegeCard } from "@/components/college/CollegeCard";
 import { SectionHeading } from "@/components/ui/SectionHeading";
 import { ButtonLink } from "@/components/ui/Button";
 import { ArrowRight, Compass } from "lucide-react";
 import { Reveal } from "@/components/ui/Reveal";
 
-export function FeaturedColleges() {
-  const featured = getFeaturedColleges();
-  const topRated = [...COLLEGES]
+export function FeaturedColleges({ colleges: dataset }: { colleges: College[] }) {
+  const featured = dataset.filter((c) => c.featured);
+  const topRated = [...dataset]
     .sort((a, b) => b.rating - a.rating)
     .filter((c) => !featured.some((f) => f.id === c.id))
     .slice(0, 6);

@@ -7,6 +7,7 @@ import { BottomNav } from "@/components/layout/BottomNav";
 import { Providers } from "@/components/layout/Providers";
 import { WhatsAppFab } from "@/components/layout/WhatsAppFab";
 import { AskAiFab } from "@/components/layout/AskAiFab";
+import { SITE, SITE_URL } from "@/lib/site";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -33,13 +34,13 @@ const caveat = Caveat({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://padhaanewala.com"),
+  metadataBase: new URL(SITE_URL),
   title: {
-    default: "padhaanewala — Find the College That Fits Your Future",
-    template: "%s · padhaanewala",
+    default: `${SITE.name} — ${SITE.tagline}`,
+    template: `%s · ${SITE.name}`,
   },
-  description:
-    "Explore 12,000+ colleges across India, compare courses, fees and placements, and discover the right opportunities that match your goals.",
+  description: SITE.description,
+  applicationName: SITE.name,
   keywords: [
     "padhaanewala",
     "college discovery",
@@ -48,20 +49,24 @@ export const metadata: Metadata = {
     "engineering colleges",
     "medical colleges",
     "mba colleges",
+    "entrance exams",
+    "mock tests",
+    "scholarships",
   ],
+  authors: [{ name: SITE.legalName }],
+  creator: SITE.legalName,
   openGraph: {
-    title: "padhaanewala — Find the College That Fits Your Future",
-    description:
-      "Explore colleges, compare courses, understand fees, and discover opportunities that match your goals.",
     type: "website",
-    siteName: "padhaanewala",
     locale: "en_IN",
+    url: SITE_URL,
+    siteName: SITE.name,
+    title: `${SITE.name} — ${SITE.tagline}`,
+    description: SITE.description,
   },
   twitter: {
     card: "summary_large_image",
-    title: "padhaanewala — Find the College That Fits Your Future",
-    description:
-      "Explore colleges, compare courses, understand fees, and discover opportunities that match your goals.",
+    title: `${SITE.name} — ${SITE.tagline}`,
+    description: SITE.description,
   },
   robots: { index: true, follow: true },
   other: {
@@ -72,14 +77,15 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html
-      lang="en"
+      lang="en-IN"
+      data-scroll-behavior="smooth"
       className={`${inter.variable} ${jakarta.variable} ${grotesk.variable} ${caveat.variable} h-full antialiased`}
       suppressHydrationWarning
     >
-      <body className="flex min-h-full flex-col pb-16 lg:pb-0 bg-[#fbfbfd] text-[#232038] dark:bg-[#090d16] dark:text-[#f3f4f6] transition-colors duration-300" suppressHydrationWarning>
+      <body className="flex min-h-full flex-col bg-background pb-16 text-foreground transition-colors duration-300 lg:pb-0" suppressHydrationWarning>
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem("cp_theme");if(t==="dark"||(!t&&window.matchMedia("(prefers-color-scheme: dark)").matches)){document.documentElement.classList.add("dark");}else{document.documentElement.classList.remove("dark");}}catch(e){}})()`,
+            __html: `(function(){try{var t=localStorage.getItem("cp_theme");if(t==="dark"||(!t&&window.matchMedia("(prefers-color-scheme: dark)").matches)){document.documentElement.classList.add("dark");document.documentElement.style.colorScheme="dark";}else{document.documentElement.classList.remove("dark");document.documentElement.style.colorScheme="light";}}catch(e){}})()`,
           }}
         />
         <Providers>

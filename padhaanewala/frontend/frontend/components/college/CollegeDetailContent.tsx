@@ -28,7 +28,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import type { College } from "@/lib/types";
-import { formatINR, formatINRFull, formatCount, BANNER_GRADIENTS, matchScore } from "@/lib/utils";
+import { formatINR, formatINRFull, formatCount, BANNER_GRADIENTS } from "@/lib/utils";
 import { getSimilarColleges } from "@/lib/data/colleges";
 import { CampusArt, CollegeLogo } from "@/components/college/CampusArt";
 import { Rating } from "@/components/ui/Rating";
@@ -163,21 +163,26 @@ function HeroInfo({ college }: { college: College }) {
                   <span>{college.type}</span>
                 </div>
                 <div className="mt-3.5 flex flex-wrap items-center gap-2">
-                  <span className="match-badge rounded-full px-2.5 py-0.5 font-accent text-[11px] font-bold">
-                    {matchScore(college.id)}% Match for you
-                  </span>
-                  <Rating value={college.rating} showValue />
-                  <span className="text-xs text-gray-400 dark:text-slate-400">
-                    {formatCount(college.reviewCount)} reviews
-                  </span>
-                  {college.rankings.slice(0, 2).map((r) => (
-                    <Badge key={r.agency} variant="amber">
-                      <Award className="h-3 w-3" /> {r.agency} #{r.rank}
-                    </Badge>
-                  ))}
                   {college.accreditation.slice(0, 2).map((a) => (
                     <Badge key={a} variant="green">
                       {a}
+                    </Badge>
+                  ))}
+                  {college.rating > 0 && college.reviewCount > 0 ? (
+                    <>
+                      <Rating value={college.rating} showValue />
+                      <span className="text-xs text-gray-400 dark:text-slate-400">
+                        {formatCount(college.reviewCount)} reviews
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-xs text-gray-400 dark:text-slate-400">
+                      No verified reviews yet
+                    </span>
+                  )}
+                  {college.rankings.slice(0, 2).map((r) => (
+                    <Badge key={r.agency} variant="amber">
+                      <Award className="h-3 w-3" /> {r.agency} {r.rank}
                     </Badge>
                   ))}
                 </div>
@@ -560,22 +565,35 @@ function Breadcrumb({ college }: { college: College }) {
 }
 
 function FacultyNote({ college }: { college: College }) {
+  // The database has no faculty-count column. Rather than assert a number we
+  // cannot substantiate, only render this band when real data exists.
+  if (!college.facultyCount) return null;
+
   return (
     <section id="faculty" className="scroll-mt-28 py-4">
       <div className="rounded-2xl bg-gradient-to-r from-purple-700 to-blue-700 p-6 text-white card-shadow-lg">
         <h2 className="font-display text-xl font-bold">Faculty & Academics</h2>
         <p className="mt-2 text-sm leading-relaxed text-purple-100">
-          {college.shortName} employs over <span className="font-bold text-white">{formatCount(college.facultyCount)}</span>{" "}
-          faculty members across departments, many with doctoral degrees from leading institutions. Small mentoring groups,
-          semester-long projects and active research labs are core to the academic culture.
+          {college.shortName} employs over{" "}
+          <span className="font-bold text-white">{formatCount(college.facultyCount)}</span> faculty
+          members across departments, many with doctoral degrees from leading institutions. Small
+          mentoring groups, semester-long projects and active research labs are core to the
+          academic culture.
         </p>
       </div>
     </section>
   );
 }
 
-export default function CollegeDetailContent({ college }: { college: College }) {
-  const similar = getSimilarColleges(college);
+export default function CollegeDetailContent({
+  college,
+  similar,
+}: {
+  college: College;
+  /** Resolved on the server from the same dataset as `college`. */
+  similar?: College[];
+}) {
+  const related = similar?.length ? similar : getSimilarColleges(college);
   return (
     <div className="pb-8">
       <ViewTracker collegeId={college.id} />
@@ -594,7 +612,7 @@ export default function CollegeDetailContent({ college }: { college: College }) 
             <Scholarships college={college} />
             <Reviews college={college} />
             <FaqAccordion faqs={college.faqs} />
-            <SimilarColleges colleges={similar} />
+            <SimilarColleges colleges={related} />
           </div>
 
           <aside className="hidden w-[19rem] shrink-0 lg:block">

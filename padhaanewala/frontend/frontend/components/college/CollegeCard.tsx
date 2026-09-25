@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import type { College } from "@/lib/types";
 import { useApp } from "@/lib/context/AppContext";
-import { cn, formatINR, matchScore } from "@/lib/utils";
+import { cn, formatINR, strengthScore, strengthLabel } from "@/lib/utils";
 import { Rating } from "@/components/ui/Rating";
 import { Badge } from "@/components/ui/Badge";
 import { CampusArt, CollegeLogo } from "@/components/college/CampusArt";
@@ -29,9 +29,15 @@ export function CollegeCard({ college }: CollegeCardProps) {
   const { isSaved, toggleSave, isComparing, toggleCompare } = useApp();
   const saved = isSaved(college.id);
   const comparing = isComparing(college.id);
-  const minFee = Math.min(...college.courses.map((c) => c.feePerYear));
-  const maxFee = Math.max(...college.courses.map((c) => c.feePerYear));
+
+  // Guard against empty course lists — spreading [] into Math.min yields Infinity.
+  const fees = college.courses.map((c) => c.feePerYear).filter((f) => f > 0);
+  const minFee = fees.length ? Math.min(...fees) : 0;
+  const maxFee = fees.length ? Math.max(...fees) : 0;
   const popular = college.courses.slice(0, 3);
+
+  const strength = strengthScore(college);
+  const strengthName = strengthLabel(strength);
 
   return (
     <article className="group flex flex-col overflow-hidden rounded-2xl bg-white dark:bg-slate-900 ring-1 ring-purple-100/60 dark:ring-slate-800 card-shadow transition-all duration-300 hover:-translate-y-1 hover:card-shadow-hover hover:ring-purple-200 dark:hover:ring-slate-700">
@@ -44,9 +50,11 @@ export function CollegeCard({ college }: CollegeCardProps) {
           />
         </Link>
         <div className="absolute left-3 top-3 flex flex-col items-start gap-1.5">
-          <span className="match-badge rounded-full px-2.5 py-1 font-accent text-[11px] font-bold">
-            {matchScore(college.id)}% Match
-          </span>
+          {strength >= 35 ? (
+            <span className="match-badge rounded-full px-2.5 py-1 font-accent text-[11px] font-bold">
+              {strength}% · {strengthName}
+            </span>
+          ) : null}
           {college.featured && (
             <Badge variant="yellow" className="shadow-sm">
               <BadgeCheck className="h-3 w-3" /> Featured

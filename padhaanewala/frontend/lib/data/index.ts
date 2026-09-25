@@ -3,31 +3,6 @@ import { COLLEGES, getCollegeBySlug } from "./colleges";
 
 export const PAGE_SIZE = 9;
 
-const EXAM_ALIASES: Record<string, string[]> = {
-  "jee": ["JEE Main", "JEE Advanced"],
-  "jee main": ["JEE Main"],
-  "jee advanced": ["JEE Advanced"],
-  "bitsat": ["BITSAT"],
-  "gate": ["GATE"],
-  "cat": ["CAT"],
-  "neet": ["NEET"],
-  "met": ["MET"],
-  "cruet": [],
-  "cuet": ["CUET"],
-  "mht cet": ["MHT-CET"],
-  "wbjee": ["WBJEE"],
-  "keam": ["KEAM"],
-  "srmjeee": ["SRMJEEE"],
-  "viteee": ["VITEEE"],
-  "lpunest": ["LPUNEST"],
-  "nimbus": [],
-  "clat": ["CLAT"],
-  "nata": ["NATA"],
-  "national test": [],
-  "sat": ["SAT"],
-};
-void EXAM_ALIASES;
-
 export function expandQuery(q: string): string {
   return q.toLowerCase().trim();
 }
@@ -134,8 +109,12 @@ export interface FilterState {
   colleges: College[];
 }
 
-export function searchColleges(filters: SearchFilters, page = 1): FilterState {
-  const filtered = COLLEGES.filter((c) => applyFilters(c, filters));
+export function searchColleges(
+  filters: SearchFilters,
+  page = 1,
+  dataset: College[] = COLLEGES,
+): FilterState {
+  const filtered = dataset.filter((c) => applyFilters(c, filters));
   const sorted = sortColleges(filtered, filters.sortBy);
   const total = sorted.length;
   const start = (page - 1) * PAGE_SIZE;
@@ -143,43 +122,52 @@ export function searchColleges(filters: SearchFilters, page = 1): FilterState {
   return { filters, page, total, colleges };
 }
 
-export const ALL_STATES: string[] = [
-  ...Array.from(new Set(COLLEGES.map((c) => c.state))).sort(),
-];
+/**
+ * Facet values for the filter panel. Derived from whichever dataset is passed in
+ * so the panel never offers a filter that would return zero results.
+ */
+export interface CollegeFacets {
+  states: string[];
+  cities: string[];
+  types: string[];
+  districts: string[];
+  universities: string[];
+  exams: string[];
+  accreditations: string[];
+  degrees: string[];
+  specializations: string[];
+}
 
-export const ALL_CITIES: string[] = [
-  ...Array.from(new Set(COLLEGES.map((c) => `${c.city}, ${c.state}`))).sort(),
-];
+const uniqSorted = (values: (string | undefined)[]): string[] =>
+  Array.from(new Set(values.filter((v): v is string => Boolean(v && v.trim())))).sort();
 
-export const ALL_TYPES: string[] = [
-  ...Array.from(new Set(COLLEGES.map((c) => c.type))).sort(),
-];
+export function buildFacets(dataset: College[] = COLLEGES): CollegeFacets {
+  return {
+    states: uniqSorted(dataset.map((c) => c.state)),
+    cities: uniqSorted(dataset.map((c) => `${c.city}, ${c.state}`)),
+    types: uniqSorted(dataset.map((c) => c.type)),
+    districts: uniqSorted(dataset.map((c) => c.district)),
+    universities: uniqSorted(dataset.map((c) => c.university)),
+    exams: uniqSorted(dataset.flatMap((c) => c.admission.entranceExams)),
+    accreditations: uniqSorted(dataset.flatMap((c) => c.accreditation)),
+    degrees: uniqSorted(dataset.flatMap((c) => c.courses.map((x) => x.degree))),
+    specializations: uniqSorted(dataset.flatMap((c) => c.courses.map((x) => x.specialization))),
+  };
+}
 
-export const ALL_DISTRICTS: string[] = [
-  ...Array.from(new Set(COLLEGES.map((c) => c.district))).sort(),
-];
+const BUNDLED_FACETS = buildFacets(COLLEGES);
 
-export const ALL_UNIVERSITIES: string[] = [
-  ...Array.from(new Set(COLLEGES.map((c) => c.university))).sort(),
-];
+export const ALL_STATES: string[] = BUNDLED_FACETS.states;
+export const ALL_CITIES: string[] = BUNDLED_FACETS.cities;
+export const ALL_TYPES: string[] = BUNDLED_FACETS.types;
+export const ALL_DISTRICTS: string[] = BUNDLED_FACETS.districts;
+export const ALL_UNIVERSITIES: string[] = BUNDLED_FACETS.universities;
+export const ALL_EXAMS: string[] = BUNDLED_FACETS.exams;
+export const ALL_ACCREDITATIONS: string[] = BUNDLED_FACETS.accreditations;
+export const ALL_DEGREES: string[] = BUNDLED_FACETS.degrees;
+export const ALL_SPECIALIZATIONS: string[] = BUNDLED_FACETS.specializations;
 
 export const ALL_ADMISSION_STATUSES = ["open", "closed", "upcoming"] as const;
-
-export const ALL_EXAMS: string[] = [
-  ...Array.from(new Set(COLLEGES.flatMap((c) => c.admission.entranceExams))).sort(),
-];
-
-export const ALL_ACCREDITATIONS: string[] = [
-  ...Array.from(new Set(COLLEGES.flatMap((c) => c.accreditation))).sort(),
-];
-
-export const ALL_DEGREES: string[] = [
-  ...Array.from(new Set(COLLEGES.flatMap((c) => c.courses.map((x) => x.degree)))).sort(),
-];
-
-export const ALL_SPECIALIZATIONS: string[] = [
-  ...Array.from(new Set(COLLEGES.flatMap((c) => c.courses.map((x) => x.specialization)))).sort(),
-];
 
 export const FEE_RANGES = [
   { label: "Under ₹50K", min: null, max: 50000 },
@@ -200,13 +188,17 @@ export const POPULAR_SEARCHES = [
   "NIT",
 ];
 
-export function getSuggestions(query: string): SearchSuggestion[] {
+export function getSuggestions(
+  query: string,
+  dataset: College[] = COLLEGES,
+  facets: CollegeFacets = BUNDLED_FACETS,
+): SearchSuggestion[] {
   const q = expandQuery(query);
   if (!q) return [];
   const suggestions: SearchSuggestion[] = [];
   const seen = new Set<string>();
 
-  for (const c of COLLEGES) {
+  for (const c of dataset) {
     if (c.name.toLowerCase().includes(q) || c.shortName.toLowerCase().includes(q)) {
       const label = c.shortName;
       if (!seen.has(label)) {
@@ -222,7 +214,7 @@ export function getSuggestions(query: string): SearchSuggestion[] {
     if (suggestions.length >= 6) break;
   }
   if (suggestions.length < 6) {
-    for (const degree of ALL_DEGREES) {
+    for (const degree of facets.degrees) {
       if (degree.toLowerCase().includes(q) && !seen.has(degree)) {
         seen.add(degree);
         suggestions.push({ type: "course", label: degree, sub: "Degree", value: degree });
@@ -231,7 +223,7 @@ export function getSuggestions(query: string): SearchSuggestion[] {
     }
   }
   if (suggestions.length < 8) {
-    for (const spec of ALL_SPECIALIZATIONS) {
+    for (const spec of facets.specializations) {
       if (spec.toLowerCase().includes(q) && !seen.has(spec)) {
         seen.add(spec);
         suggestions.push({
@@ -245,7 +237,7 @@ export function getSuggestions(query: string): SearchSuggestion[] {
     }
   }
   if (suggestions.length < 8) {
-    for (const city of ALL_CITIES) {
+    for (const city of facets.cities) {
       if (city.toLowerCase().includes(q) && !seen.has(city)) {
         seen.add(city);
         suggestions.push({ type: "city", label: city, sub: "City", value: city });
@@ -259,8 +251,11 @@ export function getSuggestions(query: string): SearchSuggestion[] {
 export { getCollegeBySlug };
 export { COLLEGES };
 
-export function suggestSlug(label: string): string {
-  return getCollegeBySlug(label.toLowerCase().replace(/\s+/g, "-"))
-    ? getCollegeBySlug(label.toLowerCase().replace(/\s+/g, "-"))!.slug
-    : "";
+export function suggestSlug(label: string, dataset: College[] = COLLEGES): string {
+  const needle = label.toLowerCase().replace(/\s+/g, "-");
+  const hit =
+    dataset.find((c) => c.slug === needle) ??
+    dataset.find((c) => c.name.toLowerCase() === label.toLowerCase()) ??
+    getCollegeBySlug(needle);
+  return hit?.slug ?? "";
 }

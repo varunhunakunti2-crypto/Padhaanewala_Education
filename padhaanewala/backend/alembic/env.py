@@ -1,7 +1,9 @@
 from logging.config import fileConfig
+import os
 
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
+from sqlalchemy import text
 
 from alembic import context
 
@@ -39,6 +41,21 @@ config = context.config
 
 # Use DATABASE_URL from application settings (reads .env.development)
 config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+
+# Optional schema isolation, used by the test suite so migrations never touch the
+# public schema. Set PADHAANEWALA_SCHEMA=test_suite to migrate a scratch schema.
+target_schema = os.environ.get("PADHAANEWALA_SCHEMA")
+if target_schema:
+    url = config.get_main_option("sqlalchemy.url")
+    sep = "&" if "?" in url else "?"
+    # `public` stays on the search_path so database-level extensions installed
+    # there (pg_trgm, used by the trigram indexes) remain resolvable.
+    # Alembic's Config uses ConfigParser interpolation, so a literal percent
+    # sign in the URL must be doubled.
+    config.set_main_option(
+        "sqlalchemy.url",
+        f"{url}{sep}options=-csearch_path%%3D{target_schema},public",
+    )
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
@@ -95,8 +112,18 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
+        if target_schema:
+            # The version table must live in the target schema, otherwise
+            # `alembic upgrade` reads the public schema's version and concludes
+            # there is nothing to do.
+            connection.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{target_schema}"'))
+            connection.commit()
+
         context.configure(
-            connection=connection, target_metadata=target_metadata
+            connection=connection,
+            target_metadata=target_metadata,
+            version_table_schema=target_schema,
+            include_schemas=bool(target_schema),
         )
 
         with context.begin_transaction():

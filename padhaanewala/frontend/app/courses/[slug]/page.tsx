@@ -14,13 +14,13 @@ import {
   ListChecks,
 } from "lucide-react";
 import {
-  getCourseBySlug,
   getCourseDetail,
   getRelatedCourses,
   collegesOffering,
-  COURSES,
 } from "@/lib/data/courses";
+import { resolveColleges, resolveCourse, resolveCourses, resolveSlugs } from "@/lib/content";
 import { formatINR } from "@/lib/utils";
+import { absoluteUrl } from "@/lib/site";
 import { Badge } from "@/components/ui/Badge";
 import { ButtonLink } from "@/components/ui/Button";
 import { SectionHeading } from "@/components/ui/SectionHeading";
@@ -31,17 +31,19 @@ interface PageProps {
   params: Promise<{ slug: string }>;
 }
 
-export function generateStaticParams() {
-  return COURSES.map((c) => ({ slug: c.slug }));
+export async function generateStaticParams() {
+  const slugs = await resolveSlugs("courses");
+  return slugs.map((slug) => ({ slug }));
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params;
-  const course = getCourseBySlug(slug);
+  const { data: course } = await resolveCourse(slug);
   if (!course) return { title: "Course not found" };
   return {
     title: `${course.name} — Course Details`,
     description: course.description,
+    alternates: { canonical: absoluteUrl(`/courses/${course.slug}`) },
   };
 }
 
@@ -63,11 +65,15 @@ function FaqList({ faqs }: { faqs: { q: string; a: string }[] }) {
 
 export default async function CourseDetailPage({ params }: PageProps) {
   const { slug } = await params;
-  const course = getCourseBySlug(slug);
+  const [{ data: course }, { data: catalog }, { data: collegeDataset }] = await Promise.all([
+    resolveCourse(slug),
+    resolveCourses(),
+    resolveColleges(),
+  ]);
   if (!course) notFound();
   const detail = getCourseDetail(slug);
-  const colleges = collegesOffering(slug).slice(0, 6);
-  const related = getRelatedCourses(slug);
+  const colleges = collegesOffering(slug, collegeDataset, catalog).slice(0, 6);
+  const related = getRelatedCourses(slug, catalog);
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 lg:py-12">

@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "motion/react";
+import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight, Star } from "lucide-react";
 
@@ -87,11 +88,12 @@ export function HeroVisualPanel() {
               className="group flex items-center gap-3 rounded-xl border border-white/20 bg-slate-900/60 p-2.5 shadow-xl backdrop-blur-md transition-all duration-300 hover:scale-[1.03] hover:border-white/40 hover:bg-slate-900/75"
             >
               <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-lg bg-white/10">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
+                <Image
                   src={card.thumb}
                   alt=""
-                  className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-110"
+                  fill
+                  sizes="44px"
+                  className="object-cover transition-transform duration-300 group-hover:scale-110"
                 />
               </div>
               <div className="min-w-0 flex-1">
@@ -117,9 +119,8 @@ export function HeroVisualPanel() {
           {/* Overlapping avatars */}
           <div className="flex -space-x-2 overflow-hidden">
             {AVATARS.map((src, i) => (
-              <div key={i} className="inline-block h-8 w-8 rounded-full ring-2 ring-purple-400/40 overflow-hidden">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={src} alt="Student" className="h-full w-full object-cover" />
+              <div key={i} className="relative inline-block h-8 w-8 rounded-full ring-2 ring-purple-400/40 overflow-hidden">
+                <Image src={src} alt="" fill sizes="32px" className="object-cover" />
               </div>
             ))}
           </div>

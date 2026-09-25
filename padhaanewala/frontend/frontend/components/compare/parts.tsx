@@ -19,13 +19,15 @@ export function Logo({ c, size = "h-12 w-12 rounded-xl" }: { c: College; size?: 
 interface Props {
   onAdd: (c: College) => void;
   existing: string[];
+  /** College dataset resolved on the server. */
+  dataset?: College[];
 }
 
-export function AddCollegeButton({ onAdd, existing }: Props) {
+export function AddCollegeButton({ onAdd, existing, dataset }: Props) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const q = search.toLowerCase();
-  const available = COLLEGES.filter(
+  const available = (dataset ?? COLLEGES).filter(
     (c) =>
       !existing.includes(c.id) &&
       (c.name.toLowerCase().includes(q) || c.shortName.toLowerCase().includes(q)),

@@ -1,18 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, Suspense } from "react";
+import { useCallback, useMemo, useState, Suspense } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
-import type { SearchFilters, SortKey } from "@/lib/types";
-import { searchColleges, PAGE_SIZE } from "@/lib/data";
+import type { College, SearchFilters, SortKey } from "@/lib/types";
+import { searchColleges, PAGE_SIZE, buildFacets } from "@/lib/data";
+import { COLLEGES } from "@/lib/data/colleges";
 import { defaultFilters, parseSearchParams, serializeSearch } from "@/lib/searchParams";
 import { CollegeCard } from "@/components/college/CollegeCard";
 import { FiltersPanel } from "@/components/college/FiltersPanel";
 import { SortBar } from "@/components/college/SortBar";
 import { Pagination } from "@/components/college/Pagination";
 import { SearchBar } from "@/components/home/SearchBar";
-import { SkeletonGrid } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { SearchX, X } from "lucide-react";
+import { Chip as FilterChip } from "@/components/ui/Chip";
+import { SearchX } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 function activeFilterCount(f: SearchFilters): number {
@@ -30,16 +31,33 @@ function activeFilterCount(f: SearchFilters): number {
   );
 }
 
-export default function CollegesExplorer() {
+export default function CollegesExplorer({
+  colleges: dataset,
+}: {
+  /** College dataset resolved on the server (API, with bundled fallback). */
+  colleges?: College[];
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+
+  const colleges = useMemo(() => dataset?.length ? dataset : COLLEGES, [dataset]);
+  const facets = useMemo(() => buildFacets(colleges), [colleges]);
 
   const initial = useMemo(() => parseSearchParams(searchParams), [searchParams]);
   const [filters, setFilters] = useState<SearchFilters>(initial.filters);
   const [page, setPage] = useState(initial.page);
   const [filterOpen, setFilterOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
+
+  // Re-read filters when the URL changes (browser back/forward). This is React's
+  // documented "adjust state when a prop changes" pattern — the comparison and
+  // reset happen during render, so no effect and no cascading render is needed.
+  const [lastUrlState, setLastUrlState] = useState(initial);
+  if (lastUrlState !== initial) {
+    setLastUrlState(initial);
+    setFilters(initial.filters);
+    setPage(initial.page);
+  }
 
   // keep URL in sync
   const syncUrl = useCallback(
@@ -50,12 +68,6 @@ export default function CollegesExplorer() {
     [pathname, router],
   );
 
-  // initial simulated loading for skeleton polish
-  useEffect(() => {
-    const t = setTimeout(() => setLoading(false), 500);
-    return () => clearTimeout(t);
-  }, []);
-
   const updateFilters = useCallback(
     (patch: Partial<SearchFilters>) => {
       setFilterOpen(false);
@@ -63,8 +75,6 @@ export default function CollegesExplorer() {
       setFilters(next);
       setPage(1);
       syncUrl(next, 1);
-      setLoading(true);
-      window.setTimeout(() => setLoading(false), 300);
     },
     [filters, syncUrl],
   );
@@ -76,14 +86,15 @@ export default function CollegesExplorer() {
     (p: number) => {
       setPage(p);
       syncUrl(filters, p);
-      setLoading(true);
-      window.setTimeout(() => setLoading(false), 250);
       window.scrollTo({ top: 0, behavior: "smooth" });
     },
     [filters, syncUrl],
   );
 
-  const { colleges, total } = useMemo(() => searchColleges(filters, page), [filters, page]);
+  const { colleges: results, total } = useMemo(
+    () => searchColleges(filters, page, colleges),
+    [filters, page, colleges],
+  );
 
   const activeCount = activeFilterCount(filters);
   const hasActiveFilters = activeCount > 0 || Boolean(filters.query);
@@ -108,7 +119,8 @@ export default function CollegesExplorer() {
             <SearchBar
               initial={filters.query}
               id="colleges-search"
-              onSearch={() => setLoading(true)}
+              colleges={colleges}
+              facets={facets}
             />
           </div>
         </div>
@@ -123,6 +135,7 @@ export default function CollegesExplorer() {
                 filters={filters}
                 onChange={updateFilters}
                 onClear={clearAll}
+                facets={facets}
               />
             </div>
           </aside>
@@ -131,7 +144,7 @@ export default function CollegesExplorer() {
           <div className="min-w-0 flex-1">
             <SortBar
               total={total}
-              shown={Math.min(colleges.length, PAGE_SIZE)}
+              shown={Math.min(results.length, PAGE_SIZE)}
               sortBy={filters.sortBy}
               onSort={updateSort}
               activeFilters={activeCount}
@@ -142,28 +155,30 @@ export default function CollegesExplorer() {
             {hasActiveFilters && (
               <div className="mt-4 flex flex-wrap items-center gap-1.5">
                 {filters.query && (
-                  <Chip pill value={filters.query} onRemove={() => updateFilters({ query: "" })} />
+                  <FilterChip pill onRemove={() => updateFilters({ query: "" })}>{filters.query}</FilterChip>
                 )}
                 {(filters.states ?? []).map((s) => (
-                  <Chip key={s} pill value={s} onRemove={() => updateFilters({ states: filters.states.filter((x) => x !== s) })} />
+                  <FilterChip key={s} pill onRemove={() => updateFilters({ states: filters.states.filter((x) => x !== s) })}>{s}</FilterChip>
                 ))}
                 {(filters.cities ?? []).map((s) => (
-                  <Chip key={s} pill value={s} onRemove={() => updateFilters({ cities: filters.cities.filter((x) => x !== s) })} />
+                  <FilterChip key={s} pill onRemove={() => updateFilters({ cities: filters.cities.filter((x) => x !== s) })}>{s}</FilterChip>
                 ))}
                 {(filters.courseNames ?? []).map((s) => (
-                  <Chip key={s} pill value={`Degree: ${s}`} onRemove={() => updateFilters({ courseNames: filters.courseNames.filter((x) => x !== s) })} />
+                  <FilterChip key={s} pill onRemove={() => updateFilters({ courseNames: filters.courseNames.filter((x) => x !== s) })}>{`Degree: ${s}`}</FilterChip>
                 ))}
                 {(filters.types ?? []).map((s) => (
-                  <Chip key={s} pill value={s} onRemove={() => updateFilters({ types: filters.types.filter((x) => x !== s) })} />
+                  <FilterChip key={s} pill onRemove={() => updateFilters({ types: filters.types.filter((x) => x !== s) })}>{s}</FilterChip>
                 ))}
                 {(filters.exams ?? []).map((s) => (
-                  <Chip key={s} pill value={s} onRemove={() => updateFilters({ exams: filters.exams.filter((x) => x !== s) })} />
+                  <FilterChip key={s} pill onRemove={() => updateFilters({ exams: filters.exams.filter((x) => x !== s) })}>{s}</FilterChip>
                 ))}
                 {filters.hostel === true && (
-                  <Chip pill value="Hostel" onRemove={() => updateFilters({ hostel: null })} />
+                  <FilterChip pill onRemove={() => updateFilters({ hostel: null })}>Hostel</FilterChip>
                 )}
                 {filters.placementRate === true && (
-                  <Chip pill value="85%+ placement" onRemove={() => updateFilters({ placementRate: null })} />
+                  <FilterChip pill onRemove={() => updateFilters({ placementRate: null })}>
+                    85%+ placement
+                  </FilterChip>
                 )}
                 <button
                   onClick={clearAll}
@@ -175,9 +190,7 @@ export default function CollegesExplorer() {
             )}
 
             <div className="mt-5">
-              {loading ? (
-                <SkeletonGrid count={6} />
-              ) : colleges.length === 0 ? (
+              {results.length === 0 ? (
                 <EmptyState
                   icon={SearchX}
                   title="No colleges match your filters"
@@ -187,7 +200,7 @@ export default function CollegesExplorer() {
                 />
               ) : (
                 <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-                  {colleges.map((college) => (
+                  {results.map((college) => (
                     <CollegeCard key={college.id} college={college} />
                   ))}
                 </div>
@@ -235,39 +248,11 @@ export default function CollegesExplorer() {
               onChange={updateFilters}
               onClear={clearAll}
               onClose={() => setFilterOpen(false)}
+              facets={facets}
             />
           </div>
         </div>
       </Suspense>
-
-      {/* hide skeleton flash */}
-      <noscript>{null}</noscript>
     </div>
-  );
-}
-
-function Chip({
-  pill,
-  value,
-  onRemove,
-}: {
-  pill?: boolean;
-  value: string;
-  onRemove: () => void;
-}) {
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset",
-        pill
-          ? "bg-purple-50 text-purple-700 ring-purple-200"
-          : "bg-gray-100 text-gray-600 ring-gray-200",
-      )}
-    >
-      {value}
-      <button aria-label={`Remove ${value}`} onClick={onRemove} className="grid h-4 w-4 place-items-center rounded-full hover:bg-purple-100">
-        <X className="h-3 w-3" />
-      </button>
-    </span>
   );
 }

@@ -1,15 +1,22 @@
 import Link from "next/link";
+import { useMemo } from "react";
 import { CalendarDays, ArrowRight, ExternalLink, Building2, FileText } from "lucide-react";
-import { EXAMS } from "@/lib/data/exams";
-import { SCHOLARSHIPS } from "@/lib/data/scholarships";
 import { formatDate } from "@/lib/utils";
+import type { BlogPost, Exam, MockTest, Scholarship } from "@/lib/types";
 import { Badge } from "@/components/ui/Badge";
 import { Reveal } from "@/components/ui/Reveal";
 import { SectionHeading } from "@/components/ui/SectionHeading";
 
-export function UpcomingExams() {
-  const upcoming = [...EXAMS]
-    .filter((e) => e.stage === "Registration Open")
+export function UpcomingExams({ exams }: { exams: Exam[] }) {
+  const open = exams.filter((e) => e.stage === "Registration Open");
+  // Fall back to the soonest-dated exams so the band is never empty.
+  const upcoming = (open.length ? open : exams)
+    .slice()
+    .sort((a, b) => {
+      const da = a.dates[0]?.date ? Date.parse(a.dates[0].date) : Infinity;
+      const db = b.dates[0]?.date ? Date.parse(b.dates[0].date) : Infinity;
+      return da - db;
+    })
     .slice(0, 4);
   return (
     <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8 lg:py-20">
@@ -66,7 +73,10 @@ export function UpcomingExams() {
   );
 }
 
-export function HomeScholarships() {
+export function HomeScholarships({ scholarships }: { scholarships: Scholarship[] }) {
+  const top = scholarships.slice(0, 3);
+  if (top.length === 0) return null;
+
   return (
     <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8 lg:py-20">
       <Reveal>
@@ -83,7 +93,7 @@ export function HomeScholarships() {
       </Reveal>
 
       <div className="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-        {SCHOLARSHIPS.slice(0, 3).map((s) => (
+        {top.map((s) => (
           <Reveal key={s.id}>
             <Link
               href="/scholarships"
@@ -110,12 +120,28 @@ export function HomeScholarships() {
   );
 }
 
-export function HomeMockTests() {
-  const subjects = [
-    { name: "JEE Main Mock Tests", desc: "Physics · Chemistry · Maths", exam: "jee-main", count: "45 Qs, 90 min" },
-    { name: "NEET Mock Tests", desc: "Biology · Physics · Chemistry", exam: "neet-ug", count: "15+ Qs, timed" },
-    { name: "CAT Practice", desc: "Quant · Reasoning · VARC", exam: "cat", count: "Section-wise drills" },
-  ];
+export function HomeMockTests({ tests }: { tests: MockTest[] }) {
+  // Group the catalogue by exam so the cards reflect what is actually published.
+  const subjects = useMemo(() => {
+    const byExam = new Map<string, MockTest[]>();
+    for (const t of tests) {
+      const key = t.exam || "General";
+      const bucket = byExam.get(key);
+      if (bucket) bucket.push(t);
+      else byExam.set(key, [t]);
+    }
+    return Array.from(byExam.entries())
+      .slice(0, 3)
+      .map(([exam, list]) => ({
+        name: `${exam} Mock Tests`,
+        desc: Array.from(new Set(list.map((t) => t.subject).filter(Boolean))).join(" · ") || "Mixed subjects",
+        href: list[0] ? `/mock-tests/${list[0].slug}` : "/mock-tests",
+        count: `${list.reduce((n, t) => n + (t.questionCount || 0), 0)} questions across ${list.length} ${list.length === 1 ? "test" : "tests"}`,
+      }));
+  }, [tests]);
+
+  if (subjects.length === 0) return null;
+
   return (
     <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8 lg:py-20">
       <Reveal>
@@ -135,7 +161,7 @@ export function HomeMockTests() {
         {subjects.map((s) => (
           <Reveal key={s.name}>
             <Link
-              href="/mock-tests"
+              href={s.href}
               className="group flex h-full flex-col rounded-3xl border border-slate-100 bg-white p-6 transition hover:-translate-y-0.5 hover:border-purple-200 hover:shadow-xl hover:shadow-purple-900/5"
             >
               <div className="flex items-center justify-between">
@@ -158,13 +184,11 @@ export function HomeMockTests() {
   );
 }
 
-export function HomeArticles() {
-  const articles = [
-    { title: "JEE Main vs JEE Advanced: What's the Real Difference?", cat: "Exams", slug: "jee-main-vs-jee-advanced-difference", time: "6 min" },
-    { title: "NEET UG 2027: Complete Eligibility Criteria Explained", cat: "NEET", slug: "neet-ug-2027-eligibility-criteria", time: "5 min" },
-    { title: "Which B.Tech Branch Has the Best Future in 2027?", cat: "Careers", slug: "which-btech-branch-has-best-future", time: "9 min" },
-    { title: "Top 10 Scholarships Engineering Students Must Not Miss", cat: "Scholarships", slug: "top-scholarships-for-engineering-students", time: "8 min" },
-  ];
+export function HomeArticles({ posts }: { posts: BlogPost[] }) {
+  // Take the newest real posts so links can never point at a slug that 404s.
+  const articles = posts.slice(0, 4);
+  if (articles.length === 0) return null;
+
   return (
     <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8 lg:py-20">
       <Reveal>
@@ -188,12 +212,12 @@ export function HomeArticles() {
               className="group flex items-start gap-4 rounded-3xl border border-slate-100 bg-white p-5 transition hover:-translate-y-0.5 hover:border-purple-200 hover:shadow-xl hover:shadow-purple-900/5"
             >
               <span className="grid h-16 w-16 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-purple-700 to-indigo-700 font-display text-[11px] font-extrabold uppercase tracking-wide text-white">
-                {a.cat}
+                {a.category}
               </span>
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <Badge variant="purple">{a.cat}</Badge>
-                  <span className="text-[11px] text-slate-400">{a.time} read</span>
+                  <Badge variant="purple">{a.category}</Badge>
+                  <span className="text-[11px] text-slate-400">{a.readTime}</span>
                 </div>
                 <h3 className="mt-2 font-display text-base font-bold leading-snug text-gray-900 group-hover:text-purple-700">
                   {a.title}

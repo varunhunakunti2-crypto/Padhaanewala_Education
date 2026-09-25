@@ -5,8 +5,6 @@ import Link from "next/link";
 import {
   Menu,
   X,
-  ArrowRight,
-  Search,
   GraduationCap,
   Compass,
   Scale,
@@ -25,7 +23,6 @@ import {
   Newspaper,
   LogOut,
   ShieldCheck,
-  UserRound,
 } from "lucide-react";
 import { cn, initialsOf } from "@/lib/utils";
 import { ButtonLink } from "@/components/ui/Button";

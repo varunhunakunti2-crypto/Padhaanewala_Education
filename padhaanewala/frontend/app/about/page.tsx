@@ -14,7 +14,7 @@ import {
 export const metadata: Metadata = {
   title: "About",
   description:
-    "Learn about CampusPulse — our mission to help every Indian student find the right college, with transparency and data-driven discovery.",
+    "Learn about Padhaanewala — our mission to help every Indian student find the right college, with transparency and data-driven discovery.",
 };
 
 const VALUES = [
@@ -39,7 +39,7 @@ const VALUES = [
   {
     icon: Globe,
     title: "Accessible to all",
-    desc: "CampusPulse is free to use for all students, regardless of background, language or economic status.",
+    desc: "Padhaanewala is free to use for all students, regardless of background, language or economic status.",
     color: "bg-emerald-50 text-emerald-500",
   },
 ];
@@ -60,7 +60,7 @@ export default function AboutPage() {
           Helping Indian students make smarter college decisions
         </h1>
         <p className="mx-auto mt-4 max-w-xl text-sm leading-relaxed text-gray-600 dark:text-gray-300 sm:text-base">
-          We started CampusPulse because finding the right college in India is
+          We started Padhaanewala because finding the right college in India is
           harder than it needs to be. Outdated directories, confusing fees and
           unreliable rankings make a simple decision feel impossible.
         </p>
@@ -119,7 +119,7 @@ export default function AboutPage() {
               <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/15">
                 <Mail className="h-4 w-4" />
               </span>
-              hello@campuspulse.in
+              hello@padhaanewala.in
             </li>
             <li className="flex items-center gap-3">
               <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/15">
@@ -149,7 +149,7 @@ export default function AboutPage() {
       </div>
 
       <p className="mt-10 text-center text-sm text-gray-400">
-        Built with care by the CampusPulse team for students who dream big.
+        Built with care by the Padhaanewala team for students who dream big.
       </p>
     </section>
   );

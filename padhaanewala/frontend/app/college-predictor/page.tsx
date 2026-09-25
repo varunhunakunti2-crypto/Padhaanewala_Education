@@ -1,18 +1,23 @@
-import { Metadata } from "next";
+import type { Metadata } from "next";
 import { PredictorForm } from "@/components/predictor/PredictorForm";
+import { resolveColleges } from "@/lib/content";
+import { SITE } from "@/lib/site";
 
-export const metadata: Metadata = {
-  title: "AI College Predictor",
-  description:
-    "Enter your entrance exam rank, course preference, state and budget to get a personalised list of colleges matching your profile. Use Padhaanewala's AI College Predictor.",
-  openGraph: {
-    title: "AI College Predictor — padhaanewala",
-    description:
-      "Find colleges matching your rank, course and location preferences with AI-powered prediction.",
-  },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  return {
+    title: "AI College Predictor",
+    description: `Enter your entrance exam rank, course preference, state and budget to get a personalised list of colleges matching your profile. Use ${SITE.name}'s AI College Predictor.`,
+    openGraph: {
+      title: `AI College Predictor — ${SITE.name}`,
+      description:
+        "Find colleges matching your rank, course and location preferences with data-driven prediction.",
+    },
+  };
+}
 
-export default function PredictorPage() {
+export default async function PredictorPage() {
+  const { data: colleges } = await resolveColleges();
+
   return (
     <section className="mx-auto max-w-7xl px-4 pt-28 pb-12 sm:px-6 sm:pt-32 lg:px-8 lg:pt-36 lg:pb-16">
       <div className="mb-8 text-center">
@@ -26,11 +31,12 @@ export default function PredictorPage() {
           AI College Predictor
         </h1>
         <p className="mx-auto mt-3 max-w-xl text-sm text-gray-600 dark:text-slate-300">
-          Enter your entrance exam rank, preferred course, state and budget.
-          Our AI engine will map your profile against 12,000+ colleges and recommend the best fits.
+          Enter your entrance exam rank, preferred course, state and budget. We score{" "}
+          {colleges.length.toLocaleString("en-IN")} colleges in our catalogue against your profile and
+          rank the best fits.
         </p>
       </div>
-      <PredictorForm />
+      <PredictorForm colleges={colleges} />
     </section>
   );
 }

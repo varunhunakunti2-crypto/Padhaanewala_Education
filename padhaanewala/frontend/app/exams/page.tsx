@@ -1,19 +1,25 @@
-import { Metadata } from "next";
+import type { Metadata } from "next";
 import { ExamsExplorer } from "@/components/exams/ExamComponents";
 import { AdmissionHelpBanner } from "@/components/admission/AdmissionHelpBanner";
+import { resolveExams } from "@/lib/content";
+import { SITE } from "@/lib/site";
 
-export const metadata: Metadata = {
-  title: "Exams",
-  description:
-    "Browse all major entrance examinations in India — JEE Main, JEE Advanced, NEET UG, CUET, BITSAT, GATE, CAT, CLAT and more. Check eligibility, dates, pattern and fees.",
-  openGraph: {
-    title: "Entrance Exams Calendar — padhaanewala",
+export async function generateMetadata(): Promise<Metadata> {
+  return {
+    title: "Exams",
     description:
-      "Complete exam listings with registration dates, exam pattern, eligibility and official websites.",
-  },
-};
+      "Browse all major entrance examinations in India — JEE Main, JEE Advanced, NEET UG, CUET, BITSAT, GATE, CAT, CLAT and more. Check eligibility, dates, pattern and fees.",
+    openGraph: {
+      title: `Entrance Exams Calendar — ${SITE.name}`,
+      description:
+        "Complete exam listings with registration dates, exam pattern, eligibility and official websites.",
+    },
+  };
+}
 
-export default function ExamsPage() {
+export default async function ExamsPage() {
+  const { data: exams } = await resolveExams();
+
   return (
     <section className="mx-auto max-w-7xl px-4 pt-28 pb-12 sm:px-6 sm:pt-32 lg:px-8 lg:pt-36 lg:pb-16">
       <div className="mb-8">
@@ -25,7 +31,7 @@ export default function ExamsPage() {
           entrance examinations in India.
         </p>
       </div>
-      <ExamsExplorer />
+      <ExamsExplorer list={exams} />
       <AdmissionHelpBanner />
     </section>
   );

@@ -148,10 +148,14 @@ export const COURSES: CourseMeta[] = [
   },
 ];
 
-export function collegesOffering(courseSlug: string): College[] {
-  const meta = COURSES.find((c) => c.slug === courseSlug);
+export function collegesOffering(
+  courseSlug: string,
+  dataset: College[] = COLLEGES,
+  catalog: CourseMeta[] = COURSES,
+): College[] {
+  const meta = catalog.find((c) => c.slug === courseSlug);
   if (!meta) return [];
-  return COLLEGES.filter((c) =>
+  return dataset.filter((c) =>
     c.courses.some(
       (course) =>
         course.degree === meta.degree ||
@@ -160,25 +164,25 @@ export function collegesOffering(courseSlug: string): College[] {
   );
 }
 
-export function searchCourses(query: string): CourseMeta[] {
+export function searchCourses(query: string, catalog: CourseMeta[] = COURSES): CourseMeta[] {
   const q = query.toLowerCase().trim();
-  if (!q) return COURSES;
-  return COURSES.filter((c) =>
+  if (!q) return catalog;
+  return catalog.filter((c) =>
     `${c.name} ${c.degree} ${c.description} ${c.level}`.toLowerCase().includes(q),
   );
-  }
-
-export function getCourseBySlug(slug: string): CourseMeta | undefined {
-  return COURSES.find((c) => c.slug === slug);
 }
 
-export function getRelatedCourses(slug: string): CourseMeta[] {
+export function getCourseBySlug(slug: string, catalog: CourseMeta[] = COURSES): CourseMeta | undefined {
+  return catalog.find((c) => c.slug === slug);
+}
+
+export function getRelatedCourses(slug: string, catalog: CourseMeta[] = COURSES): CourseMeta[] {
   const detail = COURSE_DETAILS[slug];
-  if (!detail) return COURSES.filter((c) => c.slug !== slug).slice(0, 3);
+  if (!detail) return catalog.filter((c) => c.slug !== slug).slice(0, 3);
   const related = detail.relatedSlugs
-    .map((s) => getCourseBySlug(s))
+    .map((s) => getCourseBySlug(s, catalog))
     .filter((c): c is CourseMeta => Boolean(c));
-  const extra = COURSES.filter((c) => c.slug !== slug && !detail.relatedSlugs.includes(c.slug)).slice(0, 3);
+  const extra = catalog.filter((c) => c.slug !== slug && !detail.relatedSlugs.includes(c.slug)).slice(0, 3);
   return [...related, ...extra].slice(0, 4);
 }
 

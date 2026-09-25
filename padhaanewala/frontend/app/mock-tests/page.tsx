@@ -1,19 +1,25 @@
-import { Metadata } from "next";
+import type { Metadata } from "next";
 import { MockTestEngine } from "@/components/mocktests/MockTestEngine";
 import { AdmissionHelpBanner } from "@/components/admission/AdmissionHelpBanner";
+import { resolveMockTests } from "@/lib/content";
+import { SITE } from "@/lib/site";
 
-export const metadata: Metadata = {
-  title: "Mock Tests",
-  description:
-    "Attempt free exam-style mock tests for JEE Main, NEET, CAT and more. Get instant score, percentile, topic-wise analysis and full solutions.",
-  openGraph: {
-    title: "Free Mock Tests — padhaanewala",
+export async function generateMetadata(): Promise<Metadata> {
+  return {
+    title: "Mock Tests",
     description:
-      "Practice with realistic mock tests and improve your entrance exam scores with detailed analytics.",
-  },
-};
+      "Attempt free exam-style mock tests for JEE Main, NEET, CAT and more. Get instant score, percentile, topic-wise analysis and full solutions.",
+    openGraph: {
+      title: `Free Mock Tests — ${SITE.name}`,
+      description:
+        "Practice with realistic mock tests and improve your entrance exam scores with detailed analytics.",
+    },
+  };
+}
 
-export default function MockTestsPage() {
+export default async function MockTestsPage() {
+  const { data: tests } = await resolveMockTests();
+
   return (
     <section className="mx-auto max-w-7xl px-4 pt-28 pb-12 sm:px-6 sm:pt-32 lg:px-8 lg:pt-36 lg:pb-16">
       <div className="mb-8">
@@ -25,7 +31,7 @@ export default function MockTestsPage() {
           percentile, topic-wise performance and step-by-step solutions instantly.
         </p>
       </div>
-      <MockTestEngine />
+      <MockTestEngine tests={tests} />
       <div className="pt-6">
         <AdmissionHelpBanner />
       </div>

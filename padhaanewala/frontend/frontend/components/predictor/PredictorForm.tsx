@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { createContext, useContext, useMemo, useState } from "react";
 import {
   ChevronLeft,
   ChevronRight,
@@ -20,12 +20,27 @@ import { Input, Label, Select } from "@/components/ui/FormField";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { CollegeCard } from "@/components/college/CollegeCard";
-import { COLLEGES, ALL_STATES, ALL_CITIES } from "@/lib/data";
-import { ALL_EXAMS } from "@/lib/data";
-import { ALL_DEGREES } from "@/lib/data";
+import { buildFacets, type CollegeFacets } from "@/lib/data";
 import { predictColleges } from "@/lib/data/predictor";
-import type { PredictorInput } from "@/lib/types";
+import { COLLEGES } from "@/lib/data/colleges";
+import type { College, PredictorInput, PredictResult } from "@/lib/types";
 import { cn } from "@/lib/utils";
+
+/**
+ * The wizard's step components are independent of each other, so the active
+ * dataset and its derived facet lists travel through context rather than being
+ * threaded through every step's props.
+ */
+const PredictorDataContext = createContext<{
+  colleges: College[];
+  facets: CollegeFacets;
+} | null>(null);
+
+function usePredictorData() {
+  const ctx = useContext(PredictorDataContext);
+  if (!ctx) throw new Error("usePredictorData must be used inside PredictorForm");
+  return ctx;
+}
 
 const STEPS = [
   "Course",
@@ -71,12 +86,13 @@ interface StepProps {
 }
 
 function StepCourse({ input, set }: StepProps) {
+  const { facets } = usePredictorData();
   return (
     <div className="space-y-4">
       <Label htmlFor="pred-course">Which course are you targeting?</Label>
       <Select id="pred-course" value={input.course} onChange={(e) => set({ course: e.target.value })}>
         <option value="">Select a course</option>
-        {ALL_DEGREES.map((d) => (
+            {facets.degrees.map((d) => (
           <option key={d} value={d}>{d}</option>
         ))}
         <option value="MBBS">MBBS (Medical)</option>
@@ -116,12 +132,13 @@ function PopularCourses({ onPick, input }: { onPick: (c: string) => void; input:
 }
 
 function StepExam({ input, set }: StepProps) {
+  const { facets } = usePredictorData();
   return (
     <div className="space-y-4">
       <Label htmlFor="pred-exam">Which entrance exam will you appear for?</Label>
       <Select id="pred-exam" value={input.exam} onChange={(e) => set({ exam: e.target.value })}>
         <option value="">Select an exam (optional)</option>
-        {[...ALL_EXAMS, "BITSAT", "CLAT", "NEET", "CAT", "GATE"].sort().filter((v, i, a) => a.indexOf(v) === i).map((e) => (
+        {[...facets.exams, "BITSAT", "CLAT", "NEET", "CAT", "GATE"].sort().filter((v, i, a) => a.indexOf(v) === i).map((e) => (
           <option key={e} value={e}>{e}</option>
         ))}
       </Select>
@@ -171,12 +188,13 @@ function StepCategory({ input, set }: StepProps) {
 }
 
 function StepState({ input, set }: StepProps) {
+  const { facets } = usePredictorData();
   return (
     <div className="space-y-4">
       <Label htmlFor="pred-state">Which state are you from?</Label>
       <Select id="pred-state" value={input.state} onChange={(e) => set({ state: e.target.value })}>
         <option value="All India">All India</option>
-        {ALL_STATES.map((s) => (
+        {facets.states.map((s) => (
           <option key={s} value={s}>{s}</option>
         ))}
       </Select>
@@ -186,12 +204,13 @@ function StepState({ input, set }: StepProps) {
 }
 
 function StepCity({ input, set }: StepProps) {
+  const { facets } = usePredictorData();
   return (
     <div className="space-y-4">
       <Label htmlFor="pred-city">Any preferred city?</Label>
       <Select id="pred-city" value={input.preferredCity} onChange={(e) => set({ preferredCity: e.target.value })}>
         <option value="Any city">Any city</option>
-        {ALL_CITIES.map((c) => (
+        {facets.cities.map((c) => (
           <option key={c} value={c.split(",")[0].trim()}>{c}</option>
         ))}
       </Select>
@@ -357,18 +376,26 @@ const STEP_ICONS: Record<string, React.ReactNode> = {
   Review: <Flag className="h-5 w-5" />,
 };
 
-export function PredictorForm() {
+export function PredictorForm({ colleges: dataset }: { colleges?: College[] }) {
   const [step, setStep] = useState(0);
   const [input, setInput] = useState<PredictorInput>(INITIAL);
   const [done, setDone] = useState(false);
   const [asked, setAsked] = useState(false);
+
+  const colleges = useMemo(
+    () => (dataset?.length ? dataset : COLLEGES),
+    [dataset],
+  );
+  const facets = useMemo(() => buildFacets(colleges), [colleges]);
+
+  const ctx = useMemo(() => ({ colleges, facets }), [colleges, facets]);
 
   const stepName = STEPS[step];
   const StepComp = STEPS_COMPONENT[stepName];
 
   const canNext = step === 0 ? input.course.trim().length > 0 : true;
 
-  const results = input.course.trim() && asked ? predictColleges(input) : null;
+  const results = input.course.trim() && asked ? predictColleges(input, colleges) : null;
 
   const set = (patch: Partial<PredictorInput>) => setInput((prev) => ({ ...prev, ...patch }));
 
@@ -397,6 +424,7 @@ export function PredictorForm() {
   }
 
   return (
+    <PredictorDataContext.Provider value={ctx}>
     <div className="mx-auto max-w-2xl overflow-hidden rounded-3xl border border-purple-100 bg-white shadow-xl shadow-purple-900/5">
       {/* Progress header */}
       <div className="border-b border-slate-100 bg-gradient-to-r from-purple-700 to-indigo-700 px-6 py-5">
@@ -462,6 +490,7 @@ export function PredictorForm() {
         </p>
       </div>
     </div>
+    </PredictorDataContext.Provider>
   );
 }
 
@@ -470,7 +499,7 @@ export function PredictorResults({
   input,
   onRestart,
 }: {
-  results: { highlySuitable: typeof COLLEGES; possible: typeof COLLEGES; reach: typeof COLLEGES };
+  results: PredictResult;
   input: PredictorInput;
   onRestart: () => void;
 }) {

@@ -3,23 +3,14 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  Heart,
   Eye,
   Search,
   CalendarClock,
   Award,
   Settings,
-  Star,
   ArrowRight,
-  Sparkles,
   Bookmark,
   Bell,
-  UserRound,
-  Phone,
-  GraduationCap,
-  Wallet,
-  CheckCircle2,
-  Building2,
   Briefcase,
   GraduationCap as EduIcon,
   Home,

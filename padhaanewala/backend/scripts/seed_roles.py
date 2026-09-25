@@ -1,3 +1,11 @@
+import sys
+from pathlib import Path
+
+# Allow `python scripts/seed_x.py` from any working directory: the repo root
+# (which contains the `app` package) is not on sys.path by default, because
+# Python puts the *script's* directory there instead.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from app.database import SessionLocal
 from app.models import Role
 

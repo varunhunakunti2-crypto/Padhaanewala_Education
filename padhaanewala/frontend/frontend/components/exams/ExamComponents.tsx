@@ -17,7 +17,7 @@ import {
 import { Badge } from "@/components/ui/Badge";
 import { Input } from "@/components/ui/FormField";
 import { cn, formatDate } from "@/lib/utils";
-import { EXAMS, searchExams, EXAM_STAGES } from "@/lib/data/exams";
+import { searchExams, EXAM_STAGES } from "@/lib/data/exams";
 import type { Exam } from "@/lib/types";
 
 const STAGE_TONE: Record<string, "green" | "yellow" | "red" | "blue"> = {

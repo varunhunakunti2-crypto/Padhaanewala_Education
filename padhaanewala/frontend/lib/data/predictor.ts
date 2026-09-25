@@ -1,6 +1,5 @@
 import type { College, PredictorInput, PredictResult } from "@/lib/types";
 import { COLLEGES } from "./colleges";
-import { matchScore } from "@/lib/utils";
 
 const COURSE_KEYWORDS: Record<string, string[]> = {
   "b.tech": ["b.tech", "b.e.", "engineering"],
@@ -20,7 +19,6 @@ const COURSE_KEYWORDS: Record<string, string[]> = {
 
 function matchesCourse(c: College, course: string): boolean {
   if (!course) return true;
-  const q = course.toLowerCase();
   const bears = COURSE_KEYWORDS[course.toLowerCase()] ?? [course.toLowerCase()];
   return c.courses.some((co) =>
     bears.some((b) =>
@@ -50,10 +48,13 @@ function parseRank(exam: string, raw: string): { rank: number | null; score: num
   return mainstream ? { rank: num, score: null } : { rank: null, score: num };
 }
 
-export function predictColleges(input: PredictorInput): PredictResult {
+export function predictColleges(
+  input: PredictorInput,
+  dataset: College[] = COLLEGES,
+): PredictResult {
   const budgetMax = parseBudget(input.budget);
 
-  let pool = COLLEGES.filter((c) => matchesCourse(c, input.course));
+  let pool = dataset.filter((c) => matchesCourse(c, input.course));
 
   if (input.exam) {
     const exam = input.exam.toLowerCase();
@@ -101,7 +102,10 @@ export function predictColleges(input: PredictorInput): PredictResult {
       else s -= 5;
     }
 
-    s += matchScore(c.id) / 10;
+    // Previously added `matchScore(id) / 10` — a hash of the college id that
+    // injected 8.8–9.9 points of pure noise into every candidate. The real
+    // signals above are already weighted; adding a constant per college just
+    // shuffled the ranking arbitrarily.
     return { college: c, score: s, tier };
   });
 

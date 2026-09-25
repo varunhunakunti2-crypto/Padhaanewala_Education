@@ -3,17 +3,16 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Star, ThumbsUp, PenLine, BadgeCheck, Building2, UserRound } from "lucide-react";
-import { Badge } from "@/components/ui/Badge";
+
 import { Button } from "@/components/ui/Button";
 import { Rating } from "@/components/ui/Rating";
 import { Input, Label, Select } from "@/components/ui/FormField";
 import { Modal } from "@/components/ui/Modal";
 import { cn, initialsOf, formatDate } from "@/lib/utils";
-import { COLLEGES } from "@/lib/data";
-import { ALL_DEGREES } from "@/lib/data";
-import type { Review } from "@/lib/types";
+import { COLLEGES, buildFacets } from "@/lib/data";
+import type { College, Review } from "@/lib/types";
 import { useApp } from "@/lib/context/AppContext";
-import { AnimatedRatingMarquee } from "@/components/reviews/AnimatedRatingMarquee";
+
 
 const ROLE_ICON: Record<Review["role"], typeof Building2> = {
   Alumni: Building2,
@@ -21,19 +20,24 @@ const ROLE_ICON: Record<Review["role"], typeof Building2> = {
   Parent: UserRound,
 };
 
-const SAMPLE_REVIEWS: Review[] = COLLEGES.flatMap((c, ci) =>
-  c.reviews.map((r) => ({
-    ...r,
-    collegeId: c.id,
-    collegeName: c.shortName,
-    collegeSlug: c.slug,
-  })),
-).slice(0, 12);
-
 interface ExtendedReview extends Review {
   collegeId?: string;
   collegeName?: string;
   collegeSlug?: string;
+}
+
+/** Flattens college-embedded reviews into the shape the explorer renders. */
+function collectReviews(dataset: College[]): ExtendedReview[] {
+  return dataset
+    .flatMap((c) =>
+      c.reviews.map((r) => ({
+        ...r,
+        collegeId: c.id,
+        collegeName: c.shortName,
+        collegeSlug: c.slug,
+      })),
+    )
+    .slice(0, 24);
 }
 
 export function ReviewCard({ review, showCollege = false }: { review: ExtendedReview; showCollege?: boolean }) {
@@ -96,8 +100,26 @@ export function ReviewCard({ review, showCollege = false }: { review: ExtendedRe
   );
 }
 
-export function ReviewForm({ collegeShortName, onDone }: { collegeShortName?: string; onDone?: () => void }) {
+export function ReviewForm({
+  collegeShortName,
+  onDone,
+  colleges: dataset,
+  degrees: degreeList,
+}: {
+  collegeShortName?: string;
+  onDone?: () => void;
+  colleges?: College[];
+  degrees?: string[];
+}) {
   const { addReview } = useApp();
+  const colleges = useMemo(
+    () => (dataset?.length ? dataset : COLLEGES),
+    [dataset],
+  );
+  const degrees = useMemo(
+    () => degreeList ?? buildFacets(colleges).degrees,
+    [degreeList, colleges],
+  );
   const [form, setForm] = useState({
     college: collegeShortName ?? "",
     course: "",
@@ -141,7 +163,7 @@ export function ReviewForm({ collegeShortName, onDone }: { collegeShortName?: st
             required
           >
             <option value="">Select a college</option>
-            {COLLEGES.map((c) => (
+            {colleges.map((c) => (
               <option key={c.id} value={c.shortName}>{c.shortName}</option>
             ))}
           </Select>
@@ -152,7 +174,7 @@ export function ReviewForm({ collegeShortName, onDone }: { collegeShortName?: st
         <Label htmlFor="rv-course">Course *</Label>
         <Select id="rv-course" value={form.course} onChange={(e) => setForm((f) => ({ ...f, course: e.target.value }))} required>
           <option value="">Select course</option>
-          {ALL_DEGREES.map((d) => (
+          {degrees.map((d) => (
             <option key={d} value={d}>{d}</option>
           ))}
         </Select>
@@ -228,17 +250,28 @@ export function ReviewForm({ collegeShortName, onDone }: { collegeShortName?: st
   );
 }
 
-export function ReviewsExplorer() {
+export function ReviewsExplorer({ colleges: dataset }: { colleges?: College[] }) {
   const { reviews } = useApp();
   const [showForm, setShowForm] = useState(false);
   const [role, setRole] = useState("All");
   const [college, setCollege] = useState("All");
 
+  const colleges = useMemo(
+    () => (dataset?.length ? dataset : COLLEGES),
+    [dataset],
+  );
+  const degrees = useMemo(() => buildFacets(colleges).degrees, [colleges]);
+  const collegeReviews = useMemo(() => collectReviews(colleges), [colleges]);
+
   const all = useMemo<ExtendedReview[]>(() => {
-    const base: ExtendedReview[] = SAMPLE_REVIEWS.map((r) => r as ExtendedReview);
-    const user: ExtendedReview[] = reviews.map((r) => ({ ...r, collegeId: "", collegeName: undefined, collegeSlug: undefined }));
-    return [...user, ...base];
-  }, [reviews]);
+    const user: ExtendedReview[] = reviews.map((r) => ({
+      ...r,
+      collegeId: "",
+      collegeName: undefined,
+      collegeSlug: undefined,
+    }));
+    return [...user, ...collegeReviews];
+  }, [reviews, collegeReviews]);
 
   const filtered = all.filter(
     (r) => (role === "All" || r.role === role) && (college === "All" || r.collegeName === college),
@@ -256,7 +289,7 @@ export function ReviewsExplorer() {
           </div>
           <div>
             <p className="text-sm font-bold text-gray-900 dark:text-white">{all.length} verified reviews</p>
-            <p className="text-xs text-slate-500 dark:text-gray-300">Across {COLLEGES.length} colleges on Padhaanewala</p>
+            <p className="text-xs text-slate-500 dark:text-gray-300">Across {colleges.length} colleges on Padhaanewala</p>
           </div>
         </div>
         <Button variant="accent" onClick={() => setShowForm(true)}>
@@ -281,7 +314,7 @@ export function ReviewsExplorer() {
         <div className="ml-auto w-full sm:w-52">
           <Select value={college} onChange={(e) => setCollege(e.target.value)}>
             <option value="All">All colleges</option>
-            {COLLEGES.map((c) => (
+            {colleges.map((c) => (
               <option key={c.id} value={c.shortName}>{c.shortName}</option>
             ))}
           </Select>
@@ -301,7 +334,7 @@ export function ReviewsExplorer() {
       )}
 
       <Modal open={showForm} onClose={() => setShowForm(false)} title="Write a review">
-        <ReviewForm onDone={() => setShowForm(false)} />
+        <ReviewForm onDone={() => setShowForm(false)} colleges={colleges} degrees={degrees} />
       </Modal>
     </div>
   );

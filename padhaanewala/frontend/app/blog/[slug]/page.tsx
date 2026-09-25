@@ -8,7 +8,9 @@ import {
   ChevronRight,
   Share2,
 } from "lucide-react";
-import { BLOG_POSTS, getBlogPostBySlug, getRelatedPosts } from "@/lib/data/blog";
+import { getRelatedPosts } from "@/lib/data/blog";
+import { resolveBlogPost, resolveBlogPosts, resolveSlugs } from "@/lib/content";
+import { absoluteUrl, SITE } from "@/lib/site";
 import { formatDate } from "@/lib/utils";
 import { Badge } from "@/components/ui/Badge";
 import { ArticleCard } from "@/components/blog/BlogExplorer";
@@ -19,28 +21,44 @@ interface PageProps {
   params: Promise<{ slug: string }>;
 }
 
-export function generateStaticParams() {
-  return BLOG_POSTS.map((p) => ({ slug: p.slug }));
+export async function generateStaticParams() {
+  const slugs = await resolveSlugs("blogs");
+  return slugs.map((slug) => ({ slug }));
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params;
-  const post = getBlogPostBySlug(slug);
+  const { data: post } = await resolveBlogPost(slug);
   if (!post) return { title: "Article not found" };
   return {
     title: post.title,
     description: post.excerpt,
     authors: [{ name: post.author }],
     keywords: post.tags,
+    alternates: { canonical: absoluteUrl(`/blog/${post.slug}`) },
+    openGraph: {
+      type: "article",
+      title: post.title,
+      description: post.excerpt,
+      siteName: SITE.name,
+      url: absoluteUrl(`/blog/${post.slug}`),
+      publishedTime: post.date,
+      authors: [post.author],
+    },
   };
 }
 
 export default async function BlogDetailPage({ params }: PageProps) {
   const { slug } = await params;
-  const post = getBlogPostBySlug(slug);
+  const [{ data: post }, { data: allPosts }] = await Promise.all([
+    resolveBlogPost(slug),
+    resolveBlogPosts(),
+  ]);
   if (!post) notFound();
 
-  const related = getRelatedPosts(post);
+  const related = getRelatedPosts(post).length
+    ? getRelatedPosts(post)
+    : allPosts.filter((p) => p.slug !== post.slug).slice(0, 3);
 
   return (
     <article className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8 lg:py-12">
@@ -81,9 +99,11 @@ export default async function BlogDetailPage({ params }: PageProps) {
         </button>
       </div>
 
-      <div className="prose max-w-none">
+      {/* `@tailwindcss/typography` is not a dependency, so article typography is
+          expressed with real utilities here rather than a dead `prose` class. */}
+      <div className="max-w-none text-[1.0625rem] leading-[1.75] text-slate-700 dark:text-slate-300">
         {post.content.map((paragraph, i) => (
-          <p key={i} className="mt-5 leading-relaxed text-slate-700 first:mt-8">
+          <p key={i} className="mt-5 first:mt-0 [&:first-of-type]:text-lg [&:first-of-type]:font-medium [&:first-of-type]:text-slate-900 dark:[&:first-of-type]:text-white">
             {paragraph}
           </p>
         ))}

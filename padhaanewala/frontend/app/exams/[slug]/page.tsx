@@ -10,7 +10,9 @@ import {
   ChevronRight,
   Building2,
 } from "lucide-react";
-import { getExamBySlug, EXAM_STAGES, EXAMS } from "@/lib/data/exams";
+import { EXAM_STAGES } from "@/lib/data/exams";
+import { resolveExam, resolveSlugs } from "@/lib/content";
+import { absoluteUrl } from "@/lib/site";
 import {
   ExamFaqs,
   ExamImportantDates,
@@ -25,30 +27,32 @@ interface PageProps {
   params: Promise<{ slug: string }>;
 }
 
-export function generateStaticParams() {
-  return EXAMS.map((e) => ({ slug: e.slug }));
+export async function generateStaticParams() {
+  const slugs = await resolveSlugs("exams");
+  return slugs.map((slug) => ({ slug }));
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params;
-  const exam = getExamBySlug(slug);
+  const { data: exam } = await resolveExam(slug);
   if (!exam) return { title: "Exam not found" };
   return {
     title: `${exam.shortName} — Exam Details`,
     description: `${exam.shortName} (${exam.name}): eligibility, application dates, exam pattern, fees and FAQs. Conducted by ${exam.conductingBody}.`,
+    alternates: { canonical: absoluteUrl(`/exams/${exam.slug}`) },
   };
 }
 
 export default async function ExamDetailPage({ params }: PageProps) {
   const { slug } = await params;
-  const exam = getExamBySlug(slug);
+  const { data: exam } = await resolveExam(slug);
   if (!exam) notFound();
 
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "EducationalOccupationalProgram",
     name: exam.name,
-    description: exam.overview,
+    description: exam.overview || undefined,
     educationalLevel: exam.level === "UG" ? "Undergraduate" : "Postgraduate",
   };
 

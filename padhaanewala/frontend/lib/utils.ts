@@ -61,11 +61,53 @@ export function closestBreakpointLabel(fee: number): string {
   return "₹6L+";
 }
 
-/** Deterministic personality match percentage (88–99) for a college id */
-export function matchScore(id: string): number {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
-  return 88 + (h % 12);
+/**
+ * Honest, data-derived strength signal for a college.
+ *
+ * The previous implementation was `88 + (hash(id) % 12)` — a deterministic hash
+ * of the college id that produced a plausible-looking "88–99% match" badge for
+ * every institution regardless of any real signal, and was presented to users as
+ * a personalised score. That has been removed.
+ *
+ * This derives a 0–100 score from attributes actually present in the record, so
+ * an institution with no placement, rating or accreditation data cannot score
+ * highly. Callers must label it as a strength indicator, never as a match.
+ */
+export function strengthScore(college: {
+  rating: number;
+  reviewCount: number;
+  placement: { placementRate: number };
+  accreditation: string[];
+  sector: string;
+  founded: number;
+}): number {
+  let s = 0;
+
+  // Rating is the heaviest signal, but only once it is backed by real reviews.
+  if (college.rating > 0) {
+    s += (college.rating / 5) * 40;
+    // Confidence ramps up to 50 reviews; below that the rating is thin evidence.
+    s += Math.min(college.reviewCount / 50, 1) * 10;
+  }
+
+  if (college.placement.placementRate > 0) {
+    s += Math.min(college.placement.placementRate / 100, 1) * 25;
+  }
+
+  s += Math.min(college.accreditation.length, 2) * 5;
+  if (college.sector === "Government") s += 5;
+  if (college.founded > 0 && new Date().getFullYear() - college.founded >= 25) s += 5;
+
+  return Math.round(Math.min(100, s));
+}
+
+export type StrengthLabel = "Excellent" | "Strong" | "Fair" | "Limited data";
+
+export function strengthLabel(score: number): StrengthLabel {
+  if (score >= 75) return "Excellent";
+  if (score >= 55) return "Strong";
+  if (score >= 35) return "Fair";
+  return "Limited data";
 }
 
 export function initialsOf(name: string): string {

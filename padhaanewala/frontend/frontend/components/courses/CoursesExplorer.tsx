@@ -3,8 +3,9 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Search, Bookmark, Clock, IndianRupee, Building2, ArrowRight } from "lucide-react";
-import { searchCourses, collegesOffering } from "@/lib/data/courses";
+import { searchCourses, collegesOffering, type CourseMeta } from "@/lib/data/courses";
 import { useApp } from "@/lib/context/AppContext";
+import type { College } from "@/lib/types";
 import { cn, formatINR } from "@/lib/utils";
 import { Badge } from "@/components/ui/Badge";
 import { Chip } from "@/components/ui/Chip";
@@ -12,15 +13,23 @@ import { EmptyState } from "@/components/ui/EmptyState";
 
 const LEVELS = ["All", "UG", "PG", "Doctoral"] as const;
 
-export default function CoursesExplorer() {
+export default function CoursesExplorer({
+  courses: catalog,
+  colleges: dataset,
+}: {
+  /** Course catalogue resolved on the server. */
+  courses?: CourseMeta[];
+  /** College dataset used for the "N colleges offer this" count. */
+  colleges?: College[];
+}) {
   const [query, setQuery] = useState("");
   const [level, setLevel] = useState<(typeof LEVELS)[number]>("All");
   const { isCourseSaved, toggleCourseSave } = useApp();
 
   const results = useMemo(() => {
-    const list = searchCourses(query);
+    const list = searchCourses(query, catalog);
     return level === "All" ? list : list.filter((c) => c.level === level);
-  }, [query, level]);
+  }, [query, level, catalog]);
 
   return (
     <section className="mx-auto max-w-7xl px-4 pt-28 pb-12 sm:px-6 sm:pt-32 lg:px-8 lg:pt-36 lg:pb-16">
@@ -62,7 +71,7 @@ export default function CoursesExplorer() {
         ) : (
           <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {results.map((c) => {
-              const colleges = collegesOffering(c.slug);
+              const colleges = collegesOffering(c.slug, dataset, catalog);
               const saved = isCourseSaved(c.slug);
               return (
                 <article

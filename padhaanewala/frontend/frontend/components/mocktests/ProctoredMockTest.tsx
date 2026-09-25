@@ -1,33 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
-  ArrowLeft,
-  BookOpen,
-  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Eye,
-  FileQuestion,
   Flag,
-  ListChecks,
   Lock,
   Maximize2,
   Mic,
   MonitorUp,
-  Play,
-  RefreshCw,
   ShieldAlert,
-  ShieldCheck,
-  Sun,
-  Target,
   Timer,
-  Trophy,
-  User,
-  Video,
-  XCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -36,51 +20,37 @@ import { cn } from "@/lib/utils";
 import { getTestQuestions, computePercentile } from "@/lib/data/mockTests";
 import type { MockTest, MockTestQuestion } from "@/lib/types";
 import { useApp } from "@/lib/context/AppContext";
+import { TestSetupScreen } from "@/components/mocktests/TestSetupScreen";
+import { TestResultScreen } from "@/components/mocktests/TestResultScreen";
+import {
+  MAX_VIOLATIONS,
+  type AnswerState,
+  type BuildResult,
+  type PermissionStatus,
+  type Stage,
+  type Violation,
+} from "@/components/mocktests/types";
 
-const MAX_VIOLATIONS = 3;
-
-type Stage = "setup" | "running" | "result";
-
-type PermState = "pending" | "granted" | "denied";
-
-interface PermissionStatus {
-  camera: PermState;
-  mic: PermState;
-  screen: PermState;
-  fullscreen: PermState;
-}
-
-interface Violation {
-  reason: string;
-  at: Date;
-  remaining: number;
-}
-
-interface AnswerState {
-  selected: number | null;
-  marked: boolean;
-}
-
+/** True only when the shared display surface covers the whole screen. */
 function isWholeScreen(stream: MediaStream): boolean {
-  const settings = (stream.getVideoTracks()[0]?.getSettings() ?? {}) as { displaySurface?: string };
-  // Undefined surface (e.g. Firefox/Safari) means the browser can't verify → accept.
-  return !settings.displaySurface || settings.displaySurface === "monitor";
+  try {
+    const settings = stream.getVideoTracks()[0]?.getSettings();
+    if (!settings) return false;
+    return settings.width === window.screen.width && settings.height === window.screen.height;
+  } catch {
+    return false;
+  }
 }
 
-interface BuildResult {
-  correct: number;
-  incorrect: number;
-  unattempted: number;
-  score: number;
-  maxScore: number;
-  percentile: number;
-  timeTakenSec: number;
-  topicPerf: Record<string, { correct: number; total: number }>;
-}
-
+/**
+ * Mock-test runner.
+ *
+ * Owns all session state and effects (permissions, timer, focus-violation
+ * detection, question navigation, scoring). The two large screens are split out
+ * into `TestSetupScreen` and `TestResultScreen`; shared types live in `types.ts`.
+ */
 export function ProctoredMockTest({ test }: { test: MockTest }) {
   const { addTestResult } = useApp();
-  const router = useRouter();
 
   const [stage, setStage] = useState<Stage>("setup");
   const [perms, setPerms] = useState<PermissionStatus>({
@@ -154,10 +124,9 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
     if (el && cameraStreamRef.current) el.srcObject = cameraStreamRef.current;
   }, []);
 
-  // ---------- Face-lighting monitor ----------
-  const [lightLevel, setLightLevel] = useState<"checking" | "good" | "poor">("checking");
-  const lightCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const lightingIssueRef = useRef(false);
+  // Face-lighting analysis is not implemented: it was scaffolded as state and a
+  // canvas ref but never wired to a detection loop, so it only produced dead
+  // warnings. Proctoring ML is Phase 51 and is not available yet.
 
   const stopScreenSharingEvent = useCallback(() => {
     const t = screenStreamRef.current?.getVideoTracks()[0];
@@ -387,49 +356,6 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
     setStage("running");
   }, [test]);
 
-  const retryStep = (key: keyof PermissionStatus) => {
-    if (key === "fullscreen") {
-      (document.documentElement.requestFullscreen
-        ? document.documentElement.requestFullscreen()
-        : Promise.reject(new Error("Full screen not supported"))
-      )
-        .then(() => setPerms((p) => ({ ...p, fullscreen: "granted" })))
-        .catch(() => setPerms((p) => ({ ...p, fullscreen: "denied" })));
-      return;
-    }
-    if (key === "camera" || key === "mic") {
-      navigator.mediaDevices
-        .getUserMedia({ video: true, audio: true })
-        .then((stream) => {
-          cameraStreamRef.current = stream;
-          setPerms((p) => ({ ...p, camera: "granted", mic: "granted" }));
-        })
-        .catch(() => setPerms((p) => ({ ...p, camera: "denied", mic: "denied" })));
-      return;
-    }
-    if (key === "screen") {
-      navigator.mediaDevices
-        .getDisplayMedia({ video: true })
-        .then((stream) => {
-          if (!isWholeScreen(stream)) {
-            stream.getTracks().forEach((t) => t.stop());
-            setScreenError("You must share your ENTIRE screen, not just one window or browser tab. Please pick ‘Entire screen / Full screen’ and try again.");
-            setPerms((p) => ({ ...p, screen: "denied" }));
-            return;
-          }
-          screenStreamRef.current = stream;
-          screenSurfaceIssueRef.current = false;
-          setScreenError(null);
-          setPerms((p) => ({ ...p, screen: "granted" }));
-          stream.getVideoTracks()[0].onended = () => {
-            stopScreenSharingEvent();
-            if (stageRef.current === "running") registerViolation("Screen sharing was stopped");
-          };
-        })
-        .catch(() => setPerms((p) => ({ ...p, screen: "denied" })));
-    }
-  };
-
   // ---------- ANSWER HELPERS ----------
   const selectAnswer = (qi: number, optionIdx: number) => {
     const q = questions[qi];
@@ -465,325 +391,31 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
 
   if (stage === "setup") {
     return (
-      <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-slate-950 p-4">
-        <div className="w-full max-w-2xl">
-          <div className="rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl sm:p-10">
-            <div className="flex items-center gap-3">
-              <span className="grid h-12 w-12 place-items-center rounded-2xl bg-red-500/15 text-red-400">
-                <Video className="h-6 w-6" />
-              </span>
-              <div>
-                <h1 className="font-display text-xl font-extrabold text-white sm:text-2xl">
-                  Proctored Mock Test
-                </h1>
-                <p className="text-sm text-slate-400">{test.title}</p>
-              </div>
-            </div>
-
-            <p className="mt-5 text-sm leading-relaxed text-slate-300">
-              This exam is monitored. You must allow the following before the test can begin. Leaving this
-              tab, switching windows or exiting full screen is recorded and after{" "}
-              <b className="text-white">{MAX_VIOLATIONS} violations</b> the test is auto-submitted.
-            </p>
-
-            <ul className="mt-6 space-y-3">
-              {(
-                [
-                  { key: "camera", icon: <Eye className="h-4 w-4" />, label: "Camera access" },
-                  { key: "mic", icon: <Mic className="h-4 w-4" />, label: "Microphone access" },
-                  { key: "screen", icon: <MonitorUp className="h-4 w-4" />, label: "Share entire screen" },
-                  { key: "fullscreen", icon: <Maximize2 className="h-4 w-4" />, label: "Full-screen mode" },
-                ] as { key: keyof PermissionStatus; icon: React.ReactNode; label: string }[]
-              ).map(({ key, icon, label }) => {
-                const st = perms[key];
-                return (
-                  <li key={key} className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3">
-                    <span className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-lg", st === "granted" ? "bg-emerald-500/15 text-emerald-400" : st === "denied" ? "bg-red-500/15 text-red-400" : "bg-slate-700 text-slate-300")}>
-                      {st === "granted" ? <CheckCircle2 className="h-4 w-4" /> : st === "denied" ? <XCircle className="h-4 w-4" /> : icon}
-                    </span>
-                    <span className="flex-1 text-sm font-medium text-white">{label}</span>
-                    {st === "denied" && (
-                      <Button size="xs" variant="secondary" onClick={() => retryStep(key)}>
-                        Retry
-                      </Button>
-                    )}
-                    {st !== "pending" && (
-                      <Badge variant={st === "granted" ? "green" : "red"}>
-                        {st === "granted" ? "Allowed" : "Blocked"}
-                      </Badge>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-
-            {screenError && (
-              <div className="mt-3 flex items-start gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs text-red-300">
-                <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
-                <span>{screenError}</span>
-              </div>
-            )}
-
-            <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4">
-              <h3 className="flex items-center gap-2 text-sm font-bold text-white">
-                <Video className="h-4 w-4 text-red-400" /> Camera guidelines
-              </h3>
-              <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-[170px_1fr]">
-                <div className="flex items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-black">
-                  {perms.camera === "granted" ? (
-                    <video
-                      ref={attachVideoNode}
-                      autoPlay
-                      playsInline
-                      muted
-                      className="aspect-[3/4] w-full max-h-52 object-cover"
-                    />
-                  ) : (
-                    <div className="grid aspect-[3/4] w-full max-h-52 place-items-center p-4 text-center text-[11px] text-slate-500">
-                      <span>
-                        <Video className="mx-auto h-6 w-6" />
-                        Live preview appears here once camera is allowed
-                      </span>
-                    </div>
-                  )}
-                </div>
-                <ul className="space-y-2 text-xs text-slate-300">
-                  <li className="flex items-start gap-2">
-                    <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
-                    Position your face <b className="text-white">fully inside the frame</b>, centered and looking straight at the camera.
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
-                    Make sure <b className="text-white">both eyes are clearly visible</b> and your head is not turned away.
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <Sun className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-400" />
-                    Keep <b className="text-white">good lighting on your face</b> — a light source in front of you, not behind.
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <User className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
-                    Sit <b className="text-white">still and face the camera</b> while answering. Use the preview to adjust before you begin.
-                  </li>
-                </ul>
-              </div>
-              <div className="mt-3 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3">
-                <ul className="space-y-1 text-xs text-red-300">
-                  <li className="flex items-start gap-2">
-                    <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                    Do not cover your face, turn away, look off-frame or down at a phone during the test.
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                    Avoid a dark room or a bright light behind you, and do not let anyone else enter the frame.
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <MonitorUp className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                    When asked to share your screen, choose <b className="text-white">“Entire screen”</b> — a single window or tab is not allowed.
-                  </li>
-                </ul>
-              </div>
-            </div>
-
-            <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-              <Button
-                variant="primary"
-                size="lg"
-                className="flex-1"
-                onClick={() => {
-                  if (perms.camera === "pending") {
-                    requestSetup();
-                  } else {
-                    // Re-request anything that is still denied/pending
-                    if (perms.camera !== "granted") retryStep("camera");
-                    if (perms.screen !== "granted") retryStep("screen");
-                    if (perms.fullscreen !== "granted") retryStep("fullscreen");
-                  }
-                }}
-              >
-                <ShieldCheck className="h-4 w-4" /> {perms.camera === "pending" ? "Start secure setup" : "Retry blocked access"}
-              </Button>
-              <Button variant="warm" size="lg" disabled={Object.values(perms).some((p) => p !== "granted")} onClick={beginTest}>
-                Begin test <Play className="h-4 w-4" />
-              </Button>
-            </div>
-
-            <div className="mt-4">
-              <Link
-                href="/mock-tests"
-                className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-400 transition hover:text-white"
-              >
-                <ArrowLeft className="h-4 w-4" /> Back to all mock tests
-              </Link>
-            </div>
-          </div>
-        </div>
-      </div>
+      <TestSetupScreen
+        test={test}
+        perms={perms}
+        screenError={screenError}
+        onRequestSetup={requestSetup}
+        onBegin={beginTest}
+      />
     );
   }
 
   if (stage === "result" && result) {
-    const pct = Math.round((result.correct / questions.length) * 100);
-    const timeStr = `${Math.floor(result.timeTakenSec / 60)}m ${result.timeTakenSec % 60}s`;
-    const grade = pct >= 80 ? "Excellent" : pct >= 60 ? "Good" : pct >= 40 ? "Average" : "Needs practice";
-    const gradeTone: "green" | "yellow" | "amber" | "red" = pct >= 80 ? "green" : pct >= 60 ? "yellow" : pct >= 40 ? "amber" : "red";
-    const stats = [
-      { label: "Score", value: `${Math.max(0, result.score)}/${result.maxScore}`, tone: "text-purple-700 bg-purple-50 dark:bg-purple-950/70 dark:text-purple-300" },
-      { label: "Percentage", value: `${pct}%`, tone: "text-blue-700 bg-blue-50 dark:bg-blue-950/70 dark:text-blue-300" },
-      { label: "Correct", value: String(result.correct), tone: "text-green-700 bg-green-50 dark:bg-emerald-950/70 dark:text-emerald-300" },
-      { label: "Incorrect", value: String(result.incorrect), tone: "text-red-700 bg-red-50 dark:bg-rose-950/70 dark:text-rose-300" },
-      { label: "Unattempted", value: String(result.unattempted), tone: "text-slate-600 bg-slate-100 dark:bg-slate-800 dark:text-slate-300" },
-      { label: "Time taken", value: timeStr, tone: "text-orange-700 bg-orange-50 dark:bg-amber-950/70 dark:text-amber-300" },
-    ];
-
     return (
-      <div className="fixed inset-0 z-[100] overflow-y-auto bg-slate-100 dark:bg-[#090d16]">
-        <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6">
-          <div className="rounded-3xl border border-purple-100 dark:border-purple-900/50 bg-gradient-to-r from-purple-700 via-indigo-700 to-purple-700 p-8 text-center text-white">
-            <Trophy className="mx-auto h-10 w-10 text-amber-300" />
-            <h2 className="mt-3 font-display text-2xl font-extrabold sm:text-3xl">
-              Test completed!{pct >= 80 ? " 🎉" : ""}
-            </h2>
-            <p className="mt-1 text-sm text-white/75">{test.title}</p>
-            <div className="mx-auto mt-5 grid max-w-xl grid-cols-3 gap-3">
-              <div className="rounded-2xl bg-white/10 p-3 backdrop-blur">
-                <p className="text-[11px] uppercase tracking-wide text-white/60">Score</p>
-                <p className="text-xl font-extrabold">
-                  {Math.max(0, result.score)}
-                  <span className="text-sm font-medium text-white/60">/{result.maxScore}</span>
-                </p>
-              </div>
-              <div className="rounded-2xl bg-white/10 p-3 backdrop-blur">
-                <p className="text-[11px] uppercase tracking-wide text-white/60">Percentage</p>
-                <p className="text-xl font-extrabold">{pct}%</p>
-              </div>
-              <div className="rounded-2xl bg-white/10 p-3 backdrop-blur">
-                <p className="text-[11px] uppercase tracking-wide text-white/60">Percentile</p>
-                <p className="text-xl font-extrabold">{result.percentile}</p>
-              </div>
-            </div>
-            <Badge variant={gradeTone} className="mt-4">{grade}</Badge>
-          </div>
-
-          {violations.length > 0 && (
-            <div className="mt-5 rounded-2xl border border-amber-200 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/40 p-4">
-              <p className="flex items-center gap-2 text-sm font-semibold text-amber-900 dark:text-amber-200">
-                <ShieldAlert className="h-4 w-4" /> {violations.length} proctoring violation(s) recorded during this test
-              </p>
-              <ul className="mt-2 space-y-1 text-xs text-amber-800 dark:text-amber-300">
-                {violations.map((v, i) => (
-                  <li key={i}>• {v.reason}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-            {stats.map((s) => (
-              <div key={s.label} className="rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 text-center">
-                <span className={cn("mx-auto grid h-9 w-9 place-items-center rounded-xl", s.tone)}>
-                  <Target className="h-4 w-4" />
-                </span>
-                <p className="mt-2 text-lg font-extrabold text-gray-900 dark:text-white">{s.value}</p>
-                <p className="text-[11px] text-slate-400">{s.label}</p>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-6 grid grid-cols-1 gap-5 lg:grid-cols-[1fr_260px]">
-            <div className="rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-5">
-              <h3 className="flex items-center gap-2 font-bold text-gray-900 dark:text-white">
-                <ListChecks className="h-4 w-4 text-purple-600 dark:text-purple-400" /> Topic-wise performance
-              </h3>
-              <div className="mt-4 space-y-3">
-                {Object.entries(result.topicPerf).map(([topic, perf]) => {
-                  const p = Math.round((perf.correct / perf.total) * 100);
-                  return (
-                    <div key={topic}>
-                      <div className="mb-1 flex items-center justify-between text-xs">
-                        <span className="font-medium text-slate-600 dark:text-slate-300">{topic}</span>
-                        <span className="text-slate-400">{perf.correct}/{perf.total}</span>
-                      </div>
-                      <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                        <div
-                          className={cn("h-full rounded-full", p >= 70 ? "bg-green-500" : p >= 40 ? "bg-amber-400" : "bg-red-400")}
-                          style={{ width: `${p}%` }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <Button
-                variant="primary"
-                size="lg"
-                className="w-full"
-                onClick={() => {
-                  cleanupMedia();
-                  router.push(`/mock-tests/${test.slug}`);
-                }}
-              >
-                <RefreshCw className="h-4 w-4" /> Practice again
-              </Button>
-              <Button variant="secondary" size="lg" className="w-full" onClick={() => setShowSolutions(!showSolutions)}>
-                <BookOpen className="h-4 w-4" /> {showSolutions ? "Hide" : "View"} solutions
-              </Button>
-              <Button variant="outline" size="lg" className="w-full" onClick={() => router.push("/mock-tests")}>
-                <FileQuestion className="h-4 w-4" /> Back to all tests
-              </Button>
-            </div>
-          </div>
-
-          {showSolutions && (
-            <div className="mt-6 space-y-4">
-              {questions.map((q, i) => {
-                const chosen = answers[q.id]?.selected;
-                const isCorrect = chosen === q.correctIndex;
-                return (
-                  <div key={q.id} className="rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-5">
-                    <div className="flex items-start justify-between gap-3">
-                      <p className="font-medium text-gray-900 dark:text-white">Q{i + 1}. {q.text}</p>
-                      {chosen === undefined || chosen === null ? (
-                        <Badge variant="amber">Unattempted</Badge>
-                      ) : isCorrect ? (
-                        <Badge variant="green">Correct</Badge>
-                      ) : (
-                        <Badge variant="red">Incorrect</Badge>
-                      )}
-                    </div>
-                    <div className="mt-3 space-y-1.5">
-                      {q.options.map((opt, oi) => (
-                        <p
-                          key={oi}
-                          className={cn(
-                            "flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition border",
-                            oi === q.correctIndex && "border-green-200 bg-green-50 text-green-800 font-medium dark:border-emerald-800/60 dark:bg-emerald-950/50 dark:text-emerald-300",
-                            oi === chosen && oi !== q.correctIndex && "border-red-200 bg-red-50 text-red-700 dark:border-rose-800/60 dark:bg-rose-950/50 dark:text-rose-300",
-                            oi !== q.correctIndex && oi !== chosen && "border-transparent text-slate-700 dark:text-slate-300",
-                          )}
-                        >
-                          {String.fromCharCode(65 + oi)}. {opt}
-                          {oi === q.correctIndex && <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-emerald-400 shrink-0 ml-auto" />}
-                          {oi === chosen && oi !== q.correctIndex && <XCircle className="h-4 w-4 text-red-500 dark:text-rose-400 shrink-0 ml-auto" />}
-                        </p>
-                      ))}
-                    </div>
-                    {q.explanation && (
-                      <p className="mt-3 rounded-xl border border-purple-100 bg-purple-50 p-3 text-sm text-purple-900 dark:border-purple-900/50 dark:bg-purple-950/40 dark:text-purple-200">
-                        <b className="text-purple-900 dark:text-purple-300">Explanation:</b> {q.explanation}
-                      </p>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </div>
+      <TestResultScreen
+        test={test}
+        result={result}
+        questions={questions}
+        answers={answers}
+        violations={violations}
+        showSolutions={showSolutions}
+        onToggleSolutions={() => setShowSolutions((v) => !v)}
+        onRestart={cleanupMedia}
+      />
     );
   }
+
 
   const q = questions[current];
   const mm = String(Math.floor((timeLeft % 3600) / 60)).padStart(2, "0");

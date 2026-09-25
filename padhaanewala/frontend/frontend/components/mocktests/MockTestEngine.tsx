@@ -46,8 +46,14 @@ export function MockTestCard({ test }: { test: MockTest }) {
   );
 }
 
-export function MockTestEngine() {
+export function MockTestEngine({
+  tests: dataset,
+}: {
+  /** Test catalogue resolved on the server. */
+  tests?: MockTest[];
+}) {
   const { testHistory } = useApp();
+  const tests = dataset?.length ? dataset : MOCK_TESTS;
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -72,17 +78,23 @@ export function MockTestEngine() {
       <div className="mt-5 flex items-start gap-3 rounded-2xl border border-amber-100 bg-amber-50/70 p-4">
         <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
         <p className="text-xs leading-relaxed text-amber-800">
-          Mock tests run in a <b>proctored, full-screen mode</b>. On starting, you will be asked to grant
-          camera, microphone and screen access. Switching tabs or leaving full screen is recorded and the
-          test is auto-submitted after repeated violations.
+          Mock tests run in a <b>full-screen, timed mode</b> with a server-authoritative timer and
+          autosaved answers. Attempt history and scoring are stored against your account so your
+          results follow you across devices.
         </p>
       </div>
 
-      <div className="mt-6 grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
-        {MOCK_TESTS.map((t) => (
-          <MockTestCard key={t.id} test={t} />
-        ))}
-      </div>
+      {tests.length === 0 ? (
+        <p className="mt-6 rounded-2xl border border-purple-100 dark:border-purple-900/40 bg-white dark:bg-slate-900 p-6 text-center text-sm text-slate-500 dark:text-slate-400">
+          No mock tests have been published yet. Please check back soon.
+        </p>
+      ) : (
+        <div className="mt-6 grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
+          {tests.map((t) => (
+            <MockTestCard key={t.id} test={t} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

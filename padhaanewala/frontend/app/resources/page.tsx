@@ -14,7 +14,7 @@ import {
 import { Badge } from "@/components/ui/Badge";
 import { SectionHeading } from "@/components/ui/SectionHeading";
 import { AdmissionHelpButton } from "@/components/admission/AdmissionForm";
-import { BLOG_POSTS } from "@/lib/data/blog";
+import { resolveBlogPosts } from "@/lib/content";
 
 export const metadata: Metadata = {
   title: "Resources",
@@ -31,8 +31,9 @@ const HUBS = [
   { title: "Blog & Articles", desc: "Guides on admissions, careers, exams and education news.", href: "/blog", icon: Newspaper, tone: "from-rose-500 to-pink-500" },
 ];
 
-export default function ResourcesPage() {
-  const guides = BLOG_POSTS.slice(0, 6);
+export default async function ResourcesPage() {
+  const { data: posts } = await resolveBlogPosts();
+  const guides = posts.slice(0, 6);
 
   return (
     <section className="mx-auto max-w-7xl px-4 pt-28 pb-12 sm:px-6 sm:pt-32 lg:px-8 lg:pt-36 lg:pb-16">
