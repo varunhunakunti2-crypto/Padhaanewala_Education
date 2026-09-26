@@ -257,9 +257,22 @@ def test_seo_upsert_and_get(admin_token):
     assert upsert.status_code == 200, upsert.text
     assert upsert.json()["meta_title"] == "Best College"
 
-    fetched = client.get(f"/api/v1/seo/college/{_college_ref()}")
-    assert fetched.status_code == 200
+    # Reads are gated too: SEO rows carry draft metadata for every entity, so an
+    # unauthenticated full-table dump is not acceptable.
+    anon = client.get(f"/api/v1/seo/college/{_college_ref()}")
+    assert anon.status_code == 401
+
+    fetched = client.get(f"/api/v1/seo/college/{_college_ref()}", headers=headers)
+    assert fetched.status_code == 200, fetched.text
     assert fetched.json()["meta_description"] == "Description"
+
+
+def test_seo_read_forbidden_for_student(student):
+    response = client.get(
+        f"/api/v1/seo/college/{_college_ref()}",
+        headers={"Authorization": f"Bearer {student['token']}"},
+    )
+    assert response.status_code == 403
 
 
 def test_seo_write_requires_role(student):

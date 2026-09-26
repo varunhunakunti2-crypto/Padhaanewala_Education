@@ -258,13 +258,22 @@ def test_get_roles_requires_auth():
     assert response.status_code == 401
 
 
-def test_get_roles(registered):
+def test_get_roles_forbidden_for_student(registered):
+    """`GET /roles` hands out the ids `PATCH /users/{id}` accepts, so it is
+    admin-only. A student reads their own roles from `/users/me/roles`."""
     _assign_roles(registered["email"], ["student"])
     headers = {"Authorization": f"Bearer {registered['access_token']}"}
     response = client.get("/api/v1/roles", headers=headers)
-    assert response.status_code == 200
+    assert response.status_code == 403
+
+
+def test_get_roles_allowed_for_admin(admin):
+    headers = {"Authorization": f"Bearer {admin['access_token']}"}
+    response = client.get("/api/v1/roles", headers=headers)
+    assert response.status_code == 200, response.text
     names = [r["name"] for r in response.json()]
     assert "student" in names
+    assert "super_admin" in names
 
 
 def test_admin_list_users_forbidden_for_student(registered):

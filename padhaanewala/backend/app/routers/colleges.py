@@ -1,12 +1,13 @@
 import re
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
-from app.dependencies import require_role
-from app.models import College, CollegeCourse, Course, District
+from app.dependencies import get_optional_current_user, require_role
+from app.models import College, CollegeCourse, Course, District, User
+from app.roles import ADMIN_ROLES, CONTENT_ROLES, SUPER_ADMIN_ROLES
 from app.schemas.catalog import (
     CollegeCourseResponse,
     CollegeCreate,
@@ -18,6 +19,13 @@ from app.schemas.catalog import (
 )
 
 router = APIRouter(prefix="/api/v1/colleges", tags=["colleges"])
+
+
+def _can_view_inactive(user: User | None) -> bool:
+    """Only roles that can edit catalog rows may see unpublished ones."""
+    if user is None:
+        return False
+    return bool(set(CONTENT_ROLES) & {role.name for role in user.roles})
 
 
 def _slugify(text: str) -> str:
@@ -114,9 +122,19 @@ def get_college_courses(
     college_ref: str,
     course_id: int | None = None,
     q: str | None = None,
+    # `include_inactive` used to be a plain public query param, so
+    # `?include_inactive=true` exposed draft fees/intake to anonymous callers.
+    # It is now only honoured for callers who could edit the row anyway.
     include_inactive: bool = False,
+    user: User | None = Depends(get_optional_current_user),
     db: Session = Depends(get_db),
 ):
+    if include_inactive and not _can_view_inactive(user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="include_inactive requires admin permissions",
+        )
+
     college = db.scalar(
         select(College).where(
             College.is_active,
@@ -225,7 +243,7 @@ def get_college(college_ref: str, db: Session = Depends(get_db)):
     "",
     response_model=CollegeDetailResponse,
     status_code=201,
-    dependencies=[Depends(require_role("admin", "super_admin"))],
+    dependencies=[Depends(require_role(*ADMIN_ROLES))],
 )
 def create_college(payload: CollegeCreate, db: Session = Depends(get_db)):
     slug = _slugify(payload.name)
@@ -284,7 +302,7 @@ def create_college(payload: CollegeCreate, db: Session = Depends(get_db)):
 @router.put(
     "/{college_ref}",
     response_model=CollegeDetailResponse,
-    dependencies=[Depends(require_role("admin", "super_admin"))],
+    dependencies=[Depends(require_role(*ADMIN_ROLES))],
 )
 def update_college(
     college_ref: str, payload: CollegeUpdate, db: Session = Depends(get_db)
@@ -318,7 +336,7 @@ def update_college(
 @router.delete(
     "/{college_ref}",
     status_code=204,
-    dependencies=[Depends(require_role("super_admin"))],
+    dependencies=[Depends(require_role(*SUPER_ADMIN_ROLES))],
 )
 def delete_college(college_ref: str, db: Session = Depends(get_db)):
     college = _find_college(db, college_ref)

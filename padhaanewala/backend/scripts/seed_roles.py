@@ -8,33 +8,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.database import SessionLocal
 from app.models import Role
-
-ROLES = [
-    "super_admin",
-    "admin",
-    "content_manager",
-    "seo_manager",
-    "data_manager",
-    "test_admin",
-    "proctor",
-    "counsellor_manager",
-    "counsellor",
-    "reviewer",
-    "support",
-    "analytics",
-    "student",
-    "user",
-]
+from app.roles import ALL_ROLES
 
 
 def main() -> None:
     with SessionLocal() as db:
-        for i, name in enumerate(ROLES):
+        for i, name in enumerate(ALL_ROLES):
             exists = db.query(Role).filter(Role.name == name).first()
             if not exists:
                 db.add(Role(name=name, description=f"Seed role: {name}"))
         db.commit()
-        print(f"Seeded {len(ROLES)} roles")
+        print(f"Seeded {len(ALL_ROLES)} roles")
 
 
 if __name__ == "__main__":

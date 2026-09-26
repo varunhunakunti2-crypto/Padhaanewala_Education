@@ -8,6 +8,7 @@ from app.database import get_db
 from app.dependencies import require_role
 from app.models import CollegeCourse, Course
 from app.schemas.catalog import CourseCreate, CourseResponse, CourseUpdate
+from app.roles import ADMIN_ROLES, CONTENT_ROLES
 
 router = APIRouter(prefix="/api/v1/courses", tags=["courses"])
 
@@ -99,7 +100,7 @@ def _find_course(db: Session, ref: str) -> Course | None:
     "",
     response_model=CourseDetailResponse,
     status_code=201,
-    dependencies=[Depends(require_role("admin", "super_admin", "content_manager"))],
+    dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def create_course(payload: CourseCreate, db: Session = Depends(get_db)):
     slug = _slugify(payload.name)
@@ -115,7 +116,7 @@ def create_course(payload: CourseCreate, db: Session = Depends(get_db)):
 @router.put(
     "/{course_ref}",
     response_model=CourseDetailResponse,
-    dependencies=[Depends(require_role("admin", "super_admin", "content_manager"))],
+    dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def update_course(
     course_ref: str, payload: CourseUpdate, db: Session = Depends(get_db)
@@ -140,7 +141,7 @@ def update_course(
 @router.delete(
     "/{course_ref}",
     status_code=204,
-    dependencies=[Depends(require_role("admin", "super_admin"))],
+    dependencies=[Depends(require_role(*ADMIN_ROLES))],
 )
 def delete_course(course_ref: str, db: Session = Depends(get_db)):
     course = _find_course(db, course_ref)

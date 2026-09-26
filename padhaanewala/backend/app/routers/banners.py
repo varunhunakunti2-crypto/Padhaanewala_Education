@@ -1,17 +1,16 @@
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import require_role
-from app.models import Banner
+from app.dependencies import get_optional_current_user, require_role
+from app.models import Banner, User
+from app.roles import CONTENT_ROLES
 from app.schemas.content import BannerCreate, BannerResponse, BannerUpdate
 
 router = APIRouter(prefix="/api/v1/banners", tags=["banners"])
-
-CONTENT_ROLES = ("admin", "super_admin", "content_manager")
 
 
 def _to_response(banner: Banner) -> BannerResponse:
@@ -28,7 +27,6 @@ def _to_response(banner: Banner) -> BannerResponse:
         created_at=banner.created_at,
     )
 
-
 def _is_visible(banner: Banner) -> bool:
     today = date.today()
     if banner.start_date and banner.start_date > today:
@@ -37,13 +35,26 @@ def _is_visible(banner: Banner) -> bool:
         return False
     return True
 
-
 @router.get("", response_model=list[BannerResponse])
 def list_banners(
     position: str | None = None,
+    # `include_inactive` was an unguarded public query parameter here, so
+    # `?include_inactive=true` returned draft, expired and not-yet-scheduled
+    # banners to anonymous callers — even though the sibling `GET /{id}` handler
+    # in this same file gates the identical flag. Both are gated now.
     include_inactive: bool = False,
+    user: User | None = Depends(get_optional_current_user),
     db: Session = Depends(get_db),
 ):
+    privileged = user is not None and bool(
+        set(CONTENT_ROLES) & {role.name for role in user.roles}
+    )
+    if include_inactive and not privileged:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="include_inactive requires admin permissions",
+        )
+
     query = select(Banner)
     if position:
         query = query.where(Banner.position == position)
@@ -57,14 +68,33 @@ def list_banners(
     ]
     return result
 
-
 @router.get("/{banner_id}", response_model=BannerResponse)
-def get_banner(banner_id: int, db: Session = Depends(get_db)):
+def get_banner(
+    banner_id: int,
+    # Reading by direct id used to bypass the is_active + date-window checks that
+    # the list handler applies, so anonymous callers could read draft, expired
+    # and not-yet-scheduled banners. Admins can still see them explicitly.
+    include_inactive: bool = False,
+    user: User | None = Depends(get_optional_current_user),
+    db: Session = Depends(get_db),
+):
     banner = db.get(Banner, banner_id)
     if banner is None:
         raise HTTPException(status_code=404, detail="Banner not found")
-    return _to_response(banner)
 
+    privileged = user is not None and bool(
+        set(CONTENT_ROLES) & {role.name for role in user.roles}
+    )
+    if not include_inactive and not privileged:
+        if not banner.is_active or not _is_visible(banner):
+            raise HTTPException(status_code=404, detail="Banner not found")
+    elif include_inactive and not privileged:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="include_inactive requires admin permissions",
+        )
+
+    return _to_response(banner)
 
 @router.post(
     "",
@@ -78,7 +108,6 @@ def create_banner(payload: BannerCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(banner)
     return _to_response(banner)
-
 
 @router.put(
     "/{banner_id}",
@@ -96,7 +125,6 @@ def update_banner(
     db.commit()
     db.refresh(banner)
     return _to_response(banner)
-
 
 @router.delete(
     "/{banner_id}",

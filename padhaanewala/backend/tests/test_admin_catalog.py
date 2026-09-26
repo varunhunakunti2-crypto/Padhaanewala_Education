@@ -665,6 +665,8 @@ def test_college_courses_filters():
     cc_a = _link(college.id, course_a.id)
     cc_b = _link(college.id, course_b.id)
     cc_b_id = cc_b.id
+    admin = _register_admin()
+    admin_headers = _auth_headers(admin["access_token"])
     try:
         with SessionLocal() as db:
             cc_row = db.get(CollegeCourse, cc_b_id)
@@ -675,17 +677,29 @@ def test_college_courses_filters():
         assert len(all_cc) == 1
         assert all_cc[0]["course_name"] == course_a.name
 
+        # `include_inactive` is no longer a public query parameter: it used to let
+        # any anonymous caller read draft fees and intake. It now requires a role
+        # that could edit the row anyway.
+        anon = client.get(
+            f"/api/v1/colleges/{college.slug}/courses",
+            params={"include_inactive": "true"},
+        )
+        assert anon.status_code == 403
+
         include_inactive = client.get(
             f"/api/v1/colleges/{college.slug}/courses",
             params={"include_inactive": "true"},
-        ).json()
-        assert len(include_inactive) == 2
+            headers=admin_headers,
+        )
+        assert include_inactive.status_code == 200, include_inactive.text
+        assert len(include_inactive.json()) == 2
 
         by_course = client.get(
             f"/api/v1/colleges/{college.slug}/courses",
             params={"course_id": course_b.id, "include_inactive": "true"},
-        ).json()
-        assert len(by_course) == 1
+            headers=admin_headers,
+        )
+        assert len(by_course.json()) == 1
 
         search = client.get(
             f"/api/v1/colleges/{college.slug}/courses",

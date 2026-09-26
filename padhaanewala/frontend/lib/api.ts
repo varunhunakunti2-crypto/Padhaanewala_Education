@@ -45,6 +45,10 @@ export interface UserMe {
   last_login_at: string | null;
 }
 
+export interface UserRoles {
+  roles: string[];
+}
+
 export interface BackendProfile {
   id: number;
   email: string;
@@ -190,7 +194,26 @@ export const authApi = {
   me: () => apiFetch<UserMe>("/users/me"),
 
   myProfile: () => apiFetch<BackendProfile>("/users/me/profile"),
+
+  myRoles: () => apiFetch<UserRoles>("/users/me/roles"),
 };
+
+/** Roles that may open the admin console. Mirrors the backend `require_role` gates. */
+export const ADMIN_ROLES = ["admin", "super_admin"] as const;
+
+export function hasAdminRole(roles: readonly string[]): boolean {
+  return ADMIN_ROLES.some((r) => roles.includes(r));
+}
+
+export async function fetchMyRoles(): Promise<string[]> {
+  try {
+    const res = await authApi.myRoles();
+    return Array.isArray(res?.roles) ? res.roles : [];
+  } catch {
+    // A failed role lookup must never be read as "is admin".
+    return [];
+  }
+}
 
 export async function submitEnquiry(payload: EnquiryPayload): Promise<EnquiryResponse> {
   return apiFetch<EnquiryResponse>("/enquiries", {

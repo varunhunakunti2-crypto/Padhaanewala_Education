@@ -69,9 +69,16 @@ def get_optional_current_user(
 
 
 def require_role(*allowed_roles: str):
+    # Fail closed (R4.1). An empty allowlist is always a programming error, never
+    # "allow everyone". Raising here turns a silent authorization bypass into an
+    # import-time crash, which no reviewer can miss.
+    if not allowed_roles:
+        raise RuntimeError("require_role() called with no roles")
+
+    allowed = frozenset(allowed_roles)
+
     def checker(user: User = Depends(get_current_user)) -> User:
-        user_roles = get_current_user_roles(user)
-        if not allowed_roles or set(allowed_roles) & user_roles:
+        if allowed & get_current_user_roles(user):
             return user
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

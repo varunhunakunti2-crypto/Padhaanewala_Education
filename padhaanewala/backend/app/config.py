@@ -37,9 +37,16 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str = "change-me"
     JWT_REFRESH_SECRET_KEY: str = "change-me"
     JWT_ALGORITHM: str = "HS256"
-    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
+    # R3.4 — short access-token lifetime. `POST /auth/logout` is a no-op echo stub
+    # with no denylist, so a leaked access token cannot be revoked and the window
+    # *is* the containment. 30 minutes bounds the damage of a stolen token.
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 30
     BCRYPT_ROUNDS: int = 12
+
+    #: Production access tokens may not exceed this. R3.4 caps the window at
+    #: 60 minutes; anything above is rejected at startup rather than shipped.
+    MAX_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
     @model_validator(mode="after")
     def _guard_production_defaults(self):
@@ -48,8 +55,19 @@ class Settings(BaseSettings):
                 raise ValueError("JWT_SECRET_KEY must be set in production")
             if self.JWT_REFRESH_SECRET_KEY in ("change-me", ""):
                 raise ValueError("JWT_REFRESH_SECRET_KEY must be set in production")
+            if self.JWT_REFRESH_SECRET_KEY == self.JWT_SECRET_KEY:
+                raise ValueError(
+                    "JWT_REFRESH_SECRET_KEY must differ from JWT_SECRET_KEY in production"
+                )
             if "dev_password_123" in self.DATABASE_URL or self.DB_PASSWORD == "dev_password_123":
                 raise ValueError("production must not use default dev database credentials")
+            if self.JWT_ACCESS_TOKEN_EXPIRE_MINUTES > self.MAX_ACCESS_TOKEN_EXPIRE_MINUTES:
+                raise ValueError(
+                    "JWT_ACCESS_TOKEN_EXPIRE_MINUTES must be "
+                    f"<= {self.MAX_ACCESS_TOKEN_EXPIRE_MINUTES} in production "
+                    f"(got {self.JWT_ACCESS_TOKEN_EXPIRE_MINUTES}); access tokens "
+                    "cannot be revoked because logout is not stateful"
+                )
         return self
 
     @property

@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
 from app.dependencies import get_current_user_roles, require_role
+from app.roles import ADMIN_ROLES, LEAD_ROLES as _LEAD_ROLES
 from app.models import Counsellor, Enquiry, LeadNote, LeadStatusHistory, User
 from app.schemas.engagement import (
     LEAD_STATUSES,
@@ -21,16 +22,12 @@ from app.schemas.engagement import (
 
 router = APIRouter(prefix="/api/v1/leads", tags=["leads"])
 
-_LEAD_ROLES = ("admin", "super_admin", "counsellor")
-
 
 def _is_admin(user: User) -> bool:
-    return bool({"admin", "super_admin"} & get_current_user_roles(user))
-
+    return bool(set(ADMIN_ROLES) & get_current_user_roles(user))
 
 def _counsellor_for_user(db: Session, user: User) -> Counsellor | None:
     return db.scalar(select(Counsellor).where(Counsellor.user_id == user.id))
-
 
 def _to_list_item(enquiry: Enquiry) -> LeadListItem:
     return LeadListItem(
@@ -51,7 +48,6 @@ def _to_list_item(enquiry: Enquiry) -> LeadListItem:
         created_at=enquiry.created_at,
     )
 
-
 def _lead_query():
     return select(Enquiry).options(
         selectinload(Enquiry.course),
@@ -62,10 +58,8 @@ def _lead_query():
         selectinload(Enquiry.status_history),
     )
 
-
 def _get_enquiry(db: Session, enquiry_id: int) -> Enquiry | None:
     return db.scalar(_lead_query().where(Enquiry.id == enquiry_id))
-
 
 def _can_access(db: Session, user: User, enquiry_id: int) -> bool:
     if _is_admin(user):
@@ -75,7 +69,6 @@ def _can_access(db: Session, user: User, enquiry_id: int) -> bool:
         return False
     enquiry = db.get(Enquiry, enquiry_id)
     return enquiry is not None and enquiry.assigned_counsellor_id == counsellor.id
-
 
 def _to_detail(enquiry: Enquiry) -> LeadDetailResponse:
     item = _to_list_item(enquiry)
@@ -95,7 +88,6 @@ def _to_detail(enquiry: Enquiry) -> LeadDetailResponse:
             for h in enquiry.status_history
         ],
     )
-
 
 @router.get("", response_model=list[LeadListItem])
 def list_leads(
@@ -138,7 +130,6 @@ def list_leads(
     enquiries = db.scalars(query.limit(limit).offset(offset)).all()
     return [_to_list_item(e) for e in enquiries]
 
-
 @router.get("/{enquiry_id}", response_model=LeadDetailResponse)
 def get_lead(
     enquiry_id: int,
@@ -151,7 +142,6 @@ def get_lead(
     if enquiry is None:
         raise HTTPException(status_code=404, detail="Lead not found")
     return _to_detail(enquiry)
-
 
 @router.post("/{enquiry_id}/notes", response_model=LeadNoteResponse, status_code=201)
 def add_lead_note(
@@ -171,7 +161,6 @@ def add_lead_note(
     db.commit()
     db.refresh(note)
     return LeadNoteResponse(id=note.id, note=note.note, created_at=note.created_at)
-
 
 @router.patch("/{enquiry_id}/status", response_model=LeadDetailResponse)
 def update_lead_status(
@@ -205,11 +194,10 @@ def update_lead_status(
 
     return _to_detail(_get_enquiry(db, enquiry_id))
 
-
 @router.patch(
     "/{enquiry_id}/assign",
     response_model=LeadDetailResponse,
-    dependencies=[Depends(require_role("admin", "super_admin"))],
+    dependencies=[Depends(require_role(*ADMIN_ROLES))],
 )
 def assign_lead(
     enquiry_id: int,
@@ -242,7 +230,6 @@ def assign_lead(
 
     db.commit()
     return _to_detail(_get_enquiry(db, enquiry_id))
-
 
 @router.patch("/{enquiry_id}/follow-up", response_model=LeadDetailResponse)
 def set_follow_up(

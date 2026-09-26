@@ -89,7 +89,7 @@ export function Header() {
   const router = useRouter();
   const moreRef = useRef<HTMLDivElement | null>(null);
   const authRef = useRef<HTMLDivElement | null>(null);
-  const { isAuthenticated, profile, logout } = useApp();
+  const { isAuthenticated, isAdmin, profile, logout } = useApp();
   const userName = profile?.name?.trim() || "";
   const userInitials = initialsOf(userName) || (profile?.email ? profile.email.slice(0, 2).toUpperCase() : "U");
 
@@ -255,14 +255,16 @@ export function Header() {
                     <LayoutDashboard className="h-4 w-4 text-purple-500" />
                     Dashboard
                   </Link>
-                  <Link
-                    href="/admin"
-                    onClick={() => setAuthMenuOpen(false)}
-                    className="flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-800"
-                  >
-                    <ShieldCheck className="h-4 w-4 text-purple-500" />
-                    Admin
-                  </Link>
+                  {isAdmin && (
+                    <Link
+                      href="/admin"
+                      onClick={() => setAuthMenuOpen(false)}
+                      className="flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-800"
+                    >
+                      <ShieldCheck className="h-4 w-4 text-purple-500" />
+                      Admin
+                    </Link>
+                  )}
                   <button
                     type="button"
                     onClick={handleLogout}
@@ -342,14 +344,16 @@ export function Header() {
                       My Dashboard
                     </ButtonLink>
                     <div className="flex gap-2">
-                      <Link
-                        href="/admin"
-                        onClick={() => setOpen(false)}
-                        className="flex-1 inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-purple-100/60 dark:bg-slate-800 text-sm font-bold text-purple-900 dark:text-purple-300"
-                      >
-                        <ShieldCheck className="h-4 w-4" />
-                        Admin
-                      </Link>
+                      {isAdmin && (
+                        <Link
+                          href="/admin"
+                          onClick={() => setOpen(false)}
+                          className="flex-1 inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-purple-100/60 dark:bg-slate-800 text-sm font-bold text-purple-900 dark:text-purple-300"
+                        >
+                          <ShieldCheck className="h-4 w-4" />
+                          Admin
+                        </Link>
+                      )}
                       <button
                         type="button"
                         onClick={handleLogout}

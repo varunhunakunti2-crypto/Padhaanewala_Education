@@ -9,8 +9,7 @@ from app.schemas.content import MediaCreate, MediaResponse, MediaUpdate
 
 router = APIRouter(prefix="/api/v1/media", tags=["media"])
 
-CONTENT_ROLES = ("admin", "super_admin", "content_manager")
-
+from app.roles import CONTENT_ROLES
 
 def _to_response(media: Media) -> MediaResponse:
     return MediaResponse(
@@ -27,7 +26,6 @@ def _to_response(media: Media) -> MediaResponse:
         is_active=media.is_active,
         created_at=media.created_at,
     )
-
 
 @router.get("", response_model=list[MediaResponse])
 def list_media(
@@ -52,14 +50,12 @@ def list_media(
     ).all()
     return [_to_response(m) for m in medias]
 
-
 @router.get("/{media_id}", response_model=MediaResponse)
 def get_media(media_id: int, db: Session = Depends(get_db)):
     media = db.get(Media, media_id)
     if media is None or not media.is_active:
         raise HTTPException(status_code=404, detail="Media not found")
     return _to_response(media)
-
 
 @router.post(
     "",
@@ -73,7 +69,6 @@ def create_media(payload: MediaCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(media)
     return _to_response(media)
-
 
 @router.put(
     "/{media_id}",
@@ -91,7 +86,6 @@ def update_media(
     db.commit()
     db.refresh(media)
     return _to_response(media)
-
 
 @router.delete(
     "/{media_id}",

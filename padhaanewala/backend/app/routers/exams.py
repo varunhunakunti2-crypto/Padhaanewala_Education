@@ -9,6 +9,7 @@ from app.database import get_db
 from app.dependencies import require_role
 from app.models import Exam
 from app.schemas.catalog import ExamCreate, ExamResponse, ExamUpdate
+from app.roles import ADMIN_ROLES, CONTENT_ROLES
 
 router = APIRouter(prefix="/api/v1/exams", tags=["exams"])
 
@@ -92,7 +93,7 @@ def _find_exam(db: Session, ref: str) -> Exam | None:
     "",
     response_model=ExamResponse,
     status_code=201,
-    dependencies=[Depends(require_role("admin", "super_admin", "content_manager"))],
+    dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def create_exam(payload: ExamCreate, db: Session = Depends(get_db)):
     slug = _slugify(payload.name)
@@ -108,7 +109,7 @@ def create_exam(payload: ExamCreate, db: Session = Depends(get_db)):
 @router.put(
     "/{exam_ref}",
     response_model=ExamResponse,
-    dependencies=[Depends(require_role("admin", "super_admin", "content_manager"))],
+    dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def update_exam(
     exam_ref: str, payload: ExamUpdate, db: Session = Depends(get_db)
@@ -133,7 +134,7 @@ def update_exam(
 @router.delete(
     "/{exam_ref}",
     status_code=204,
-    dependencies=[Depends(require_role("admin", "super_admin"))],
+    dependencies=[Depends(require_role(*ADMIN_ROLES))],
 )
 def delete_exam(exam_ref: str, db: Session = Depends(get_db)):
     exam = _find_exam(db, exam_ref)

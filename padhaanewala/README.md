@@ -97,6 +97,44 @@ uvicorn app.main:app --reload
 
 Health check: http://localhost:8000/health → `{"status":"ok"}`
 
+Migrations and seed data (run once per database):
+
+```bash
+python -m alembic upgrade head
+python scripts/seed_roles.py
+python scripts/seed_locations.py
+python scripts/seed_universities.py
+python scripts/seed_colleges_courses.py
+python scripts/seed_scholarships.py
+python scripts/seed_exams.py
+```
+
+### 4b. Bootstrap an admin account
+
+`/admin` is gated on the `admin` / `super_admin` role, and self-registration only
+ever assigns `student`, so the first admin has to be seeded. `seed_admin.py` is
+idempotent and deliberately hard to misuse: it refuses to touch an email that is
+not in `ADMIN_EMAIL_ALLOWLIST`, never re-hashes an existing account without
+`--reset-password`, and refuses to escalate an account that already holds
+`student` without `--promote-existing`.
+
+```bash
+# PowerShell — ADMIN_PASSWORD is required, the script refuses to run without it
+$env:ADMIN_EMAIL="contact@padhaanewala.in"
+$env:ADMIN_EMAIL_ALLOWLIST="contact@padhaanewala.in"
+$env:ADMIN_PASSWORD="<strong-password>"
+python scripts/seed_roles.py     # must run first: creates the roles
+python scripts/seed_admin.py
+# rotate the password later:
+python scripts/seed_admin.py --reset-password
+```
+
+Role names come from `app/roles.py` (the single source of truth) — see
+`docs/rbac-compliance-checklist.md` for the full authorization ruleset.
+
+`users.mobile` is NOT NULL and UNIQUE, so an admin needs a mobile even though the
+login form does not ask for one — set `ADMIN_MOBILE` if `9999999999` is taken.
+
 ### 5. Frontend (Next.js)
 
 ```bash

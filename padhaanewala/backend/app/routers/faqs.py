@@ -9,8 +9,7 @@ from app.schemas.content import FAQCreate, FAQResponse, FAQUpdate
 
 router = APIRouter(prefix="/api/v1/faqs", tags=["faqs"])
 
-CONTENT_ROLES = ("admin", "super_admin", "content_manager")
-
+from app.roles import CONTENT_ROLES
 
 @router.get("", response_model=list[FAQResponse])
 def list_faqs(
@@ -27,14 +26,12 @@ def list_faqs(
         query.order_by(FAQ.entity_type, FAQ.entity_id, FAQ.display_order)
     ).all()
 
-
 @router.get("/{faq_id}", response_model=FAQResponse)
 def get_faq(faq_id: int, db: Session = Depends(get_db)):
     faq = db.get(FAQ, faq_id)
     if faq is None or not faq.is_active:
         raise HTTPException(status_code=404, detail="FAQ not found")
     return faq
-
 
 @router.post(
     "",
@@ -48,7 +45,6 @@ def create_faq(payload: FAQCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(faq)
     return faq
-
 
 @router.put(
     "/{faq_id}",
@@ -66,7 +62,6 @@ def update_faq(
     db.commit()
     db.refresh(faq)
     return faq
-
 
 @router.delete(
     "/{faq_id}",

@@ -44,13 +44,11 @@ from app.schemas.enrichment import (
 router = APIRouter(prefix="/api/v1/colleges", tags=["college-enrichment"])
 catalog_router = APIRouter(prefix="/api/v1", tags=["catalog-data"])
 
-ADMIN_ROLES = ("admin", "super_admin", "content_manager")
-
+from app.roles import ENRICHMENT_ROLES as CONTENT_ROLES
 
 def _find_college_by_ref(db: Session, ref: str) -> College | None:
     cond = College.id == int(ref) if ref.isdigit() else College.slug == ref
     return db.scalar(select(College).where(cond))
-
 
 def _get_active_college(db: Session, ref: str) -> College:
     college = _find_college_by_ref(db, ref)
@@ -58,19 +56,15 @@ def _get_active_college(db: Session, ref: str) -> College:
         raise HTTPException(status_code=404, detail="College not found")
     return college
 
-
 def _match_none(col, value):
     return col.is_(None) if value is None else col == value
-
 
 def _course_name(db: Session, course_id: int | None) -> str | None:
     if course_id is None:
         return None
     return db.scalar(select(Course.name).where(Course.id == course_id))
 
-
 # ---------------------------------------------------------------- Cutoffs ----
-
 
 def _to_cutoff(db: Session, cutoff: Cutoff) -> CutoffResponse:
     college_name = cutoff.college.name if cutoff.college else None
@@ -95,7 +89,6 @@ def _to_cutoff(db: Session, cutoff: Cutoff) -> CutoffResponse:
         verified_date=cutoff.verified_date,
     )
 
-
 def _find_cutoff(db: Session, college: College, cutoff_id: int) -> Cutoff:
     cutoff = db.scalar(
         select(Cutoff)
@@ -105,7 +98,6 @@ def _find_cutoff(db: Session, college: College, cutoff_id: int) -> Cutoff:
     if cutoff is None:
         raise HTTPException(status_code=404, detail="Cutoff not found")
     return cutoff
-
 
 @router.get("/{college_ref}/cutoffs", response_model=list[CutoffResponse])
 def list_cutoffs(
@@ -131,12 +123,11 @@ def list_cutoffs(
     ).all()
     return [_to_cutoff(db, c) for c in cutoffs]
 
-
 @router.post(
     "/{college_ref}/cutoffs",
     response_model=CutoffResponse,
     status_code=201,
-    dependencies=[Depends(require_role(*ADMIN_ROLES))],
+    dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def create_cutoff(
     college_ref: str, payload: CutoffCreate, db: Session = Depends(get_db)
@@ -166,11 +157,10 @@ def create_cutoff(
     db.refresh(cutoff)
     return _to_cutoff(db, cutoff)
 
-
 @router.put(
     "/{college_ref}/cutoffs/{cutoff_id}",
     response_model=CutoffResponse,
-    dependencies=[Depends(require_role(*ADMIN_ROLES))],
+    dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def update_cutoff(
     college_ref: str,
@@ -188,11 +178,10 @@ def update_cutoff(
     db.refresh(cutoff)
     return _to_cutoff(db, cutoff)
 
-
 @router.delete(
     "/{college_ref}/cutoffs/{cutoff_id}",
     status_code=204,
-    dependencies=[Depends(require_role(*ADMIN_ROLES))],
+    dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def delete_cutoff(
     college_ref: str, cutoff_id: int, db: Session = Depends(get_db)
@@ -204,9 +193,7 @@ def delete_cutoff(
     db.delete(cutoff)
     db.commit()
 
-
 # -------------------------------------------------------------------- Fees ----
-
 
 def _to_fee(db: Session, fee: Fee) -> FeeResponse:
     course_name = db.execute(
@@ -228,14 +215,12 @@ def _to_fee(db: Session, fee: Fee) -> FeeResponse:
         is_approximate=fee.is_approximate,
     )
 
-
 def _college_course_ids(db: Session, college: College) -> list[int]:
     return list(
         db.scalars(
             select(CollegeCourse.id).where(CollegeCourse.college_id == college.id)
         ).all()
     )
-
 
 def _verify_college_course(db: Session, college: College, college_course_id: int) -> None:
     cc = db.scalar(
@@ -250,7 +235,6 @@ def _verify_college_course(db: Session, college: College, college_course_id: int
             detail="college_course_id does not belong to this college",
         )
 
-
 def _find_fee(db: Session, college: College, fee_id: int) -> Fee:
     fee = db.scalar(
         select(Fee).where(
@@ -261,7 +245,6 @@ def _find_fee(db: Session, college: College, fee_id: int) -> Fee:
     if fee is None:
         raise HTTPException(status_code=404, detail="Fee not found")
     return fee
-
 
 @router.get("/{college_ref}/fees", response_model=list[FeeResponse])
 def list_fees(
@@ -281,12 +264,11 @@ def list_fees(
     ).all()
     return [_to_fee(db, f) for f in fees]
 
-
 @router.post(
     "/{college_ref}/fees",
     response_model=FeeResponse,
     status_code=201,
-    dependencies=[Depends(require_role(*ADMIN_ROLES))],
+    dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def create_fee(
     college_ref: str, payload: FeeCreate, db: Session = Depends(get_db)
@@ -314,11 +296,10 @@ def create_fee(
     db.refresh(fee)
     return _to_fee(db, fee)
 
-
 @router.put(
     "/{college_ref}/fees/{fee_id}",
     response_model=FeeResponse,
-    dependencies=[Depends(require_role(*ADMIN_ROLES))],
+    dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def update_fee(
     college_ref: str,
@@ -339,11 +320,10 @@ def update_fee(
     db.refresh(fee)
     return _to_fee(db, fee)
 
-
 @router.delete(
     "/{college_ref}/fees/{fee_id}",
     status_code=204,
-    dependencies=[Depends(require_role(*ADMIN_ROLES))],
+    dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def delete_fee(college_ref: str, fee_id: int, db: Session = Depends(get_db)):
     college = _find_college_by_ref(db, college_ref)
@@ -353,9 +333,7 @@ def delete_fee(college_ref: str, fee_id: int, db: Session = Depends(get_db)):
     db.delete(fee)
     db.commit()
 
-
 # ------------------------------------------------------------- Placements ----
-
 
 def _to_placement(db: Session, placement: PlacementRecord) -> PlacementResponse:
     return PlacementResponse(
@@ -381,7 +359,6 @@ def _to_placement(db: Session, placement: PlacementRecord) -> PlacementResponse:
         verified_date=placement.verified_date,
     )
 
-
 def _find_placement(db: Session, college: College, placement_id: int) -> PlacementRecord:
     placement = db.scalar(
         select(PlacementRecord)
@@ -394,7 +371,6 @@ def _find_placement(db: Session, college: College, placement_id: int) -> Placeme
     if placement is None:
         raise HTTPException(status_code=404, detail="Placement record not found")
     return placement
-
 
 @router.get("/{college_ref}/placements", response_model=list[PlacementResponse])
 def list_placements(
@@ -417,12 +393,11 @@ def list_placements(
     ).all()
     return [_to_placement(db, p) for p in placements]
 
-
 @router.post(
     "/{college_ref}/placements",
     response_model=PlacementResponse,
     status_code=201,
-    dependencies=[Depends(require_role(*ADMIN_ROLES))],
+    dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def create_placement(
     college_ref: str, payload: PlacementCreate, db: Session = Depends(get_db)
@@ -436,11 +411,10 @@ def create_placement(
     db.refresh(placement)
     return _to_placement(db, placement)
 
-
 @router.put(
     "/{college_ref}/placements/{placement_id}",
     response_model=PlacementResponse,
-    dependencies=[Depends(require_role(*ADMIN_ROLES))],
+    dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def update_placement(
     college_ref: str,
@@ -458,11 +432,10 @@ def update_placement(
     db.refresh(placement)
     return _to_placement(db, placement)
 
-
 @router.delete(
     "/{college_ref}/placements/{placement_id}",
     status_code=204,
-    dependencies=[Depends(require_role(*ADMIN_ROLES))],
+    dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def delete_placement(
     college_ref: str, placement_id: int, db: Session = Depends(get_db)
@@ -474,9 +447,7 @@ def delete_placement(
     db.delete(placement)
     db.commit()
 
-
 # --------------------------------------------------------------- Rankings ----
-
 
 def _to_ranking(
     ranking_type: str,
@@ -497,7 +468,6 @@ def _to_ranking(
         state_rank=getattr(item, "state_rank", None),
     )
 
-
 def _to_nirf(db: Session, ranking: NIRFRanking) -> NIRFRankingResponse:
     return NIRFRankingResponse(
         id=ranking.id,
@@ -511,7 +481,6 @@ def _to_nirf(db: Session, ranking: NIRFRanking) -> NIRFRankingResponse:
         state_rank=ranking.state_rank,
     )
 
-
 def _to_other(db: Session, ranking: OtherRanking) -> OtherRankingResponse:
     return OtherRankingResponse(
         id=ranking.id,
@@ -523,7 +492,6 @@ def _to_other(db: Session, ranking: OtherRanking) -> OtherRankingResponse:
         rank=ranking.rank,
     )
 
-
 def _find_nirf(db: Session, college: College, rank_id: int) -> NIRFRanking:
     ranking = db.scalar(
         select(NIRFRanking)
@@ -534,7 +502,6 @@ def _find_nirf(db: Session, college: College, rank_id: int) -> NIRFRanking:
         raise HTTPException(status_code=404, detail="NIRF ranking not found")
     return ranking
 
-
 def _find_other(db: Session, college: College, rank_id: int) -> OtherRanking:
     ranking = db.scalar(
         select(OtherRanking)
@@ -544,7 +511,6 @@ def _find_other(db: Session, college: College, rank_id: int) -> OtherRanking:
     if ranking is None:
         raise HTTPException(status_code=404, detail="Ranking not found")
     return ranking
-
 
 @router.get("/{college_ref}/rankings", response_model=list[RankingResponse])
 def list_rankings(
@@ -584,12 +550,11 @@ def list_rankings(
         rows += [_to_ranking("other", college, r) for r in other]
     return rows
 
-
 @router.post(
     "/{college_ref}/rankings/nirf",
     response_model=NIRFRankingResponse,
     status_code=201,
-    dependencies=[Depends(require_role(*ADMIN_ROLES))],
+    dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def create_nirf_ranking(
     college_ref: str, payload: NIRFRankingCreate, db: Session = Depends(get_db)
@@ -615,11 +580,10 @@ def create_nirf_ranking(
     db.refresh(ranking)
     return _to_nirf(db, ranking)
 
-
 @router.put(
     "/{college_ref}/rankings/nirf/{rank_id}",
     response_model=NIRFRankingResponse,
-    dependencies=[Depends(require_role(*ADMIN_ROLES))],
+    dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def update_nirf_ranking(
     college_ref: str,
@@ -637,11 +601,10 @@ def update_nirf_ranking(
     db.refresh(ranking)
     return _to_nirf(db, ranking)
 
-
 @router.delete(
     "/{college_ref}/rankings/nirf/{rank_id}",
     status_code=204,
-    dependencies=[Depends(require_role(*ADMIN_ROLES))],
+    dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def delete_nirf_ranking(
     college_ref: str, rank_id: int, db: Session = Depends(get_db)
@@ -653,12 +616,11 @@ def delete_nirf_ranking(
     db.delete(ranking)
     db.commit()
 
-
 @router.post(
     "/{college_ref}/rankings/other",
     response_model=OtherRankingResponse,
     status_code=201,
-    dependencies=[Depends(require_role(*ADMIN_ROLES))],
+    dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def create_other_ranking(
     college_ref: str, payload: OtherRankingCreate, db: Session = Depends(get_db)
@@ -672,11 +634,10 @@ def create_other_ranking(
     db.refresh(ranking)
     return _to_other(db, ranking)
 
-
 @router.put(
     "/{college_ref}/rankings/other/{rank_id}",
     response_model=OtherRankingResponse,
-    dependencies=[Depends(require_role(*ADMIN_ROLES))],
+    dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def update_other_ranking(
     college_ref: str,
@@ -694,11 +655,10 @@ def update_other_ranking(
     db.refresh(ranking)
     return _to_other(db, ranking)
 
-
 @router.delete(
     "/{college_ref}/rankings/other/{rank_id}",
     status_code=204,
-    dependencies=[Depends(require_role(*ADMIN_ROLES))],
+    dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def delete_other_ranking(
     college_ref: str, rank_id: int, db: Session = Depends(get_db)
@@ -710,9 +670,7 @@ def delete_other_ranking(
     db.delete(ranking)
     db.commit()
 
-
 # ------------------------------------------------------------ Seat matrix ----
-
 
 def _to_seat_matrix(db: Session, seat: SeatMatrix) -> SeatMatrixResponse:
     return SeatMatrixResponse(
@@ -738,7 +696,6 @@ def _to_seat_matrix(db: Session, seat: SeatMatrix) -> SeatMatrixResponse:
         source=seat.source,
     )
 
-
 def _find_seat_matrix(db: Session, college: College, seat_id: int) -> SeatMatrix:
     seat = db.scalar(
         select(SeatMatrix)
@@ -748,7 +705,6 @@ def _find_seat_matrix(db: Session, college: College, seat_id: int) -> SeatMatrix
     if seat is None:
         raise HTTPException(status_code=404, detail="Seat matrix not found")
     return seat
-
 
 @router.get("/{college_ref}/seat-matrix", response_model=list[SeatMatrixResponse])
 def list_seat_matrix(
@@ -774,12 +730,11 @@ def list_seat_matrix(
     ).all()
     return [_to_seat_matrix(db, s) for s in seats]
 
-
 @router.post(
     "/{college_ref}/seat-matrix",
     response_model=SeatMatrixResponse,
     status_code=201,
-    dependencies=[Depends(require_role(*ADMIN_ROLES))],
+    dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def create_seat_matrix(
     college_ref: str, payload: SeatMatrixCreate, db: Session = Depends(get_db)
@@ -793,11 +748,10 @@ def create_seat_matrix(
     db.refresh(seat)
     return _to_seat_matrix(db, seat)
 
-
 @router.put(
     "/{college_ref}/seat-matrix/{seat_id}",
     response_model=SeatMatrixResponse,
-    dependencies=[Depends(require_role(*ADMIN_ROLES))],
+    dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def update_seat_matrix(
     college_ref: str,
@@ -815,11 +769,10 @@ def update_seat_matrix(
     db.refresh(seat)
     return _to_seat_matrix(db, seat)
 
-
 @router.delete(
     "/{college_ref}/seat-matrix/{seat_id}",
     status_code=204,
-    dependencies=[Depends(require_role(*ADMIN_ROLES))],
+    dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def delete_seat_matrix(
     college_ref: str, seat_id: int, db: Session = Depends(get_db)
@@ -831,9 +784,7 @@ def delete_seat_matrix(
     db.delete(seat)
     db.commit()
 
-
 # ------------------------------------------------------------ Admissions ----
-
 
 def _course_name_via_college_course(
     db: Session, college_course_id: int | None
@@ -845,7 +796,6 @@ def _course_name_via_college_course(
         .join(CollegeCourse, CollegeCourse.course_id == Course.id)
         .where(CollegeCourse.id == college_course_id)
     ).scalar_one_or_none()
-
 
 def _to_admission(db: Session, admission: Admission) -> AdmissionResponse:
     return AdmissionResponse(
@@ -861,7 +811,6 @@ def _to_admission(db: Session, admission: Admission) -> AdmissionResponse:
         application_end_date=admission.application_end_date,
     )
 
-
 def _find_admission(
     db: Session, college: College, admission_id: int
 ) -> Admission:
@@ -874,7 +823,6 @@ def _find_admission(
     if admission is None:
         raise HTTPException(status_code=404, detail="Admission info not found")
     return admission
-
 
 @router.get("/{college_ref}/admissions", response_model=list[AdmissionResponse])
 def list_admissions(
@@ -894,12 +842,11 @@ def list_admissions(
     ).all()
     return [_to_admission(db, a) for a in admissions]
 
-
 @router.post(
     "/{college_ref}/admissions",
     response_model=AdmissionResponse,
     status_code=201,
-    dependencies=[Depends(require_role(*ADMIN_ROLES))],
+    dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def create_admission(
     college_ref: str, payload: AdmissionCreate, db: Session = Depends(get_db)
@@ -914,11 +861,10 @@ def create_admission(
     db.refresh(admission)
     return _to_admission(db, admission)
 
-
 @router.put(
     "/{college_ref}/admissions/{admission_id}",
     response_model=AdmissionResponse,
-    dependencies=[Depends(require_role(*ADMIN_ROLES))],
+    dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def update_admission(
     college_ref: str,
@@ -939,11 +885,10 @@ def update_admission(
     db.refresh(admission)
     return _to_admission(db, admission)
 
-
 @router.delete(
     "/{college_ref}/admissions/{admission_id}",
     status_code=204,
-    dependencies=[Depends(require_role(*ADMIN_ROLES))],
+    dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def delete_admission(
     college_ref: str, admission_id: int, db: Session = Depends(get_db)
@@ -955,11 +900,9 @@ def delete_admission(
     db.delete(admission)
     db.commit()
 
-
 # --------------------------------------------------- Global collection reads ----
 # Public read-only endpoints so the predictor and frontend can query enrichment
 # data by course/year without a college path prefix.
-
 
 def _paginated(
     query, db: Session, limit: int | None, offset: int | None
@@ -971,14 +914,12 @@ def _paginated(
         q = q.offset(offset)
     return db.scalars(q).all()
 
-
 def _join_active_college_courses(db: Session):
     return (
         select(CollegeCourse.id)
         .join(College, College.id == CollegeCourse.college_id)
         .where(College.is_active.is_(True))
     )
-
 
 @catalog_router.get("/cutoffs", response_model=list[CutoffResponse])
 def catalog_cutoffs(
@@ -1013,7 +954,6 @@ def catalog_cutoffs(
     )
     return [_to_cutoff(db, c) for c in cutoffs]
 
-
 @catalog_router.get("/fees", response_model=list[FeeResponse])
 def catalog_fees(
     college_id: int | None = None,
@@ -1023,17 +963,20 @@ def catalog_fees(
     offset: int | None = Query(default=None, ge=0),
     db: Session = Depends(get_db),
 ):
-    conditions = []
-    if course_id is not None or college_id is not None:
-        cc = _join_active_college_courses(db)
-        if course_id is not None:
-            cc = cc.where(CollegeCourse.course_id == course_id)
-        if college_id is not None:
-            cc = cc.where(CollegeCourse.college_id == college_id)
-        ids = db.scalars(cc).all()
-        if not ids:
-            return []
-        conditions.append(Fee.college_course_id.in_(ids))
+    # Always scope to active colleges. The active-college join used to be applied
+    # only when course_id/college_id was supplied, so `GET /fees` with no
+    # parameters produced `select(Fee)` with an empty WHERE — every fee row for
+    # every college, including inactive ones.
+    cc = _join_active_college_courses(db)
+    if course_id is not None:
+        cc = cc.where(CollegeCourse.course_id == course_id)
+    if college_id is not None:
+        cc = cc.where(CollegeCourse.college_id == college_id)
+    ids = db.scalars(cc).all()
+    if not ids:
+        return []
+
+    conditions = [Fee.college_course_id.in_(ids)]
     if academic_year is not None:
         conditions.append(Fee.academic_year == academic_year)
     fees = _paginated(
@@ -1043,7 +986,6 @@ def catalog_fees(
         offset,
     )
     return [_to_fee(db, f) for f in fees]
-
 
 @catalog_router.get("/placements", response_model=list[PlacementResponse])
 def catalog_placements(
@@ -1071,7 +1013,6 @@ def catalog_placements(
         offset,
     )
     return [_to_placement(db, p) for p in placements]
-
 
 @catalog_router.get("/rankings", response_model=list[RankingResponse])
 def catalog_rankings(
@@ -1128,7 +1069,6 @@ def catalog_rankings(
             rows.append(_to_ranking("other", college, r))
     return rows
 
-
 @catalog_router.get("/seat-matrix", response_model=list[SeatMatrixResponse])
 def catalog_seat_matrix(
     college_id: int | None = None,
@@ -1159,7 +1099,6 @@ def catalog_seat_matrix(
     )
     return [_to_seat_matrix(db, s) for s in seats]
 
-
 @catalog_router.get("/admissions", response_model=list[AdmissionResponse])
 def catalog_admissions(
     college_id: int | None = None,
@@ -1168,17 +1107,17 @@ def catalog_admissions(
     offset: int | None = Query(default=None, ge=0),
     db: Session = Depends(get_db),
 ):
-    conditions = []
-    if course_id is not None or college_id is not None:
-        cc = _join_active_college_courses(db)
-        if course_id is not None:
-            cc = cc.where(CollegeCourse.course_id == course_id)
-        if college_id is not None:
-            cc = cc.where(CollegeCourse.college_id == college_id)
-        ids = db.scalars(cc).all()
-        if not ids:
-            return []
-        conditions.append(Admission.college_course_id.in_(ids))
+    # Same missing-WHERE defect as /fees: always scope to active colleges.
+    cc = _join_active_college_courses(db)
+    if course_id is not None:
+        cc = cc.where(CollegeCourse.course_id == course_id)
+    if college_id is not None:
+        cc = cc.where(CollegeCourse.college_id == college_id)
+    ids = db.scalars(cc).all()
+    if not ids:
+        return []
+
+    conditions = [Admission.college_course_id.in_(ids)]
     admissions = _paginated(
         select(Admission).where(*conditions).order_by(Admission.id),
         db,

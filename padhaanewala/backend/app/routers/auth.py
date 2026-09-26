@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.models import Role, StudentProfile, User
+from app.roles import RoleName
 from app.schemas.auth import LoginRequest, LogoutRequest, RefreshRequest, RegisterRequest
 from app.schemas.common import StandardResponse, TokenResponse
 from app.utils.security import (
@@ -30,7 +31,10 @@ def _build_token_response(user: User, tokens: dict) -> TokenResponse:
 
 
 def _issue_tokens(user: User) -> dict:
-    role_names = ",".join(role.name for role in user.roles) or "student,user"
+    # The `role` claim is informational only. Authorization always re-reads roles
+    # from the DB via `get_current_user_roles`, so a forged or stale claim can
+    # never widen access (R3.1, pinned by R7.2).
+    role_names = ",".join(role.name for role in user.roles) or RoleName.STUDENT.value
     return {
         "access": create_access_token(user.id, role_names),
         "refresh": create_refresh_token(user.id, role_names),
@@ -66,9 +70,17 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
             detail="Email or mobile already registered",
         )
 
-    role = db.scalar(select(Role).where(Role.name == "student"))
-    if role is not None:
-        user.roles.append(role)
+    role = db.scalar(select(Role).where(Role.name == RoleName.STUDENT.value))
+    # R2.4 — fail closed. Previously this was `if role is not None`, which
+    # silently created a user with zero roles and still returned 201 when
+    # seed_roles.py had not run. A roleless account is a broken account.
+    if role is None:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Registration is unavailable: the student role is not provisioned",
+        )
+    user.roles.append(role)
 
     profile = StudentProfile(user_id=user.id, name=payload.name)
     db.add(profile)

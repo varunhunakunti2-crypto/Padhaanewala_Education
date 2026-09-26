@@ -13,6 +13,7 @@ from app.schemas.catalog import (
     ScholarshipResponse,
     ScholarshipUpdate,
 )
+from app.roles import ADMIN_ROLES, CONTENT_ROLES
 
 router = APIRouter(prefix="/api/v1/scholarships", tags=["scholarships"])
 
@@ -114,7 +115,7 @@ def _find_scholarship(db: Session, ref: str) -> Scholarship | None:
     "",
     response_model=ScholarshipResponse,
     status_code=201,
-    dependencies=[Depends(require_role("admin", "super_admin", "content_manager"))],
+    dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def create_scholarship(payload: ScholarshipCreate, db: Session = Depends(get_db)):
     slug = _slugify(payload.name)
@@ -132,7 +133,7 @@ def create_scholarship(payload: ScholarshipCreate, db: Session = Depends(get_db)
 @router.put(
     "/{scholarship_ref}",
     response_model=ScholarshipResponse,
-    dependencies=[Depends(require_role("admin", "super_admin", "content_manager"))],
+    dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def update_scholarship(
     scholarship_ref: str, payload: ScholarshipUpdate, db: Session = Depends(get_db)
@@ -163,7 +164,7 @@ def update_scholarship(
 @router.delete(
     "/{scholarship_ref}",
     status_code=204,
-    dependencies=[Depends(require_role("admin", "super_admin"))],
+    dependencies=[Depends(require_role(*ADMIN_ROLES))],
 )
 def delete_scholarship(scholarship_ref: str, db: Session = Depends(get_db)):
     scholarship = _find_scholarship(db, scholarship_ref)

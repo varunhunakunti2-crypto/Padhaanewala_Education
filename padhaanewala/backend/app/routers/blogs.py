@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
 from app.dependencies import get_current_user, get_current_user_roles, get_optional_current_user, require_role
+from app.roles import ADMIN_ROLES, BLOG_ROLES as CONTENT_ROLES
 from app.models import AuditLog, Blog, BlogCategory, User
 from app.schemas.content import (
     BlogCategoryCreate,
@@ -18,13 +19,10 @@ from app.schemas.content import (
 
 router = APIRouter(prefix="/api/v1", tags=["blogs"])
 
-CONTENT_ROLES = ("admin", "super_admin", "content_manager", "author")
-
 
 def _slugify(text: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", text.strip().lower()).strip("-")
     return slug or "blog"
-
 
 def _to_blog_response(db: Session, blog: Blog) -> BlogResponse:
     author = db.get(User, blog.author_id) if blog.author_id else None
@@ -51,7 +49,6 @@ def _to_blog_response(db: Session, blog: Blog) -> BlogResponse:
         updated_at=blog.updated_at,
     )
 
-
 @router.get("/blog-categories", response_model=list[BlogCategoryResponse])
 def list_categories(db: Session = Depends(get_db)):
     rows = db.execute(
@@ -67,7 +64,6 @@ def list_categories(db: Session = Depends(get_db)):
         )
         for cat, count in rows
     ]
-
 
 @router.post(
     "/blog-categories",
@@ -89,7 +85,6 @@ def create_category(
         id=category.id, name=category.name, slug=category.slug,
         is_active=category.is_active,
     )
-
 
 @router.get("/blogs", response_model=list[BlogResponse])
 def list_blogs(
@@ -120,7 +115,6 @@ def list_blogs(
     blogs = db.scalars(query.limit(limit).offset(offset)).all()
     return [_to_blog_response(db, b) for b in blogs]
 
-
 @router.get("/blogs/{blog_ref}", response_model=BlogResponse)
 def get_blog(blog_ref: str, db: Session = Depends(get_db)):
     cond = (
@@ -132,7 +126,6 @@ def get_blog(blog_ref: str, db: Session = Depends(get_db)):
     blog.view_count += 1
     db.commit()
     return _to_blog_response(db, blog)
-
 
 @router.post(
     "/blogs",
@@ -167,7 +160,6 @@ def create_blog(
     db.commit()
     db.refresh(blog)
     return _to_blog_response(db, blog)
-
 
 @router.put(
     "/blogs/{blog_ref}",
@@ -210,11 +202,10 @@ def update_blog(
     db.refresh(blog)
     return _to_blog_response(db, blog)
 
-
 @router.delete(
     "/blogs/{blog_ref}",
     status_code=204,
-    dependencies=[Depends(require_role("admin", "super_admin"))],
+    dependencies=[Depends(require_role(*ADMIN_ROLES))],
 )
 def delete_blog(
     blog_ref: str,

@@ -9,8 +9,7 @@ from app.schemas.content import SeoMetadataResponse, SeoMetadataUpsert
 
 router = APIRouter(prefix="/api/v1/seo", tags=["seo"])
 
-SEO_ROLES = ("admin", "super_admin", "content_manager", "seo_manager")
-
+from app.roles import SEO_ROLES
 
 def _to_response(seo: SeoMetadata) -> SeoMetadataResponse:
     return SeoMetadataResponse(
@@ -27,11 +26,16 @@ def _to_response(seo: SeoMetadata) -> SeoMetadataResponse:
         updated_at=seo.updated_at,
     )
 
-
 @router.get("", response_model=list[SeoMetadataResponse])
 def list_seo(
     entity_type: str | None = Query(None, max_length=50),
     entity_id: int | None = None,
+    limit: int = Query(200, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    # SEO rows carry draft/unpublished metadata and structured data for every
+    # entity. This was previously an unauthenticated full-table dump with no
+    # pagination, so it is now restricted to the same roles that can write it.
+    _=Depends(require_role(*SEO_ROLES)),
     db: Session = Depends(get_db),
 ):
     query = select(SeoMetadata)
@@ -39,12 +43,20 @@ def list_seo(
         query = query.where(SeoMetadata.entity_type == entity_type)
     if entity_id is not None:
         query = query.where(SeoMetadata.entity_id == entity_id)
-    return [_to_response(s) for s in db.scalars(query.order_by(SeoMetadata.entity_type)).all()]
+    return [
+        _to_response(s)
+        for s in db.scalars(
+            query.order_by(SeoMetadata.entity_type).limit(limit).offset(offset)
+        ).all()
+    ]
 
 
 @router.get("/{entity_type}/{entity_id}", response_model=SeoMetadataResponse)
 def get_seo(
-    entity_type: str, entity_id: int, db: Session = Depends(get_db)
+    entity_type: str,
+    entity_id: int,
+    _=Depends(require_role(*SEO_ROLES)),
+    db: Session = Depends(get_db),
 ):
     seo = db.scalar(
         select(SeoMetadata).where(
@@ -54,7 +66,6 @@ def get_seo(
     if seo is None:
         raise HTTPException(status_code=404, detail="SEO metadata not found")
     return _to_response(seo)
-
 
 @router.put(
     "/{entity_type}/{entity_id}",
@@ -83,7 +94,6 @@ def upsert_seo(
     db.commit()
     db.refresh(seo)
     return _to_response(seo)
-
 
 @router.delete(
     "/{entity_type}/{entity_id}",

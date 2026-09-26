@@ -6,6 +6,7 @@ from app.database import get_db
 from app.dependencies import get_current_user, require_role
 from app.models import Notification, User
 from app.schemas.content import NotificationCreate, NotificationResponse
+from app.roles import ADMIN_ROLES
 
 router = APIRouter(prefix="/api/v1/notifications", tags=["notifications"])
 
@@ -56,7 +57,7 @@ def unread_count(
     "",
     response_model=NotificationResponse,
     status_code=201,
-    dependencies=[Depends(require_role("admin", "super_admin"))],
+    dependencies=[Depends(require_role(*ADMIN_ROLES))],
 )
 def create_notification(
     payload: NotificationCreate, db: Session = Depends(get_db)

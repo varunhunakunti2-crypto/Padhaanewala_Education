@@ -28,12 +28,10 @@ from app.schemas.catalog import (
 
 router = APIRouter(prefix="/api/v1/mock-tests", tags=["mock-tests"])
 
-CONTENT_ROLES = ("admin", "super_admin", "content_manager")
-
+from app.roles import CONTENT_ROLES
 
 def _slugify(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.strip().lower()).strip("-")
-
 
 def _to_response(mock_test: MockTest, question_count: int) -> MockTestResponse:
     return MockTestResponse(
@@ -61,16 +59,13 @@ def _to_response(mock_test: MockTest, question_count: int) -> MockTestResponse:
         is_active=mock_test.is_active,
     )
 
-
 def _find_mock_test(db: Session, ref: str) -> MockTest | None:
     cond = MockTest.id == int(ref) if ref.isdigit() else MockTest.slug == ref
     return db.scalar(select(MockTest).where(cond, MockTest.is_active))
 
-
 def _find_mock_test_admin(db: Session, ref: str) -> MockTest | None:
     cond = MockTest.id == int(ref) if ref.isdigit() else MockTest.slug == ref
     return db.scalar(select(MockTest).where(cond))
-
 
 def _active_questions(db: Session, mock_test_id: int) -> list[TestQuestion]:
     return db.scalars(
@@ -82,14 +77,12 @@ def _active_questions(db: Session, mock_test_id: int) -> list[TestQuestion]:
         .order_by(TestQuestion.sort_order, TestQuestion.id)
     ).all()
 
-
 def _shuffled_options(question: TestQuestion) -> list | None:
     if not question.options or not isinstance(question.options, list):
         return question.options
     options = list(question.options)
     random.Random(question.id).shuffle(options)
     return options
-
 
 def _find_attempt(db: Session, attempt_id: int, user: User) -> TestAttempt:
     attempt = db.scalar(
@@ -103,13 +96,11 @@ def _find_attempt(db: Session, attempt_id: int, user: User) -> TestAttempt:
         raise HTTPException(status_code=403, detail="Not your attempt")
     return attempt
 
-
 def _finalize_if_expired(db: Session, attempt: TestAttempt) -> bool:
     if attempt.status == "in_progress" and attempt.time_remaining_seconds == 0:
         _grade_attempt(db, attempt)
         return True
     return False
-
 
 def _grade_attempt(db: Session, attempt: TestAttempt) -> None:
     db.flush()
@@ -152,7 +143,6 @@ def _grade_attempt(db: Session, attempt: TestAttempt) -> None:
     attempt.status = "submitted"
     attempt.submitted_at = datetime.now(timezone.utc)
 
-
 def _is_answer_correct(
     attempt: TestAttempt,
     question: TestQuestion,
@@ -164,7 +154,6 @@ def _is_answer_correct(
         return None
     return answer.selected_answer.strip() == question.correct_answer.strip()
 
-
 def _marks_for(attempt: TestAttempt, question: TestQuestion, is_correct: bool) -> int:
     if is_correct:
         return int(question.marks or 0)
@@ -175,7 +164,6 @@ def _marks_for(attempt: TestAttempt, question: TestQuestion, is_correct: bool) -
             else attempt.mock_test.negative_marks_value or 0
         )
     return 0
-
 
 def _save_answer(
     db: Session,
@@ -209,10 +197,8 @@ def _save_answer(
     )
     return answer
 
-
 def _attempt_view(attempt: TestAttempt) -> TestAttemptResponse:
     return TestAttemptResponse.build(attempt)
-
 
 @router.get("", response_model=list[MockTestResponse])
 def list_mock_tests(
@@ -251,7 +237,6 @@ def list_mock_tests(
     ).all()
     return [_to_response(m, count) for m, count in rows]
 
-
 @router.post(
     "",
     response_model=MockTestResponse,
@@ -269,7 +254,6 @@ def create_mock_test(payload: MockTestCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(mock_test)
     return _to_response(mock_test, 0)
-
 
 @router.put(
     "/{mock_test_ref}",
@@ -307,7 +291,6 @@ def update_mock_test(
     )
     return _to_response(mock_test, question_count or 0)
 
-
 @router.delete(
     "/{mock_test_ref}",
     status_code=204,
@@ -319,7 +302,6 @@ def delete_mock_test(mock_test_ref: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Mock test not found")
     mock_test.is_active = False
     db.commit()
-
 
 @router.get("/{mock_test_ref}/questions", response_model=list[TestQuestionResponse])
 def get_mock_test_questions(mock_test_ref: str, db: Session = Depends(get_db)):
@@ -340,7 +322,6 @@ def get_mock_test_questions(mock_test_ref: str, db: Session = Depends(get_db)):
         )
         for q in questions
     ]
-
 
 @router.post("/{mock_test_ref}/start", response_model=StartAttemptResponse)
 def start_mock_test(
@@ -420,7 +401,6 @@ def start_mock_test(
         ],
     )
 
-
 @router.post("/{mock_test_ref}/submit", response_model=TestResultResponse)
 def submit_mock_test(
     mock_test_ref: str,
@@ -487,7 +467,6 @@ def submit_mock_test(
     db.commit()
     return _build_result(attempt, db)
 
-
 @router.get("/{mock_test_ref}/attempts", response_model=list[TestAttemptResponse])
 def list_my_attempts(
     mock_test_ref: str,
@@ -512,7 +491,6 @@ def list_my_attempts(
     if attempts:
         db.commit()
     return [_attempt_view(a) for a in attempts]
-
 
 @router.get("/{mock_test_ref}/attempts/{attempt_id}", response_model=AttemptDetailResponse)
 def get_attempt(
@@ -558,7 +536,6 @@ def get_attempt(
             for q in questions
         ],
     )
-
 
 @router.put(
     "/{mock_test_ref}/attempts/{attempt_id}/answers/{question_id}",
@@ -614,7 +591,6 @@ def save_answer(
         selected_answer=answer.selected_answer,
     )
 
-
 @router.post(
     "/{mock_test_ref}/attempts/{attempt_id}/submit",
     response_model=TestResultResponse,
@@ -635,7 +611,6 @@ def submit_attempt(
         _grade_attempt(db, attempt)
         db.commit()
     return _build_result(attempt, db)
-
 
 @router.get(
     "/{mock_test_ref}/attempts/{attempt_id}/result",
@@ -660,7 +635,6 @@ def get_attempt_result(
         )
     db.commit()
     return _build_result(attempt, db)
-
 
 def _build_result(attempt: TestAttempt, db: Session) -> TestResultResponse:
     questions = _active_questions(db, attempt.mock_test_id)
@@ -698,7 +672,6 @@ def _build_result(attempt: TestAttempt, db: Session) -> TestResultResponse:
             for q in questions
         ],
     )
-
 
 @router.get(
     "/admin/all",
@@ -742,7 +715,6 @@ def admin_list_mock_tests(
         query.group_by(MockTest.id).order_by(MockTest.name).limit(limit).offset(offset)
     ).all()
     return [_to_response(m, count) for m, count in rows]
-
 
 @router.get(
     "/admin/all/{mock_test_ref}",
@@ -807,7 +779,6 @@ def admin_get_mock_test(mock_test_ref: str, db: Session = Depends(get_db)):
             for q in questions
         ],
     )
-
 
 @router.get("/{mock_test_ref}", response_model=MockTestResponse)
 def get_mock_test(mock_test_ref: str, db: Session = Depends(get_db)):

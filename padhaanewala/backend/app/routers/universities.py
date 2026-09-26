@@ -12,6 +12,7 @@ from app.schemas.catalog import (
     UniversityResponse,
     UniversityUpdate,
 )
+from app.roles import ADMIN_ROLES, CONTENT_ROLES
 
 router = APIRouter(prefix="/api/v1/universities", tags=["universities"])
 
@@ -44,7 +45,7 @@ def get_university(university_ref: str, db: Session = Depends(get_db)):
     "",
     response_model=UniversityResponse,
     status_code=201,
-    dependencies=[Depends(require_role("admin", "super_admin", "content_manager"))],
+    dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def create_university(payload: UniversityCreate, db: Session = Depends(get_db)):
     slug = _slugify(payload.name)
@@ -62,7 +63,7 @@ def create_university(payload: UniversityCreate, db: Session = Depends(get_db)):
 @router.put(
     "/{university_ref}",
     response_model=UniversityResponse,
-    dependencies=[Depends(require_role("admin", "super_admin", "content_manager"))],
+    dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def update_university(
     university_ref: str, payload: UniversityUpdate, db: Session = Depends(get_db)
@@ -93,7 +94,7 @@ def update_university(
 @router.delete(
     "/{university_ref}",
     status_code=204,
-    dependencies=[Depends(require_role("admin", "super_admin"))],
+    dependencies=[Depends(require_role(*ADMIN_ROLES))],
 )
 def delete_university(university_ref: str, db: Session = Depends(get_db)):
     university = _find_university(db, university_ref)

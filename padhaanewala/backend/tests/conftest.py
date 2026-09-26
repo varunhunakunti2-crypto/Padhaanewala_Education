@@ -32,6 +32,7 @@ import pytest
 from sqlalchemy import text
 
 from app.database import engine
+from app.roles import ALL_ROLES
 
 TEST_SCHEMA = os.environ["PADHAANEWALA_SCHEMA"]
 
@@ -42,14 +43,42 @@ def pytest_sessionstart(session):
         exists = conn.execute(
             text("SELECT to_regclass(:t)"), {"t": f"{TEST_SCHEMA}.users"}
         ).scalar()
-    if exists is None:
-        pytest.UsageError(
-            f"Schema {TEST_SCHEMA!r} has no tables. Prepare it first:\n"
-            f"  $env:PADHAANEWALA_SCHEMA = '{TEST_SCHEMA}'\n"
-            f"  python -m alembic upgrade head\n"
-            f"  python scripts/seed_roles.py\n"
-            f"  python scripts/seed_colleges_courses.py\n"
-        )
+        if exists is None:
+            conn.rollback()
+            conn.close()
+            # Must be raised, not merely constructed, or the hook falls through
+            # to _ensure_roles and dies with an opaque UndefinedTable traceback.
+            raise pytest.UsageError(
+                f"Schema {TEST_SCHEMA!r} has no tables. Prepare it first:\n"
+                f"  $env:PADHAANEWALA_SCHEMA = '{TEST_SCHEMA}'\n"
+                "  python -m alembic upgrade head\n"
+                "  python scripts/seed_roles.py\n"
+                "  python scripts/seed_colleges_courses.py\n"
+            )
+        _ensure_roles(conn)
+        conn.commit()
+
+
+def _ensure_roles(conn) -> None:
+    """Guarantee the canonical role rows exist before any test runs.
+
+    The RBAC suite depends on every canonical role being present, and registration
+    is now fail-closed (R2.4), so a single missing row makes every test that
+    registers a user fail with a confusing 503. Re-seeding here keeps the suite
+    self-healing instead of order-dependent.
+    """
+    present = {name for (name,) in conn.execute(text("SELECT name FROM roles"))}
+    missing = [name for name in ALL_ROLES if name not in present]
+    if missing:
+        for name in missing:
+            conn.execute(
+                text(
+                    "INSERT INTO roles (name, description, created_at) "
+                    "VALUES (:n, :d, now()) ON CONFLICT (name) DO NOTHING"
+                ),
+                {"n": name, "d": f"conftest auto-seed: {name}"},
+            )
+        print(f"[conftest] re-seeded missing roles: {', '.join(missing)}")
 
 
 @pytest.fixture(autouse=True, scope="session")

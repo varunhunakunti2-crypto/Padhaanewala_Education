@@ -11,7 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import type { AdmissionEnquiry, MockTestResult, NotificationItem, Review, StudentProfile } from "@/lib/types";
-import { clearAuth } from "@/lib/api";
+import { clearAuth, fetchMyRoles, hasAdminRole } from "@/lib/api";
 
 export interface ToastItem {
   id: number;
@@ -49,6 +49,10 @@ interface AppContextValue {
 
   isAuthenticated: boolean;
   authReady: boolean;
+  roles: string[];
+  rolesReady: boolean;
+  isAdmin: boolean;
+  refreshRoles: () => Promise<void>;
   setAuthenticated: (v: boolean) => void;
   logout: () => void;
 
@@ -125,6 +129,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [darkMode, setDarkMode] = useState<boolean>(false);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [authReady, setAuthReady] = useState<boolean>(false);
+  const [roles, setRoles] = useState<string[]>([]);
+  const [rolesReady, setRolesReady] = useState<boolean>(false);
   const [prefs, setPrefsState] = useState<NotificationPrefs>({
     admissionDeadlines: true,
     scholarshipAlerts: true,
@@ -134,6 +140,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
   });
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const hydrated = useRef(false);
+
+  const isAdmin = useMemo(() => hasAdminRole(roles), [roles]);
+
+  const refreshRoles = useCallback(async () => {
+    if (typeof window === "undefined") return;
+    if (!window.localStorage.getItem("cp_access_token")) {
+      setRoles([]);
+      setRolesReady(true);
+      return;
+    }
+    setRoles(await fetchMyRoles());
+    setRolesReady(true);
+  }, []);
 
   useEffect(() => {
     // Hydrate persisted state from localStorage on first mount only.
@@ -151,8 +170,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setTestHistory(load("cp_test_history", []));
     setNotifications(load("cp_notifications", []));
     setReviews(load("cp_reviews", []));
-    setIsAuthenticated(Boolean(window.localStorage.getItem("cp_access_token")));
+    const hasToken = Boolean(window.localStorage.getItem("cp_access_token"));
+    setIsAuthenticated(hasToken);
     setAuthReady(true);
+    if (hasToken) {
+      void refreshRoles();
+    } else {
+      setRolesReady(true);
+    }
 
     const savedTheme = typeof window !== "undefined" ? localStorage.getItem("cp_theme") : null;
     const isDark = savedTheme
@@ -166,7 +191,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
 
     hydrated.current = true;
-  }, []);
+  }, [refreshRoles]);
 
   const toggleDarkMode = useCallback(() => {
     setDarkMode((prev) => {
@@ -416,13 +441,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [showToast],
   );
 
-  const setAuthenticated = useCallback((v: boolean) => {
-    setIsAuthenticated(v);
-  }, []);
+  const setAuthenticated = useCallback(
+    (v: boolean) => {
+      setIsAuthenticated(v);
+      if (v) {
+        void refreshRoles();
+      } else {
+        setRoles([]);
+        setRolesReady(true);
+      }
+    },
+    [refreshRoles],
+  );
 
   const logout = useCallback(() => {
     clearAuth();
     setIsAuthenticated(false);
+    setRoles([]);
+    setRolesReady(true);
     setProfileState(null);
     showToast({
       variant: "info",
@@ -452,6 +488,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toggleDarkMode,
       isAuthenticated,
       authReady,
+      roles,
+      rolesReady,
+      isAdmin,
+      refreshRoles,
       setAuthenticated,
       logout,
       isSaved: (id) => savedColleges.includes(id),
@@ -500,6 +540,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toggleDarkMode,
       isAuthenticated,
       authReady,
+      roles,
+      rolesReady,
+      isAdmin,
+      refreshRoles,
       setAuthenticated,
       logout,
       toggleSave,

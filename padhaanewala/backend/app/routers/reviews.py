@@ -13,6 +13,7 @@ from app.schemas.content import (
     ReviewResponse,
     ReviewUpdate,
 )
+from app.roles import ADMIN_ROLES, CONTENT_ROLES
 
 router = APIRouter(prefix="/api/v1/reviews", tags=["reviews"])
 
@@ -82,7 +83,7 @@ def list_reviews_for_college(
 def moderation_queue(
     status: str = Query("submitted", pattern="^(submitted|approved|rejected)$"),
     db: Session = Depends(get_db),
-    _: User = Depends(require_role("admin", "super_admin", "content_manager")),
+    _: User = Depends(require_role(*CONTENT_ROLES)),
 ):
     reviews = db.scalars(
         select(Review)
@@ -165,7 +166,7 @@ def moderate_review(
     review_id: int,
     payload: ReviewModerate,
     db: Session = Depends(get_db),
-    moderator: User = Depends(require_role("admin", "super_admin", "content_manager")),
+    moderator: User = Depends(require_role(*CONTENT_ROLES)),
 ):
     review = db.get(Review, review_id)
     if review is None:
@@ -200,7 +201,7 @@ def moderate_review(
 def delete_review(
     review_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role("admin", "super_admin")),
+    user: User = Depends(require_role(*ADMIN_ROLES)),
 ):
     review = db.get(Review, review_id)
     if review is None:
