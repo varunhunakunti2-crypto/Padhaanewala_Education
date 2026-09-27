@@ -43,6 +43,80 @@ class LogoutRequest(BaseModel):
     refresh_token: str = Field(..., min_length=20)
 
 
+# --------------------------------------------------------------- Phase 3: OTP
+# The mobile validator is shared with RegisterRequest rather than repeated, so a
+# number accepted at signup is a number the OTP endpoints will also accept.
+
+
+def _validate_mobile(value: str) -> str:
+    digits = "".join(ch for ch in value if ch.isdigit())
+    if not digits.startswith(("6", "7", "8", "9")) or len(digits) != 10:
+        raise ValueError("Mobile must be a valid 10-digit Indian number")
+    return digits
+
+
+class MobileOtpSendRequest(BaseModel):
+    """Body for requesting a login OTP against a mobile number."""
+
+    mobile: str = Field(..., min_length=10, max_length=15)
+
+    @field_validator("mobile")
+    @classmethod
+    def check_mobile(cls, value: str) -> str:
+        return _validate_mobile(value)
+
+
+class MobileOtpVerifyRequest(BaseModel):
+    mobile: str = Field(..., min_length=10, max_length=15)
+    otp: str = Field(..., min_length=4, max_length=10, pattern=r"^[0-9]+$")
+
+    @field_validator("mobile")
+    @classmethod
+    def check_mobile(cls, value: str) -> str:
+        return _validate_mobile(value)
+
+
+class VerifyEmailRequest(BaseModel):
+    token: str = Field(..., min_length=20, max_length=200)
+
+
+class ResendVerificationRequest(BaseModel):
+    email: EmailStr
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        return value.strip().lower() if isinstance(value, str) else value
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        return value.strip().lower() if isinstance(value, str) else value
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(..., min_length=20, max_length=200)
+    new_password: str = Field(..., min_length=8, max_length=128)
+
+
+class OtpChallengeResponse(BaseModel):
+    """Acknowledge a send without revealing whether the account exists.
+
+    `expires_in_seconds` is the only genuinely useful fact for the caller, and
+    it is constant across all responses on a given endpoint so it cannot be used
+    to distinguish a registered number from an unregistered one.
+    """
+
+    success: bool = True
+    message: str
+    expires_in_seconds: int
+
+
+
 class UserResponse(BaseModel):
     id: int
     email: EmailStr

@@ -8,11 +8,23 @@ const USER_KEY = "cp_user";
 
 export class ApiError extends Error {
   status: number;
+  /**
+   * The raw `detail` from the response body, kept as-is.
+   *
+   * Most endpoints return a plain string, but `POST /auth/login` returns a
+   * structured object when the account exists and its email is unconfirmed
+   * (`{ code: "email_not_verified", email, resend_endpoint }`). Collapsing that
+   * to a string — as the previous message-building code did — threw away the one
+   * field the login screen needs in order to offer a resend instead of asking
+   * for the password again.
+   */
+  detail?: unknown;
 
-  constructor(message: string, status = 0) {
+  constructor(message: string, status = 0, detail?: unknown) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.detail = detail;
   }
 }
 
@@ -180,18 +192,26 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
 
   if (!res.ok) {
-    let detail = `Request failed (${res.status})`;
+    let detail: unknown;
+    let message = `Request failed (${res.status})`;
     try {
       const data = await res.json();
-      if (data && typeof data.detail === "string") {
-        detail = data.detail;
-      } else if (data && Array.isArray(data.detail)) {
-        detail = data.detail.map((d: { msg?: string }) => d.msg ?? "").filter(Boolean).join(", ");
+      detail = data?.detail;
+      if (typeof detail === "string") {
+        message = detail;
+      } else if (Array.isArray(detail)) {
+        message = detail
+          .map((d: { msg?: string }) => d.msg ?? "")
+          .filter(Boolean)
+          .join(", ");
+      } else if (detail && typeof detail === "object") {
+        const structured = detail as { message?: string };
+        if (structured.message) message = structured.message;
       }
     } catch {
       /* body was not JSON */
     }
-    throw new ApiError(detail, res.status);
+    throw new ApiError(message, res.status, detail);
   }
 
   if (res.status === 204) return undefined as T;
@@ -522,3 +542,90 @@ export const adminApi = {
 export function isForbidden(err: unknown): boolean {
   return err instanceof ApiError && err.status === 403;
 }
+
+/* ------------------------------------------------------------------ *
+ * Phase 3 — OTP, email verification, password reset
+ * ------------------------------------------------------------------ */
+
+/** Shape of the structured 403 `POST /auth/login` returns for an unverified address. */
+interface EmailNotVerifiedDetail {
+  code: "email_not_verified";
+  message: string;
+  email: string;
+  resend_endpoint: string;
+}
+
+/**
+ * True when a login was refused *only* because the address is unconfirmed.
+ *
+ * Narrow on purpose: it must not fire for a deactivated account, which also
+ * returns 403 but with a plain-string detail, or the UI would offer to resend a
+ * confirmation email to somebody who can never use it.
+ */
+export function isEmailNotVerified(err: unknown): err is ApiError & { detail: EmailNotVerifiedDetail } {
+  if (!(err instanceof ApiError) || err.status !== 403) return false;
+  const detail = err.detail as Partial<EmailNotVerifiedDetail> | undefined;
+  return detail?.code === "email_not_verified" && typeof detail.email === "string";
+}
+
+export interface OtpChallenge {
+  success: boolean;
+  message: string;
+  expires_in_seconds: number;
+}
+
+export interface StandardActionResponse {
+  success: boolean;
+  message: string;
+  data: Record<string, unknown>;
+}
+
+export const otpApi = {
+  /** Ask for a sign-in OTP. The response is identical for unknown numbers. */
+  sendLoginOtp: (mobile: string) =>
+    apiFetch<OtpChallenge>("/auth/login/otp/send", {
+      method: "POST",
+      body: JSON.stringify({ mobile }),
+    }),
+
+  verifyLoginOtp: (mobile: string, otp: string) =>
+    apiFetch<AuthTokens>("/auth/login/otp/verify", {
+      method: "POST",
+      body: JSON.stringify({ mobile, otp }),
+    }),
+
+  /** Authenticated: verify the mobile already on the account. */
+  sendMobileOtp: () =>
+    apiFetch<OtpChallenge>("/auth/verify-mobile/send", { method: "POST" }),
+
+  verifyMobile: (mobile: string, otp: string) =>
+    apiFetch<StandardActionResponse>("/auth/verify-mobile/verify", {
+      method: "POST",
+      body: JSON.stringify({ mobile, otp }),
+    }),
+
+  /** Consumes the `?token=` from the confirmation email. */
+  verifyEmail: (token: string) =>
+    apiFetch<StandardActionResponse>("/auth/verify-email", {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    }),
+
+  resendVerification: (email: string) =>
+    apiFetch<StandardActionResponse>("/auth/verify-email/resend", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }),
+
+  forgotPassword: (email: string) =>
+    apiFetch<StandardActionResponse>("/auth/forgot-password", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }),
+
+  resetPassword: (token: string, newPassword: string) =>
+    apiFetch<StandardActionResponse>("/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify({ token, new_password: newPassword }),
+    }),
+};

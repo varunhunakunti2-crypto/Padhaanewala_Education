@@ -1,9 +1,13 @@
 """Pytest bootstrap.
 
-Two safety measures are applied before the application is imported:
+Three safety measures are applied before the application is imported:
 
 1. Rate limiting is disabled so auth tests are not throttled by Redis.
-2. The suite runs inside a dedicated PostgreSQL **schema** rather than the
+2. Email verification is not enforced at login, because registration creates
+   users with `is_email_verified=False` and roughly fifteen tests across eight
+   files register-then-login expecting tokens. The gate itself is still covered
+   explicitly in `test_otp.py`, which re-enables it per-test via monkeypatch.
+3. The suite runs inside a dedicated PostgreSQL **schema** rather than the
    default `public` schema. Previously it ran against the developer database and
    executed `TRUNCATE TABLE users CASCADE` on it, silently destroying real data.
 
@@ -24,6 +28,7 @@ import os
 import sys
 
 os.environ["RATE_LIMIT_ENABLED"] = "false"
+os.environ["EMAIL_VERIFICATION_REQUIRED"] = "false"
 os.environ.setdefault("PADHAANEWALA_SCHEMA", "test_suite")
 
 # Make the repo root importable regardless of the invocation directory.
@@ -94,7 +99,8 @@ def _clean_users():
             text(
                 "TRUNCATE TABLE users, enquiries, consent_records, reviews, "
                 "test_answers, test_attempts, notifications, saved_colleges, "
-                "lead_notes, lead_status_history RESTART IDENTITY CASCADE"
+                "lead_notes, lead_status_history, otp_records "
+                "RESTART IDENTITY CASCADE"
             )
         )
     yield

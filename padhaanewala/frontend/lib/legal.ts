@@ -20,7 +20,10 @@
  *    Analytics, not Meta Pixel, not Sentry, not Vercel Analytics.
  *  - No payment gateway is integrated. Every service is currently free.
  *  - There is no file upload anywhere, so no documents or photographs are held.
- *  - Email and mobile are collected but not verified by OTP or link.
+ *  - Email and mobile are verified: the address by a one-time emailed link, the
+ *    mobile by an SMS OTP. Both are stored only as a bcrypt digest of the secret
+ *    in the `otp_records` table, never in plaintext. A reset link is a bearer
+ *    credential for the account, so it expires (60 min) and is single-use.
  *  - The AI assistant forwards the user's raw message to OpenAI
  *    (app/api/ai/route.ts:25-45) and falls back to canned replies when
  *    OPENAI_API_KEY is unset.
@@ -125,6 +128,7 @@ export const LEGAL_DOCS: readonly LegalDoc[] = [
           ),
           ul(
             "Account information you give us: your name, email address, mobile number, and a securely hashed version of your password. We never store or email your password itself.",
+            "Verification records: to confirm your email address we store a hashed one-time link token, and to confirm your mobile we store a hashed one-time code, together with whether it has been used, when it expires and how many incorrect attempts were made. We do not store the code or token itself, in any form.",
             "Content you create: admission-enquiry details, college and course shortlists, scholarship bookmarks, comparison lists, reviews you write, mock-test attempts and the answers you give, notifications, and the messages you type to the AI assistant.",
             "Information collected automatically: your IP address, the browser and device you are using, the pages and API endpoints you request, and the time of the request. This is ordinary web-server logging, used to keep the service running and to detect abuse.",
             "Data from our AI assistant: the text of the question you type. It is forwarded to our AI processor (OpenAI) to generate a reply, as described under “AI features and third-party processing” below.",
@@ -145,8 +149,9 @@ export const LEGAL_DOCS: readonly LegalDoc[] = [
             "To answer your messages through the AI assistant.",
             "To respond to admission-enquiry and counselling requests you submit to us.",
             "To display the reviews you have chosen to publish, with your name, so that other students can read them.",
-            "To detect and prevent abuse: rate-limiting, securing accounts, and investigating abuse or fraud reports.",
+            "To detect and prevent abuse: rate-limiting, securing accounts, and investigating abuse or fraud reports. Sends of a one-time code are capped per phone number, so the limit cannot be sidestepped by varying the format of the number.",
             "To send you service messages about your account, such as a password change or a security alert. Marketing email is not sent unless you have asked for it.",
+            "To confirm that the email address and mobile number you gave us are really yours, and to let you recover access if you forget your password. These messages are strictly transactional, contain no marketing content, and stop as soon as the address is confirmed.",
           ),
         ],
       },
@@ -194,6 +199,8 @@ export const LEGAL_DOCS: readonly LegalDoc[] = [
           ul(
             "Our application and API hosting provider, and our database and Redis hosting providers, which store and serve the data described above.",
             "OpenAI, as the processor for AI assistant messages.",
+            "MSG91, as the processor for transactional SMS. Your mobile number and the one-time code are sent to them to deliver the message. Indian law also requires every such message to match a template registered with a Distributed Ledger Technology operator, so the operator and template id are part of the send.",
+            "Our email delivery provider — either SendGrid or an SMTP relay you configure — as the processor for verification, confirmation and password-reset emails. They receive the recipient address, the message, and a single-use link where applicable.",
             "Professional advisers, auditors or insurers, under a duty of confidence.",
             "Government bodies, courts or law-enforcement agencies, but only where we are legally required to disclose, and we will tell you unless the law prohibits it.",
           ),
@@ -219,7 +226,10 @@ export const LEGAL_DOCS: readonly LegalDoc[] = [
         heading: "How we protect it",
         blocks: [
           p(
-            "Passwords are hashed with bcrypt rather than stored, so a breach of our database would not reveal them. Traffic is served over HTTPS. Data access is restricted to the people who need it, administrative actions are written to an audit log, and rate limiting helps prevent automated attacks.",
+            "Passwords are hashed with bcrypt rather than stored, so a breach of our database would not reveal them. One-time codes and email link tokens are hashed the same way, so we never hold a code that would let anyone sign in as you. Traffic is served over HTTPS. Data access is restricted to the people who need it, administrative actions are written to an audit log, and rate limiting helps prevent automated attacks.",
+          ),
+          p(
+            "A password-reset link is a bearer credential for your account: whoever holds it can set a new password. It therefore expires after 60 minutes, can be used exactly once, and is invalidated the moment a new one is issued. Requesting a new link retires the previous one.",
           ),
           p(
             "No system is perfectly secure. If a breach affects your personal data and is likely to cause you harm, we will notify you and the relevant authority as required by law.",
@@ -342,6 +352,12 @@ export const LEGAL_DOCS: readonly LegalDoc[] = [
         blocks: [
           p(
             "You are responsible for keeping your password confidential and for all activity that happens under your account. Tell us promptly if you believe your account has been accessed by someone else. You must not share an account, and you must not create accounts in bulk or programmatically.",
+          ),
+          p(
+            "We confirm the email address on your account from a one-time link and the mobile number from a one-time code sent by SMS. You must give us an address and a number you control, and you must not ask for codes to be sent to someone else's number. Signing in may require a confirmed email address; where it does, we will say so and give you a way to resend the confirmation rather than leaving you to guess.",
+          ),
+          p(
+            "A password-reset link lets whoever holds it set a new password, so treat it like a password. It expires after 60 minutes and stops working as soon as a new one is issued or as soon as it is used. If you did not request a reset, you can ignore the message, but you should also change your password and let us know.",
           ),
         ],
       },

@@ -15,6 +15,7 @@ from app.models.location import City, District, State
 from app.models.media import Media
 from app.models.mock_test import MockTest, TestAnswer, TestAttempt, TestQuestion
 from app.models.notification import Notification
+from app.models.otp_record import OtpRecord
 from app.models.placement import PlacementRecord
 from app.models.ranking import NIRFRanking, OtherRanking
 from app.models.review import Review
@@ -58,6 +59,7 @@ __all__ = [
     "NIRFRanking",
     "Notification",
     "OtherRanking",
+    "OtpRecord",
     "PlacementRecord",
     "Review",
     "Role",
