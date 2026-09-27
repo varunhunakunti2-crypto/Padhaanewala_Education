@@ -20,8 +20,19 @@ if SCHEMA:
 engine = create_engine(
     DATABASE_URL,
     pool_pre_ping=True,
-    pool_size=5,
-    max_overflow=10,
+    # These were 5/10, which is the SQLAlchemy default and far too small for a
+    # process that also serves a Next.js server. `next build` prerendering the
+    # catalogue issued ~4000 concurrent requests and exhausted the pool:
+    #   sqlalchemy.exc.TimeoutError: QueuePool limit of size 5 overflow 10
+    #   reached, connection timed out, timeout 30.00
+    # with one request observed hanging for over 11 minutes. Sized for
+    # production rather than a single script.
+    pool_size=settings.DB_POOL_SIZE,
+    max_overflow=settings.DB_MAX_OVERFLOW,
+    pool_timeout=settings.DB_POOL_TIMEOUT_SECONDS,
+    # Recycle below the typical 5-minute idle window imposed by proxies and
+    # cloud load balancers so a reaped connection is never handed out.
+    pool_recycle=280,
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
