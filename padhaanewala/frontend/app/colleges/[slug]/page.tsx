@@ -10,8 +10,19 @@ interface PageProps {
   params: Promise<{ slug: string }>;
 }
 
+/**
+ * Only a seed set is prerendered. The catalogue is 341 colleges today with a
+ * 1000+ target, and each of these pages fans out to `getCollegeBundle` (9
+ * requests) plus the full college list for the "similar colleges" section.
+ * Prerendering all of them made the build exceed the 60s per-page budget and
+ * exit non-zero. Anything not listed here is still generated on first request
+ * and cached (`dynamicParams` defaults to true), and `app/sitemap.ts` calls
+ * `resolveSlugs` without a limit so every college stays discoverable.
+ */
+const PRERENDER_SEED = 25;
+
 export async function generateStaticParams() {
-  const slugs = await resolveSlugs("colleges");
+  const slugs = await resolveSlugs("colleges", PRERENDER_SEED);
   return slugs.map((slug) => ({ slug }));
 }
 

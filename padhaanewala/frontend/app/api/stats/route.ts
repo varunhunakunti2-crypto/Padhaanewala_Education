@@ -11,45 +11,62 @@ const API = BACKEND.endsWith("/api/v1") ? BACKEND : `${BACKEND}/api/v1`;
 type SourceResult = { count: number; error: string | null };
 
 /**
- * Count rows at one catalogue endpoint.
+ * Count rows in the catalogue.
  *
  * Failures are returned, not swallowed. The previous version collapsed every
  * error path into `0`, so a backend outage was indistinguishable from an empty
  * catalogue and the route still answered `ok: true` — which is how the admin
  * panel ended up reporting a healthy API while every number sat at zero.
+ *
+ * This used to call the six list endpoints with `?limit=10000` and report
+ * `data.length`, which conflated a page size with a population size. The list
+ * endpoints now cap `limit` (they were a full-table-dump vector at
+ * `?limit=1000000`), so that approach would have reported HTTP 200 with every
+ * count silently truncated at the page cap — a dashboard that looks real and is
+ * wrong. `/api/v1/stats/catalog` returns true `COUNT(*)` values server-side,
+ * matching each list endpoint's own visibility rule, and transfers no rows.
  */
-async function listLength(endpoint: string): Promise<SourceResult> {
-  try {
-    const res = await fetch(`${API}${endpoint}?limit=10000`, {
-      cache: "no-store",
-      signal: AbortSignal.timeout(6000),
-    });
-    if (!res.ok) return { count: 0, error: `HTTP ${res.status}` };
+async function fetchCatalogStats(): Promise<Record<string, number>> {
+  const res = await fetch(`${API}/stats/catalog`, {
+    cache: "no-store",
+    signal: AbortSignal.timeout(6000),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-    const data = await res.json();
-    if (!Array.isArray(data)) return { count: 0, error: "unexpected response shape" };
-
-    return { count: data.length, error: null };
-  } catch (err) {
-    return {
-      count: 0,
-      error: err instanceof Error ? err.message : "request failed",
-    };
+  const data = await res.json();
+  if (data === null || typeof data !== "object" || Array.isArray(data)) {
+    throw new Error("unexpected response shape");
   }
+  return data as Record<string, number>;
 }
 
 export async function GET() {
-  const [colleges, courses, exams, scholarships, blogs, mockTests] =
-    await Promise.all([
-      listLength("/colleges"),
-      listLength("/courses"),
-      listLength("/exams"),
-      listLength("/scholarships"),
-      listLength("/blogs"),
-      listLength("/mock-tests"),
-    ]);
+  const endpoints: Record<string, string> = {
+    colleges: "colleges",
+    courses: "courses",
+    exams: "exams",
+    scholarships: "scholarships",
+    blogs: "blogs",
+    mockTests: "mock_tests",
+  };
 
-  const sources = { colleges, courses, exams, scholarships, blogs, mockTests };
+  let stats: Record<string, number> | null = null;
+  let error: string | null = null;
+  try {
+    stats = await fetchCatalogStats();
+  } catch (err) {
+    error = err instanceof Error ? err.message : "request failed";
+  }
+
+  const sources: Record<string, SourceResult> = {};
+  for (const [key, field] of Object.entries(endpoints)) {
+    const value = stats?.[field];
+    sources[key] = {
+      count: typeof value === "number" ? value : 0,
+      error: typeof value === "number" ? null : (error ?? "missing count"),
+    };
+  }
+
   const failed = Object.entries(sources)
     .filter(([, v]) => v.error !== null)
     .map(([k]) => k);
@@ -60,12 +77,12 @@ export async function GET() {
   // `fetchCatalogStats` discard the healthy counts along with the broken ones.
   return NextResponse.json({
     ok: failed.length === 0,
-    colleges: colleges.count,
-    courses: courses.count,
-    exams: exams.count,
-    scholarships: scholarships.count,
-    blogs: blogs.count,
-    mockTests: mockTests.count,
+    colleges: sources.colleges.count,
+    courses: sources.courses.count,
+    exams: sources.exams.count,
+    scholarships: sources.scholarships.count,
+    blogs: sources.blogs.count,
+    mockTests: sources.mockTests.count,
     sourceStatus: Object.fromEntries(
       Object.entries(sources).map(([k, v]) => [k, v.error ? ("error" as const) : ("ok" as const)]),
     ),

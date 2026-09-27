@@ -31,8 +31,11 @@ interface PageProps {
   params: Promise<{ slug: string }>;
 }
 
+/** Seed set only; the rest render on demand and are cached by ISR. */
+const PRERENDER_SEED = 25;
+
 export async function generateStaticParams() {
-  const slugs = await resolveSlugs("courses");
+  const slugs = await resolveSlugs("courses", PRERENDER_SEED);
   return slugs.map((slug) => ({ slug }));
 }
 

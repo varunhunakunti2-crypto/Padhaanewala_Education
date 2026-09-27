@@ -145,30 +145,44 @@ export async function resolveMockTest(slug: string): Promise<Resolved<MockTest |
 
 /* ------------------------------- slugs -------------------------------- */
 
-/** Slug list for generateStaticParams / sitemap, taken from the API. */
+/**
+ * Slug list for generateStaticParams / sitemap, taken from the API.
+ *
+ * `limit` caps how many slugs are returned. `generateStaticParams` uses a cap
+ * because prerendering every catalogue page at build time does not scale: the
+ * college page fans out to `getCollegeBundle` (9 requests) plus the college
+ * list, so 341 colleges meant ~4000 build-time requests and the build began
+ * timing out at 60s per page and failing outright. Unlisted params are still
+ * generated on first request and then cached by ISR (`dynamicParams`
+ * defaults to true), and `app/sitemap.ts` calls this without a limit so every
+ * page stays discoverable — seeding the build and enumerating the catalogue
+ * are different jobs and should not share one number.
+ */
 export async function resolveSlugs(
   kind: "colleges" | "exams" | "courses" | "blogs" | "mock-tests",
+  limit?: number,
 ): Promise<string[]> {
+  const cap = (slugs: string[]) => (limit ? slugs.slice(0, limit) : slugs);
   switch (kind) {
     case "colleges": {
       const rows = await getColleges();
-      return rows.map((r) => r.slug);
+      return cap(rows.map((r) => r.slug));
     }
     case "exams": {
       const rows = await getExams();
-      return rows.map((r) => r.slug);
+      return cap(rows.map((r) => r.slug));
     }
     case "courses": {
       const rows = await getCourses();
-      return rows.map((r) => r.slug);
+      return cap(rows.map((r) => r.slug));
     }
     case "blogs": {
       const rows = await getBlogs();
-      return rows.map((r) => r.slug);
+      return cap(rows.map((r) => r.slug));
     }
     case "mock-tests": {
       const rows = await getMockTests();
-      return rows.map((r) => r.slug);
+      return cap(rows.map((r) => r.slug));
     }
   }
 }

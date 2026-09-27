@@ -262,14 +262,33 @@ export async function submitEnquiry(payload: EnquiryPayload): Promise<EnquiryRes
   });
 }
 
-let coursesCache: { id: number; name: string; degree: string | null }[] | null = null;
+type CourseLookupRow = { id: number; name: string; degree: string | null };
+
+let coursesCache: CourseLookupRow[] | null = null;
 let statesCache: { id: number; name: string }[] | null = null;
 
-async function courseLookup(): Promise<NonNullable<typeof coursesCache>> {
+/**
+ * Must stay in step with the backend's `le=` bound on `limit`; a value above
+ * it is rejected with 422, which used to surface as a silently empty course
+ * list rather than an error. Pages are walked so the lookup keeps working as
+ * the catalogue grows past one page.
+ */
+const COURSE_PAGE_SIZE = 100;
+
+async function courseLookup(): Promise<CourseLookupRow[]> {
   if (!coursesCache) {
-    coursesCache = await apiFetch<NonNullable<typeof coursesCache>>("/courses?limit=10000");
+    const rows: CourseLookupRow[] = [];
+    for (;;) {
+      const page = await apiFetch<CourseLookupRow[]>(
+        `/courses?limit=${COURSE_PAGE_SIZE}&offset=${rows.length}`,
+      ).catch(() => null);
+      if (!Array.isArray(page) || page.length === 0) break;
+      rows.push(...page);
+      if (page.length < COURSE_PAGE_SIZE) break;
+    }
+    coursesCache = rows;
   }
-  return coursesCache ?? [];
+  return coursesCache;
 }
 
 async function stateLookup(): Promise<NonNullable<typeof statesCache>> {

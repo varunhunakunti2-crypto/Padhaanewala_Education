@@ -47,6 +47,56 @@ async function serverGetAll<T>(path: string, revalidate: number): Promise<T[]> {
   return Array.isArray(data) ? data : [];
 }
 
+/**
+ * Fetch every row of a list endpoint by following `limit`/`offset` pages.
+ *
+ * The backend caps `limit` (an uncapped `?limit=1000000` was a full table
+ * dump), so asking for `?limit=1000` silently returns one page instead of
+ * erroring — which is worse than a 422, because the caller gets a short
+ * dataset with no indication anything was dropped. The catalogue here is
+ * 341 colleges against a 100-row cap, so this is a real truncation today, not
+ * a hypothetical.
+ *
+ * Pages are requested sequentially and the whole result is memoised per
+ * (path, revalidate) for the lifetime of the build or request, so a page that
+ * renders 300 colleges still issues one walk rather than 300.
+ */
+const pagedCache = new Map<string, Promise<unknown[]>>();
+
+/** Hard ceiling on rows so a runaway endpoint cannot exhaust memory. */
+const MAX_PAGED_ROWS = 5000;
+/** Must match the backend's `le=` bound; a 422 means the two have drifted. */
+const PAGE_SIZE = 100;
+
+async function serverGetAllPaged<T>(
+  path: string,
+  revalidate: number,
+): Promise<T[]> {
+  const cacheKey = `${path}|${revalidate}`;
+  const cached = pagedCache.get(cacheKey);
+  if (cached) return (await cached) as T[];
+
+  const run = (async () => {
+    const rows: T[] = [];
+    const separator = path.includes("?") ? "&" : "?";
+    for (;;) {
+      const page = await serverGet<T[]>(
+        `${path}${separator}limit=${PAGE_SIZE}&offset=${rows.length}`,
+        revalidate,
+      );
+      if (!Array.isArray(page) || page.length === 0) break;
+      rows.push(...page);
+      // A short page means we have reached the end.
+      if (page.length < PAGE_SIZE) break;
+      if (rows.length >= MAX_PAGED_ROWS) break;
+    }
+    return rows;
+  })();
+
+  pagedCache.set(cacheKey, run);
+  return (await run) as T[];
+}
+
 /* ------------------------------------------------------------------ *
  * Response types — mirror the FastAPI Pydantic schemas exactly.
  * ------------------------------------------------------------------ */
@@ -380,13 +430,16 @@ export const getDistricts = (stateId: number) =>
   serverGetAll<ApiDistrict>(`/locations/states/${stateId}/districts`, REVALIDATE.catalogList);
 
 export const getUniversities = () =>
-  serverGetAll<ApiUniversity>("/universities?limit=500", REVALIDATE.catalogList);
+  serverGetAllPaged<ApiUniversity>("/universities", REVALIDATE.catalogList);
 
 export const getCourses = () =>
-  serverGetAll<ApiCourse>("/courses?limit=1000", REVALIDATE.catalogList);
+  serverGetAllPaged<ApiCourse>("/courses", REVALIDATE.catalogList);
 
-export const getColleges = (query = "limit=1000") =>
-  serverGetAll<ApiCollegeListItem>(`/colleges?${query}`, REVALIDATE.catalogList);
+export const getColleges = (query = "") =>
+  serverGetAllPaged<ApiCollegeListItem>(
+    query ? `/colleges?${query}` : "/colleges",
+    REVALIDATE.catalogList,
+  );
 
 export const getCollegeBySlug = (slug: string) =>
   serverGet<ApiCollegeDetail>(`/colleges/${encodeURIComponent(slug)}`, REVALIDATE.catalogDetail);
@@ -421,28 +474,34 @@ export const getFaqs = (entityType: string, entityId: number) =>
     REVALIDATE.catalogDetail,
   );
 
-export const getExams = () => serverGetAll<ApiExam>("/exams?limit=200", REVALIDATE.catalogList);
+export const getExams = () => serverGetAllPaged<ApiExam>("/exams", REVALIDATE.catalogList);
 
 export const getExamBySlug = (slug: string) =>
   serverGet<ApiExam>(`/exams/${encodeURIComponent(slug)}`, REVALIDATE.catalogDetail);
 
-export const getScholarships = (query = "limit=200") =>
-  serverGetAll<ApiScholarship>(`/scholarships?${query}`, REVALIDATE.catalogList);
+export const getScholarships = (query = "") =>
+  serverGetAllPaged<ApiScholarship>(
+    query ? `/scholarships?${query}` : "/scholarships",
+    REVALIDATE.catalogList,
+  );
 
 export const getScholarshipBySlug = (slug: string) =>
   serverGet<ApiScholarship>(`/scholarships/${encodeURIComponent(slug)}`, REVALIDATE.catalogDetail);
 
-export const getBlogs = (query = "status=published&limit=100") =>
-  serverGetAll<ApiBlog>(`/blogs?${query}`, REVALIDATE.content);
+export const getBlogs = (query = "status=published") =>
+  serverGetAllPaged<ApiBlog>(`/blogs?${query}`, REVALIDATE.content);
 
 export const getBlogBySlug = (slug: string) =>
   serverGet<ApiBlog>(`/blogs/${encodeURIComponent(slug)}`, REVALIDATE.content);
 
 export const getBlogCategories = () =>
-  serverGetAll<ApiBlogCategory>("/blog-categories?limit=100", REVALIDATE.content);
+  serverGetAll<ApiBlogCategory>("/blog-categories", REVALIDATE.content);
 
-export const getMockTests = (query = "limit=200") =>
-  serverGetAll<ApiMockTest>(`/mock-tests?${query}`, REVALIDATE.catalogList);
+export const getMockTests = (query = "") =>
+  serverGetAllPaged<ApiMockTest>(
+    query ? `/mock-tests?${query}` : "/mock-tests",
+    REVALIDATE.catalogList,
+  );
 
 export const getMockTestBySlug = (slug: string) =>
   serverGet<ApiMockTest>(`/mock-tests/${encodeURIComponent(slug)}`, REVALIDATE.catalogDetail);
