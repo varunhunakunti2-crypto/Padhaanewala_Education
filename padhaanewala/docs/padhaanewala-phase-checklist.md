@@ -1,23 +1,44 @@
 # PADHAANEWALA — MASTER PHASE CHECKLIST + MANDATORY PREREQUISITES
 Generated from: `padhaanewala-complete.md` (Master Plan V5.0)
 
-## STATUS UPDATE — Last reviewed: 13 September 2026 (re-verified against project code)
+## STATUS UPDATE — Last reviewed: 28 September 2026 (re-verified against project code)
 
-**Current progress: 4 of 105 phases completed — Phase 1 ✅ (gate PASSED), Phase 2 ✅ (Users/Auth/Roles backend + tests), Phase 8 ✅ (backend complete), Phase 11 ✅ (College CRUD API verified).** Backend models + migration chain now cover Phases 2, 4–11 (users/auth/roles, locations, universities, colleges/courses/fees, scholarships/exams, reviews/blogs/FAQs/media/SEO/notifications/audit/banners, mock tests/questions, enquiries/leads/saved/consent, placement/NIRF/cutoff/seat matrix). Frontend static pages now cover home, listing + detail pages for colleges/courses/scholarships/exams/blog/mock-tests, college predictor, compare, login UI, about/contact/privacy/terms static pages + Jobhire landing — **every known route renders (no 404s)**. Frontend got a premium UX pass (`daa1ac2`): shared reveal/stagger motion, reduced-motion support, mobile sticky counselling CTA, a **live lead form on `/contact` wired to the Phase 9 enquiry API**, plus `robots.ts`, `sitemap.xml` and Organization JSON-LD.
+**Current progress: 7 of 105 phases complete, 6 more code-complete but ungated.** This review was done by *measuring the code*, not by trusting the previous status column: the live OpenAPI schema was dumped (108 paths / 24 tags), every table counted in the dev database, and each previously-"pending" claim re-checked against the source. Several rows below were wrong in the old revision — notably Phases 10, 12, 13 and 14 were marked incomplete but are in fact built.
 
-> Re-verified 11 Sep 2026: Docker stack live (PostgreSQL 15 on host port 5433 + Redis 7). Homepage built with placeholder data (API-swap later). **Discovery:** `origin/develop` already contained Phase 2/4/6 code (users/auth/roles `bbe7820`, locations/universities/colleges/courses/fees/scholarships/exams `605b88f`, test fix `bce279f`). Migrations applied to live Docker PG (head `63603ea2106d`), seeds run (36 states/755 districts/105 cities, 155 universities, 14 roles, 20 courses/10 colleges, 6 exams, 6 scholarships), and **Phase 11 verified: 37/37 backend tests green + live CRUD smoke test** (fixes: `ErrorDetail` ordering in `schemas/common.py`; Bengaluru city district mapping in `seed_locations.py`).
+**Verified inventory, 28 Sep 2026:** 23 routers, 27 models, 10 Alembic migrations (head `b4e91d7a2c58`, single head, applied to the dev database), 13 test files, **225 tests green / 1 skipped**. Database: 42 tables. Seed data: 36 states (28 + 8 UTs), 755 districts, 106 cities, 168 universities, 331 colleges, 22 courses, 6 exams, 6 scholarships, 14 roles.
+
+**Block B seeding gate is now MET** (was listed as unverified): 28 states + 8 UTs present, districts 755 against a ~780 target, and 331 colleges carry real rows. Two content-thin tables remain: `fees` is empty and courses/exams/scholarships sit at 22/6/6 against the Phase 65 targets of 50+/50+/100+.
+
+> Re-verified 28 Sep 2026 (Phase 3 + security review): OTP backend and frontend complete — 8 new endpoints, `otp_records` migration, MSG91/SMTP provider adapters with console fallback, 39 OTP tests. A review pass then found and fixed four real defects: the email gate was **not enforced at all** on the OTP login path (the 403 existed only on `send`); `/login/otp/send` leaked account existence through three separate oracles (a distinct message for unconfirmed addresses, a 429 for rate-limited numbers, a 502 for provider failures); the send rate limit was **not** atomic despite a docstring claiming it was; and the production guard rejected a valid `EMAIL_PROVIDER=smtp` deployment because it demanded an `EMAIL_API_KEY` that SMTP never reads. Legal copy that still claimed "email and mobile are not verified by OTP" was corrected, and MSG91 + the email provider added to the disclosed processor list.
+
+> Re-verified 11 Sep 2026: Docker stack live (PostgreSQL 15 on host port 5433 + Redis 7). Homepage built with placeholder data (API-swap later). **Discovery:** `origin/develop` already contained Phase 2/4/6 code (users/auth/roles `bbe7820`, locations/universities/colleges/courses/fees/scholarships/exams `605b88f`, test fix `bce279f`). Migrations applied to live Docker PG (head `63603ea2106d`), seeds run, and **Phase 11 verified: 37/37 backend tests green + live CRUD smoke test** (fixes: `ErrorDetail` ordering in `schemas/common.py`; Bengaluru city district mapping in `seed_locations.py`).
 
 > Re-verified 12 Sep 2026: backend grew 4 migrations + 10 routers + 2 test files; frontend grew 4 routes. Suite was **52 tests** (auth 14 / catalog 23 / content 15). **Docker Desktop was NOT running at last review** — the 4 new migrations (`4e7270c87f0c` mock tests/questions, `2ce8d337ae09` content & engagement, `8cc76261fbc7` enquiries/leads/saved/consent, `68d5258b08f1` placement/NIRF/cutoff/seat matrix) and the full suite still needed to be applied/re-run live.
 
 > Re-verified 13 Sep 2026 (backend, live PG): Docker is down, so a dedicated **`.env.test`** was added pointing at the **native Windows PostgreSQL 16 (port 5432, `padhaanewala_test` DB)**. Fresh schema → all 8 Alembic migrations applied → all seeds run (36 states / 755 districts / 105 cities, 155 universities, 14 roles, 20 courses + 10 colleges, 6 scholarships, 6 exams). **Phase 2 (auth) completed + tested: 70/70 backend tests green on the live database** — this clears the previously-pending "run full suite against live DB" checklist item.
 
 ### Completed so far
-- ☑ **M1 (GitHub account)** — private repo `Padhaanewala_Education` created, connected, code pushed. Other accounts (AWS, OpenAI, MSG91, SendGrid, Sentry, Cloudflare, GA4, Search Console) **PENDING**.
+- ☑ **M1 (GitHub account)** — private repo `Padhaanewala_Education` created, connected, code pushed. Other accounts (AWS, OpenAI, **MSG91 + SendGrid — approved, expected in ~3 days**, Sentry, Cloudflare, GA4, Search Console) **PENDING**.
 - ☑ **M3 (Developer engaged)** — developer working; master doc handed over; repo `main` + `develop` branches active.
 - ✅ **Phase 1 (Setup Environment) — COMPLETE — Completion Gate PASSED (11 Sep 2026)**
 - ✅ **Phase 2 (Users, Auth, Roles) — COMPLETE — 13 Sep 2026** (register/login/refresh/logout, profile + change-password, roles list, admin user & role management with RBAC, email normalization; verified end-to-end on live PostgreSQL)
-- ✅ **Phase 11 (College CRUD API) — COMPLETE — verified 11 Sep 2026** (full list/filter/search/detail + admin create/update/delete with RBAC; 37/37 backend tests green against live Docker PG; bug fixes: `ErrorDetail` ordering, Bengaluru city district seed mapping)
-- ✅ **Phase 8 (Reviews, Blogs, FAQs, Media, SEO, Notifications, Audit) — BACKEND COMPLETE — 11–12 Sep 2026** (models `d1c6f8a`, routers `0a9decf`; 15 content tests on `develop`; frontend surface deferred to Blocks E/H)
+- ✅ **Phase 4 (States, Districts, Universities) — COMPLETE — 28 Sep 2026** (`locations` + `universities` routers; 36 states / 755 districts / 106 cities / 168 universities seeded and verified by direct table count)
+- ✅ **Phase 8 (Reviews, Blogs, FAQs, Media, SEO, Notifications, Audit) — BACKEND COMPLETE** (all 7 routers present; frontend surface deferred to Blocks E/H)
+- ✅ **Phase 11 (College CRUD API) — COMPLETE — verified 11 Sep 2026** (full list/filter/search/detail + admin create/update/delete with RBAC)
+- ✅ **Phase 12 (Course, Scholarship, Exam APIs) — BACKEND COMPLETE — 28 Sep 2026** (old revision wrongly said "admin CRUD pending": full POST/PUT/DELETE now exist on all three)
+- ✅ **Phase 14 (Placement, Cutoff, NIRF APIs) — BACKEND COMPLETE — 28 Sep 2026** (old revision wrongly said "☐": 6 public `catalog-data` queries + 27 `college-enrichment` endpoints incl. seat matrix, admissions, fees, NIRF and other rankings)
+- ✅ **Phase 15 (Login, Register, OTP Pages) — COMPLETE — 28 Sep 2026** (password + mobile-OTP login, `/forgot-password`, `/reset-password`, `/verify-email`; lint/typecheck/395-page build green)
+- 🟡 **Phase 3 (Email, SMS, OTP) — CODE COMPLETE, GATE PENDING — 28 Sep 2026.** Backend + frontend done, 39 tests. Gate cannot pass until MSG91 + email credentials land (~3 days). Until then both providers fall back to **console logging**, so no message has reached a real phone or inbox.
+- 🟡 **Phase 40 (College Predictor) — CODE COMPLETE, ungated** (`/predictor` POST + exam list; disclaimer copy pending review)
+- 🟡 **Phase 7 (Mock Tests, Questions) — PARTIAL** (15 mock-test endpoints incl. start/submit/attempts/result + admin create/update/delete, so Phases 42/44/45/46 are effectively built; **Phase 43 question-bank admin has no endpoints** and `test_questions` is empty)
+
+### Confirmed NOT started (measured, not assumed)
+- **Phase 13 — NLP query parse.** Text/filter search exists (`GET /colleges/search`); no NLP parse endpoint.
+- **Phase 25/36 — enquiry hand-off is missing.** `POST /enquiries` creates the enquiry and stops: it never creates a `Lead`, never writes a `Notification`, never emails the student or alerts an admin (`routers/enquiries.py` is 30 lines). The `leads` and `notifications` APIs exist and are unused by this path, so both the Phase 25 gate ("enquiry creates a lead admin can see") and the Phase 36 gate ("enquiry → student email + admin alert") **cannot** pass.
+- **Phases 47–55 — Proctored exams.** Effectively zero: "proctor" appears only as a role name and a schema field.
+- **Phases 56–64 — Data import.** Zero: no CSV import API, no fuzzy duplicate detection, no data-verification workflow.
+- **Phases 76–77 — DPDP parental consent + IT Rules 2021 takedown.** Zero: no parental/guardian or takedown code. The privacy policy openly states there is no age-verification or parental-consent record — a **known, disclosed** legal gap, not an oversight.
+- **Phases 78–95 — Monitoring, backup, DNS, analytics, CI/CD, staging, prod, load test, security audit.** Zero.
 
 ### Recently added (design/dev prep for upcoming phases — no phase gates passed)
 - ☑ `DESIGN.md` added — frontend design system reference (colors, typography) for Phase 16 (homepage/layout)
@@ -138,31 +159,31 @@ Generated from: `padhaanewala-complete.md` (Master Plan V5.0)
 | # | Phase | Mandatory before | Done |
 |---|---|---|---|
 | 2 | Users, Auth, Roles [DEV] | Phase 1 | ✅ **COMPLETE 13 Sep 2026** — register/login/refresh/logout, profile + change-password, roles list, admin user list/search/detail + activate/deactivate + role assignment (`require_role` RBAC), email-normalization hardening; suite now **70 tests** green on live PG (see 13 Sep status) |
-| 3 | Email, SMS, OTP [BOTH] | Phase 2 + **M1 (MSG91 + SendGrid/SES credentials BEFORE developer starts)** | ☐ |  this is paid 
-| 4 | States, Districts, Universities [DEV] | Phase 1 (*parallel* with 2, 3) | ☐ |
-| 5 | Colleges, Courses, Fees [DEV] | Phase 4 (college → state/district/university FK) | ☐ |
-| 6 | Scholarships, Exams [DEV] | Phase 4 (*parallel* with 5) | ☐ |
-| 7 | Mock Tests, Questions [DEV] | Phase 5 (→course) + Phase 6 (→exam) | ◐ PARTIAL — models + migration `4e7270c87f0c` + read APIs; question-bank admin → Phase 43 |
-| 8 | Reviews, Blogs, FAQs, Media, SEO, Notif., Audit [DEV] | Phase 2 + Phase 5 | ✅ **BACKEND COMPLETE 12 Sep 2026** — all routers + 15 tests; frontend surface deferred |
-| 9 | Enquiries, Leads, Saved, Consent [DEV] | Phase 2 + Phase 5 | ◐ PARTIAL — models + migration `8cc76261fbc7` + enquiry submit API; lead/saved/consent routers pending |
-| 10 | Placement, NIRF, Cutoff, Seat Matrix [DEV] | Phase 5 + Phase 6 | ◐ PARTIAL — models + migration `68d5258b08f1` only; APIs → Phase 14 |
+| 3 | Email, SMS, OTP [BOTH] | Phase 2 + **M1 (MSG91 + SendGrid/SES credentials BEFORE developer starts)** | 🟡 **CODE COMPLETE 28 Sep — GATE PENDING.** 8 endpoints + `otp_records` (`b4e91d7a2c58`), MSG91/SMTP adapters w/ console fallback, 39 tests. **Gate blocked on paid credentials (~3 days out).** |
+| 4 | States, Districts, Universities [DEV] | Phase 1 (*parallel* with 2, 3) | ✅ **COMPLETE 28 Sep** — `locations` + `universities` routers; seed verified by table count (36 states / 755 districts / 106 cities / 168 universities) |
+| 5 | Colleges, Courses, Fees [DEV] | Phase 4 (college → state/district/university FK) | 🟡 PARTIAL — 331 colleges + 22 courses seeded, full CRUD live; **`fees` table empty (0 rows)** |
+| 6 | Scholarships, Exams [DEV] | Phase 4 (*parallel* with 5) | 🟡 PARTIAL — full CRUD live; only 6 scholarships / 6 exams against Phase 65 targets of 100+ / 50+ |
+| 7 | Mock Tests, Questions [DEV] | Phase 5 (→course) + Phase 6 (→exam) | 🟡 PARTIAL — 15 endpoints incl. full attempt lifecycle + admin CRUD (⇒ Phases 42/44/45/46 effectively built); **Phase 43 question-bank admin missing**, `mock_tests` + `test_questions` both empty |
+| 8 | Reviews, Blogs, FAQs, Media, SEO, Notif., Audit [DEV] | Phase 2 + Phase 5 | ✅ **BACKEND COMPLETE** — 7 routers (`reviews`/`blogs`/`faqs`/`media`/`seo`/`notifications`/`audit`); all tables empty (no content yet) |
+| 9 | Enquiries, Leads, Saved, Consent [DEV] | Phase 2 + Phase 5 | 🟡 PARTIAL — all 4 routers exist (`enquiries`/`leads`/`saved_colleges`/`consent`, 13 endpoints) but **nothing wires them together**: submitting an enquiry creates no lead. See Block F. |
+| 10 | Placement, NIRF, Cutoff, Seat Matrix [DEV] | Phase 5 + Phase 6 | ✅ **COMPLETE 28 Sep** (old revision said "models only, APIs → Phase 14") — `placement_records`/`cutoffs`/`nirf_rankings`/`seat_matrix` + 6 public queries + 27 enrichment endpoints. All currently **0 rows**. |
 
-**Completion Gate:** all tables migrated via Alembic; user/login works at API level; OTP arrives on a real phone; 28 states + 8 UTs + ~780 districts seeded; college/scholarship/exam tables accept sample data.
+**Completion Gate:** all tables migrated via Alembic ✅; user/login works at API level ✅; ~~OTP arrives on a real phone~~ ⛔ **BLOCKED on M1 credentials**; 28 states + 8 UTs + ~780 districts seeded ✅ (755); college/scholarship/exam tables accept sample data ✅ (331/6/6).
 
 ### BLOCK C — Backend APIs (Phases 11–14)
 | # | Phase | Mandatory before | Done |
 |---|---|---|---|
-| 11 | College CRUD API [DEV] | Phase 2 + Phase 5 | ☑ **VERIFIED 11 Sep 2026** — list/filter/search/detail + admin create/update/delete (RBAC) live; 37/37 tests green |
-| 12 | Course, Scholarship, Exam APIs [DEV] | Phase 6 (+ Phase 11 patterns) | ◐ PARTIAL — READ APIs live + tested (scholarship list/detail, exam list/upcoming/detail, course search); admin CRUD pending |
-| 13 | Search Engine (text + filters + NLP) [DEV] | Phase 11 | ☐ |
-| 14 | Placement, Cutoff, NIRF APIs [DEV] | Phase 10 | ☐ |
+| 11 | College CRUD API [DEV] | Phase 2 + Phase 5 | ✅ **VERIFIED 11 Sep 2026** — list/filter/search/detail + admin create/update/delete (RBAC) live |
+| 12 | Course, Scholarship, Exam APIs [DEV] | Phase 6 (+ Phase 11 patterns) | ✅ **BACKEND COMPLETE 28 Sep 2026** (old revision said "admin CRUD pending" — POST/PUT/DELETE now exist on all three) |
+| 13 | Search Engine (text + filters + NLP) [DEV] | Phase 11 | 🟡 PARTIAL — text/filter search ✅ (`GET /colleges/search`); **NLP parse ☐ not built** |
+| 14 | Placement, Cutoff, NIRF APIs [DEV] | Phase 10 | ✅ **BACKEND COMPLETE 28 Sep 2026** (old revision said "☐") — 6 `catalog-data` queries (placements, cutoffs, rankings, seat-matrix, fees, admissions) + 27 `college-enrichment` endpoints |
 
-**Completion Gate:** admin can create colleges; public search with filters works; NLP parse works; placement/cutoff/NIRF queryable; templates passed.
+**Completion Gate:** admin can create colleges ✅; public search with filters works ✅; **NLP parse ☐**; placement/cutoff/NIRF queryable ✅ (endpoints exist, **0 rows of data**); templates passed ☐.
 
 ### BLOCK D — Frontend Core (Phases 15–18)
 | # | Phase | Mandatory before | Done |
 |---|---|---|---|
-| 15 | Login, Register, OTP Pages [DEV] | Phase 2 + Phase 3 | ☐ |
+| 15 | Login, Register, OTP Pages [DEV] | Phase 2 + Phase 3 | ✅ **COMPLETE 28 Sep 2026** — password + mobile-OTP login, forgot/reset password, verify-email; lint + typecheck + 395-page build green |
 | 16 | Header, Footer, Homepage [DEV] | Phase 11 + Phase 12 (sections API) | ☐ |
 | 17 | College Listing [DEV] | Phase 13 (search API) | ☐ |
 | 18 | College Detail Page [DEV] | Phase 11 + Phase 14 (placement/cutoff/NIRF) | ☐ |
@@ -184,10 +205,10 @@ Generated from: `padhaanewala-complete.md` (Master Plan V5.0)
 |---|---|---|---|
 | 23 | Student Dashboard [DEV] | Phase 15 + Phase 9 | ☐ |
 | 24 | Comparison + Predictor [DEV] | Phase 14 (cutoff data) + Phase 13 | ☐ |
-| 25 | Enquiry, Lead APIs [DEV] | Phase 9 | ☐ |
-| 26 | Enquiry Form, WhatsApp, Static Pages [DEV] | Phase 25 + Phase 16 | ☐ |
+| 25 | Enquiry, Lead APIs [DEV] | Phase 9 | 🟡 PARTIAL — both APIs exist (`POST /enquiries`; 6 `leads` endpoints incl. assign/follow-up/status/notes) but **no hand-off**: an enquiry never becomes a lead |
+| 26 | Enquiry Form, WhatsApp, Static Pages [DEV] | Phase 25 + Phase 16 | ✅ form live on `/contact`, wired to the Phase 9 enquiry API |
 
-**Completion Gate:** dashboard shows saved colleges/tests/enquiries; compare 2–4 colleges works; predictor shows Dream/Safe/Moderate with disclaimer; enquiry creates a lead admin can see.
+**Completion Gate:** dashboard shows saved colleges/tests/enquiries ☐; compare 2–4 colleges ☐; predictor shows Dream/Safe/Moderate with disclaimer 🟡 (API live, ungated); **enquiry creates a lead admin can see ⛔ FAILS — the hand-off is not implemented.**
 
 ### BLOCK G — Admin Panel (Phases 27–35)
 | # | Phase | Mandatory before | Done |
@@ -201,17 +222,17 @@ Generated from: `padhaanewala-complete.md` (Master Plan V5.0)
 ### BLOCK H — Notifications & SEO (Phases 36–37)
 | # | Phase | Mandatory before | Done |
 |---|---|---|---|
-| 36 | Notifications, Email, SMS [DEV] | Phase 3 + Phase 9 + Phase 25 | ☐ |
-| 37 | SEO: sitemap, robots, structured data [DEV] | Public pages live (Block D + E) | ☐ |
+| 36 | Notifications, Email, SMS [DEV] | Phase 3 + Phase 9 + Phase 25 | 🟡 PARTIAL — notification API complete (6 endpoints: my/unread-count/read/read-all/create/delete) and Phase 3 delivery services exist, but **nothing triggers them on an enquiry** |
+| 37 | SEO: sitemap, robots, structured data [DEV] | Public pages live (Block D + E) | ✅ `seo` API + `robots.ts` + `sitemap.xml` + Organization JSON-LD |
 
-**Completion Gate:** enquiry → student email + admin alert; notification bell shows unread; sitemap validates; structured data passes Google Rich Results test.
+**Completion Gate:** **enquiry → student email + admin alert ⛔ FAILS (no dispatch wired)**; notification bell shows unread 🟡 (API only, no trigger); sitemap validates ✅; structured data ☐ (not run through Rich Results).
 
 ### BLOCK I — AI System (Phases 38–41)
 | # | Phase | Mandatory before | Done |
 |---|---|---|---|
 | 38 | RAG Knowledge Pipeline [DEV] | Phase 5 + Phase 6 (data sources) | ☐ |
-| 39 | AI Chat API + Safety [DEV] | Phase 38 + **M1 (OpenAI key)** | ☐ |
-| 40 | College Predictor (cutoff-based) [DEV] | Phase 10 (cutoffs) + Phase 38/39 | ☐ |
+| 39 | AI Chat API + Safety [DEV] | Phase 38 + **M1 (OpenAI key)** | 🟡 PARTIAL — chat route exists on the frontend (`/api/ai`) with canned fallbacks; no RAG |
+| 40 | College Predictor (cutoff-based) [DEV] | Phase 10 (cutoffs) + Phase 38/39 | 🟡 **CODE COMPLETE 28 Sep — ungated** (`POST /predictor` + `/predictor/exams`); `test_pagination_and_predictor_stability.py` guards it. Needs the cutoff disclaimer reviewed. |
 | 41 | Frontend AI Chat Widget [DEV] | Phase 39 | ☐ |
 
 **Completion Gate:** "What is BHMS?" answers with source; "BHMS colleges in Karnataka" lists DB colleges with sources; predictor categorized with disclaimer; AI never invents data.
@@ -219,13 +240,13 @@ Generated from: `padhaanewala-complete.md` (Master Plan V5.0)
 ### BLOCK J — Mock Test System (Phases 42–46)
 | # | Phase | Mandatory before | Done |
 |---|---|---|---|
-| 42 | Test listing + instructions [DEV] | Phase 7 + Phase 2 | ☐ |
-| 43 | Question bank admin [DEV] | Phase 42 | ☐ |
-| 44 | Test interface — DESKTOP ONLY [DEV] | Phase 43 | ☐ |
-| 45 | Results page [DEV] | Phase 44 | ☐ |
-| 46 | Test admin (create test) [DEV] | Phase 43 | ☐ |
+| 42 | Test listing + instructions [DEV] | Phase 7 + Phase 2 | ✅ list + detail live |
+| 43 | Question bank admin [DEV] | Phase 42 | ☐ **not built** — no question CRUD endpoints; `test_questions` empty |
+| 44 | Test interface — DESKTOP ONLY [DEV] | Phase 43 | ✅ attempt lifecycle live (start/answer autosave/submit) |
+| 45 | Results page [DEV] | Phase 44 | ✅ `GET .../attempts/{id}/result` + `test_mock_test_engine.py` |
+| 46 | Test admin (create test) [DEV] | Phase 43 | ✅ admin create/update/delete live |
 
-**Completion Gate:** full test completes end-to-end; answers auto-save; auto-submit on timeout; mobile shows "desktop only" message.
+**Completion Gate:** full test completes end-to-end ✅ (engine tested); answers auto-save ✅; auto-submit on timeout ☐ unverified; mobile "desktop only" ☐ unverified. **Note: 0 mock tests and 0 questions exist, so the flow is untested with real data.**
 
 ### BLOCK K — Proctored Exams (Phases 47–55)
 | # | Phase | Mandatory before | Done |
@@ -241,6 +262,8 @@ Generated from: `padhaanewala-complete.md` (Master Plan V5.0)
 | 55 | Proctoring recovery [DEV] | Phase 54 | ☐ |
 
 **Completion Gate:** full proctored flow works on your desktop with camera; tab-switch detected; evidence viewable by admin; auto-submit fires per policy.
+
+> ⛔ **Phases 47–55 NOT STARTED — verified 28 Sep 2026.** The string "proctor" appears in the codebase only as a role name (`app/roles.py`) and a schema field (`app/schemas/engagement.py`). No monitoring, event reporting, auto-submit engine, ML service, evidence storage, admin dashboard, policy config or recovery flow. This is the **single largest unbuilt backend block (9 phases)**, and it is gated behind Phase 42–46 being genuinely complete (they are code-complete but hold no data) plus **M1 S3 bucket** for evidence.
 
 ### BLOCK L — Data Import (Phases 56–65)
 | # | Phase | Mandatory before | Done |
@@ -258,12 +281,16 @@ Generated from: `padhaanewala-complete.md` (Master Plan V5.0)
 
 **Completion Gate:** 1000+ colleges, 50+ courses, 100+ scholarships, 50+ exams, 500+ questions, placement for top 500, cutoff data, 20+ blogs, legal pages ALL live and verified.
 
+> ⛔ **Phases 56–64 NOT STARTED — verified 28 Sep 2026.** Zero matches for a CSV-import API, fuzzy duplicate detection, or a data-verification workflow anywhere in `backend/app`. The gap against the gate is large: **331 / 1000+ colleges, 22 / 50+ courses, 6 / 100+ scholarships, 6 / 50+ exams, 0 / 500+ questions, 0 placement rows, 0 cutoff rows, 0 blog posts.** Legal pages (Phase 65) *are* now done — 6 documents, SSG, sitemap + 13 redirects. Everything else here needs **M4 CSVs**.
+
 ### BLOCK M — Security, Performance, Testing (Phases 66–75)
 | # | Phase | Mandatory before | Done |
 |---|---|---|---|
 | 66–75 | Security headers, rate limiting, validation, error handling, DB perf, Redis cache, Lighthouse >90, mobile audit, WCAG 2.1 AA, cross-browser | **Blocks A–L COMPLETE (hardens everything)** | ☐ |
 
 **Completion Gate:** Lighthouse >90; no horizontal scroll; security headers active; rate limits on all endpoints; accessibility checklist passes.
+
+> 🟡 **Phases 66–75 PARTIAL — verified 28 Sep 2026.** Present organically rather than as a phase: RBAC + rate limiting (Redis wired), bcrypt secrets, OTP hashing, structured-error conventions, 225 tests. **Never run:** Lighthouse audit, WCAG 2.1 AA pass, cross-browser pass, DB performance tuning, Redis cache on read paths. Two findings from the Phase 3 review belong to this block: `next build` is **memory-sensitive** (395-page export times out at 60s/page under load — build succeeds with a longer timeout, so it is a resource problem, not a code one), and the production guard was only hardened for email/SMS — **no equivalent guard exists for the remaining production settings.**
 
 ### BLOCK N — Legal, Monitoring, Backup (Phases 76–85)
 | # | Phase | Mandatory before | Done |
@@ -281,6 +308,8 @@ Generated from: `padhaanewala-complete.md` (Master Plan V5.0)
 
 **Completion Gate:** Grievance Officer details published; parental consent flow verified; SSL live; analytics events tracked; backups restoring; monitoring alerts active.
 
+> ⛔ **Phases 76–85 NOT STARTED — verified 28 Sep 2026.** No parental-consent, guardian, takedown or DMCA code exists. Phase 76 is the sharpest risk: the **privacy policy now explicitly admits** "no age-verification step and no parental-consent record, so we cannot currently demonstrate that this requirement is met" — a disclosed DPDP exposure that is a deliberate 16+ tradeoff, but must be a conscious decision. Phase 77 also requires the 3-hour takedown and 3-month takedown-reminder flows, both absent. Grievance pages are published, but **`GRIEVANCE_OFFICER.name` is still `"To be designated"`** (M6 outstanding). Sentry/GA4/Cloudflare/DNS all need M1.
+
 ### BLOCK O — CI/CD, Staging, Production (Phases 86–95)
 | # | Phase | Mandatory before | Done |
 |---|---|---|---|
@@ -297,6 +326,8 @@ Generated from: `padhaanewala-complete.md` (Master Plan V5.0)
 
 **Completion Gate:** staging.padhaanewala.in working; CI/CD automatic; load test passed; security scan clean.
 
+> ⛔ **Phases 86–95 NOT STARTED — verified 28 Sep 2026.** No CI pipeline, staging, production, load test or security audit. All of Block O needs **M1 (AWS)** and **M2 (DNS)**, so none of it can start now. The backend is otherwise deployable-shaped: migrations apply cleanly to a single head and 225 tests run green.
+
 ### BLOCK P — Launch (Phases 96–105)
 | # | Phase | Mandatory before | Done |
 |---|---|---|---|
@@ -311,14 +342,31 @@ Generated from: `padhaanewala-complete.md` (Master Plan V5.0)
 | 104 | Performance tuning [DEV] | Phase 103 | ☐ |
 | 105 | Final sign-off [BOTH] | Phase 104 — **PROJECT DONE** | ☐ |
 
----
+## NEXT ACTIONS — ranked by what actually unblocks the project (28 Sep 2026)
+
+Replaces guesswork with a measured backlog. **Unblocked and small** first, because they are the only things that can progress before credentials land.
+
+| # | Action | Phase | Size | Blocked? |
+|---|---|---|---|---|
+| 1 | Wire enquiry → lead + notification + student email | 25/36 | ~1 day | **No — do now.** Highest value per line of code: three routers already exist and are unused, and two completion gates fail without it. |
+| 2 | Question-bank admin CRUD + seed a real mock test | 43/7 | ~1–2 days | **No — do now.** Without questions the whole mock-test engine is untested with real data. |
+| 3 | NLP query parse for college search | 13 | ~2–3 days | No, but needs the 331 colleges to be sane first. |
+| 4 | Real MSG91 + email credentials, then manual handset test | 3 | ~1 hour | **YES — M1, ~3 days out.** Also needs DNS SPF/DKIM for the sender domain. |
+| 5 | Content: fees, cutoff, placement, NIRF, blog rows | 10/5 | ongoing | **YES — M4 CSVs.** Phase 65 gate is far from met (0 cutoff/placement rows). |
+| 6 | Data-import API + fuzzy dedup + verification workflow | 56–64 | ~1 week | **YES — M4 CSVs** + Phases 27–34 admin UI. |
+| 7 | Proctored exam system | 47–55 | ~2–3 weeks | **YES — S3 bucket** + genuinely finishing 42–46. Largest unbuilt block. |
+| 8 | Parental-consent flow + 3-hour takedown | 76/77 | ~1 week | **YES — M6 Grievance Officer**; also a decision, not just code. |
+| 9 | Monitoring, backup, DNS, GA4, WAF | 78–85 | ~1 week | **YES — M1 (Sentry/GA4/Cloudflare) + M2 (domain).** |
+| 10 | CI/CD, staging, prod, load test, security audit | 86–95 | ~2 weeks | **YES — M1 AWS.** |
+
+**Total unblocked work available today: ~4–6 days** (items 1–3). Everything else waits on a purchase, a dataset, or a decision.
 
 ## QUICK-REFERENCE: What MUST be done before each phase
 | To start phase | You MUST already have |
 |---|---|
 | Phase 1 | M1 (GitHub), M3, dev tools installed |
 | Phase 2 | Phase 1 |
-| Phase 3 | Phases 1–2 + MSG91 & SendGrid credentials (M1) |
+| Phase 3 | Phases 1–2 + MSG91 & SendGrid credentials (M1) — **code done, only the credentials are outstanding** |
 | Phase 4 | Phase 1 (parallel: 2, 3) |
 | Phase 5 | Phase 4 |
 | Phase 6 | Phase 4 (parallel: 5) |
