@@ -1,13 +1,26 @@
-from datetime import datetime, timedelta, timezone
+﻿from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 
 from jose import jwt
 from passlib.context import CryptContext
 
 from app.config import settings
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# `BCRYPT_ROUNDS` used to be declared in Settings and never passed here, so
+# passlib silently used its own default of 12 and raising the setting did
+# nothing. It is now wired, and the production guard in config.py refuses a
+# value below 12 so the cost factor cannot be lowered by accident.
+pwd_context = CryptContext(
+    schemes=["bcrypt"],
+    deprecated="auto",
+    bcrypt__rounds=settings.BCRYPT_ROUNDS,
+)
 
-ALGORITHM = "HS256"
+#: Exposed at module level because the RBAC suite signs forged tokens with it to
+#: prove a forged `role` claim grants nothing. Derived from Settings rather than
+#: hardcoded: when this was the literal "HS256" it silently shadowed
+#: settings.JWT_ALGORITHM, so changing the configured algorithm had no effect.
+ALGORITHM = settings.JWT_ALGORITHM
 
 
 def hash_password(password: str) -> str:
@@ -36,6 +49,12 @@ def create_refresh_token(subject: str | int, role: str) -> str:
         "sub": str(subject),
         "role": role,
         "type": "refresh",
+        # `jti` is the token's unique id. Without it a refresh token is
+        # indistinguishable from every other refresh token ever issued to that
+        # user, so logout and rotation have nothing to act on. Phase 3 adds the
+        # `refresh_tokens` table that consumes this; minting it now means tokens
+        # issued between now and then are already revocable-in-principle.
+        "jti": uuid4().hex,
         "iat": now,
         "exp": now + timedelta(days=settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS),
     }
@@ -47,3 +66,4 @@ def create_refresh_token(subject: str | int, role: str) -> str:
 def decode_token(token: str, secret: str | None = None) -> dict:
     key = secret if secret is not None else settings.JWT_SECRET_KEY
     return jwt.decode(token, key, algorithms=[ALGORITHM])
+

@@ -6,6 +6,7 @@ from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.config import settings
 from app.database import SessionLocal
@@ -37,6 +38,7 @@ audit,
     saved_colleges,
     scholarships,
     seo,
+    stats,
     universities,
     users,
 )
@@ -46,12 +48,32 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s - %(message)s",
 )
 
+_IS_PRODUCTION = settings.APP_ENV == "production"
+
+# The interactive API docs are a complete, clickable map of every route,
+# request schema, response model and enum in a 129-endpoint API. In production
+# that is free reconnaissance for anyone who asks, and it cannot be protected
+# with credentials because Swagger UI has to load the spec before it can send
+# an Authorization header. `APP_ENV=development` keeps it for local work.
+_DOCS_PATH = None if _IS_PRODUCTION else "/docs"
+_REDOC_PATH = None if _IS_PRODUCTION else "/redoc"
+_OPENAPI_PATH = None if _IS_PRODUCTION else "/openapi.json"
+
 app = FastAPI(
     title="Padhaanewala API",
     version="0.3.0",
     description="Padhaanewala Education Technology Platform - Backend API",
+    docs_url=_DOCS_PATH,
+    redoc_url=_REDOC_PATH,
+    openapi_url=_OPENAPI_PATH,
 )
 
+# Starlette applies middleware in reverse registration order, so the list
+# below reads bottom-up as the runtime request path:
+#   CORSMiddleware -> RateLimit -> RequestContext -> ErrorHandling -> TrustedHost
+# CORS stays outermost so even a rejected Host still gets correct CORS
+# headers; TrustedHost is innermost so it guards the routes themselves.
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_host_list)
 app.add_middleware(ErrorHandlingMiddleware)
 app.add_middleware(RequestContextMiddleware)
 app.add_middleware(RateLimitMiddleware)
@@ -59,8 +81,12 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    # Pinned rather than "*". A credentialed CORS policy that also accepts a
+    # wildcard origin lets any site on the internet read authenticated
+    # responses from a logged-in visitor's browser.
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
+    max_age=600,
 )
 
 app.include_router(auth.router)
@@ -88,6 +114,7 @@ app.include_router(audit.router)
 app.include_router(banners.router)
 app.include_router(saved_colleges.router)
 app.include_router(predictor.router)
+app.include_router(stats.router)
 
 
 @app.get("/health", tags=["health"])

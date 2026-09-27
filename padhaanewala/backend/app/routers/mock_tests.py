@@ -1,8 +1,8 @@
-import random
+﻿import random
 import re
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
@@ -220,7 +220,7 @@ def list_mock_tests(
     difficulty: str | None = None,
     test_type: str | None = None,
     q: str | None = None,
-    limit: int = 50,
+    limit: int = Query(50, ge=1, le=100),
     offset: int = 0,
     db: Session = Depends(get_db),
 ):
@@ -576,7 +576,7 @@ def save_answer(
         )
     if _finalize_if_expired(db, attempt):
         # The answer is late, so it is rejected, but the finalisation is committed
-        # first — raising without committing rolled it back and left the attempt
+        # first â€” raising without committing rolled it back and left the attempt
         # `in_progress` past its deadline.
         db.commit()
         raise HTTPException(status_code=400, detail="Attempt already submitted")
@@ -708,7 +708,7 @@ def admin_list_mock_tests(
     test_type: str | None = None,
     is_active: bool | None = None,
     q: str | None = None,
-    limit: int = 50,
+    limit: int = Query(50, ge=1, le=100),
     offset: int = 0,
     db: Session = Depends(get_db),
 ):

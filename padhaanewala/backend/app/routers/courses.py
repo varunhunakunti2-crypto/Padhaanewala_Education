@@ -1,6 +1,6 @@
-import re
+﻿import re
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
@@ -29,7 +29,7 @@ def list_courses(
     q: str | None = None,
     category: str | None = None,
     degree: str | None = None,
-    limit: int = 50,
+    limit: int = Query(50, ge=1, le=100),
     offset: int = 0,
     db: Session = Depends(get_db),
 ):

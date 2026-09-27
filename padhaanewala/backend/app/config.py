@@ -43,11 +43,31 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = "http://localhost:3000"
     TIMEZONE: str = "Asia/Kolkata"
 
+    #: Hosts permitted in the `Host` header. Empty means "derive from
+    #: APP_URL/URL", never "allow everything" — a Host header is attacker
+    #: controlled and is used to build absolute URLs and cache keys.
+    ALLOWED_HOSTS: str = ""
+
+    #: Number of reverse proxies in front of the app (Caddy, Cloudflare, ...).
+    #: `X-Forwarded-For` is a client-supplied list, so the client IP is only
+    #: trustworthy by taking the entry this many hops from the right. At 0 the
+    #: header is ignored entirely and the socket peer is used. Wrong in one
+    #: direction it lets an attacker forge their IP to defeat rate limiting and
+    #: poison the audit log; wrong in the other it blames an innocent user.
+    TRUSTED_PROXY_HOPS: int = 0
+
     DB_HOST: str = "localhost"
     DB_PORT: int = 5433
     DB_NAME: str = "padhaanewala_dev"
     DB_USER: str = "padhaanewala"
     DB_PASSWORD: str = "dev_password_123"
+
+    #: Connection pool. Sized for production, not for a single script — the
+    #: SQLAlchemy default of 5/10 was exhausted by build-time prerendering and
+    #: hung a request for 11 minutes before timing out.
+    DB_POOL_SIZE: int = 20
+    DB_MAX_OVERFLOW: int = 20
+    DB_POOL_TIMEOUT_SECONDS: int = 10
     DATABASE_URL: str = (
         "postgresql+psycopg2://padhaanewala:dev_password_123@localhost:5433/padhaanewala_dev"
     )
@@ -108,6 +128,19 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _guard_production_defaults(self):
+        # A wildcard CORS origin combined with `allow_credentials=True` lets any
+        # website on the internet read authenticated responses out of a logged-in
+        # visitor's browser. There is no safe way to combine the two, so this is
+        # refused at startup rather than left to a human to notice.
+        if "*" in self.cors_origin_list and self.APP_ENV != "development":
+            raise ValueError(
+                "CORS_ORIGINS must not contain '*' outside development. "
+                "allow_credentials=True with a wildcard origin lets any site "
+                "read authenticated API responses cross-origin. List the exact "
+                "origins instead, e.g. CORS_ORIGINS=https://padhaanewala.in"
+            )
+        if self.TRUSTED_PROXY_HOPS < 0:
+            raise ValueError("TRUSTED_PROXY_HOPS must be >= 0")
         if self.APP_ENV == "production":
             if self.JWT_SECRET_KEY in ("change-me", ""):
                 raise ValueError("JWT_SECRET_KEY must be set in production")
@@ -172,12 +205,46 @@ class Settings(BaseSettings):
                     "mandates DLT approval per transactional template and MSG91 "
                     "rejects sends without one"
                 )
+            if not self.ALLOWED_HOSTS:
+                raise ValueError(
+                    "ALLOWED_HOSTS must be set in production (comma-separated). "
+                    "An unset value would fall back to the app URLs, which is not "
+                    "the public domain when the app is served by a proxy."
+                )
+            if self.BCRYPT_ROUNDS < 12:
+                raise ValueError(
+                    f"BCRYPT_ROUNDS must be >= 12 in production (got "
+                    f"{self.BCRYPT_ROUNDS})"
+                )
+            if self.JWT_ALGORITHM not in ("HS256", "HS384", "HS512"):
+                raise ValueError(
+                    f"JWT_ALGORITHM must be an HMAC algorithm, got "
+                    f"{self.JWT_ALGORITHM!r}. Asymmetric algorithms would require "
+                    "a public key and are not configured."
+                )
         return self
 
 
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
+
+    @property
+    def allowed_host_list(self) -> list[str]:
+        """Hosts accepted in the `Host` header.
+
+        Falls back to the hostnames of APP_URL and API_URL so local
+        development needs no extra configuration, while `_guard_production_
+        defaults` refuses to start production without an explicit value.
+        """
+        if self.ALLOWED_HOSTS.strip():
+            return [h.strip() for h in self.ALLOWED_HOSTS.split(",") if h.strip()]
+        derived: list[str] = []
+        for url in (self.APP_URL, self.API_URL):
+            host = url.split("://", 1)[-1].split("/", 1)[0].split(":")[0]
+            if host and host not in derived:
+                derived.append(host)
+        return derived or ["localhost"]
 
 
 @lru_cache

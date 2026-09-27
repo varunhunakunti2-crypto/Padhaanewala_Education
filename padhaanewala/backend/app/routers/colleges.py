@@ -1,6 +1,6 @@
-import re
+﻿import re
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
@@ -55,7 +55,7 @@ def list_colleges(
     state_id: int | None = None,
     course_id: int | None = None,
     featured: bool | None = None,
-    limit: int = 50,
+    limit: int = Query(50, ge=1, le=100),
     offset: int = 0,
     db: Session = Depends(get_db),
 ):

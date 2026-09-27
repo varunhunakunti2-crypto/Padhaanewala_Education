@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+﻿from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -32,7 +32,7 @@ def list_media(
     entity_type: str | None = Query(None, max_length=50),
     entity_id: int | None = None,
     file_type: str | None = None,
-    limit: int = 50,
+    limit: int = Query(50, ge=1, le=100),
     offset: int = 0,
     db: Session = Depends(get_db),
 ):

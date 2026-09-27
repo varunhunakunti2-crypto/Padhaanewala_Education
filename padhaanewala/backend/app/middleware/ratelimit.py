@@ -6,6 +6,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from app.config import settings
+from app.utils.client_ip import client_ip
 
 AUTH_RATE_LIMIT = 5
 AUTH_RATE_WINDOW_SECONDS = 60
@@ -41,10 +42,10 @@ def get_redis() -> redis.Redis:
 
 
 def _client_key(request: Request) -> str:
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+    # `client_ip` only honours X-Forwarded-For when TRUSTED_PROXY_HOPS declares
+    # the real proxy topology, so a caller cannot mint a fresh rate-limit
+    # bucket per request by forging the header.
+    return client_ip(request) or "unknown"
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):

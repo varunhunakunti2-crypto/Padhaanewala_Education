@@ -1,7 +1,7 @@
-import re
+﻿import re
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload
 
@@ -54,7 +54,7 @@ def list_scholarships(
     category: str | None = None,
     ownership: str | None = None,
     upcoming: bool = False,
-    limit: int = 50,
+    limit: int = Query(50, ge=1, le=100),
     offset: int = 0,
     db: Session = Depends(get_db),
 ):
