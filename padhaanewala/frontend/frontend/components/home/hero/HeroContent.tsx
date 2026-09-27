@@ -6,7 +6,13 @@ import Link from "next/link";
 import { HeroSearch } from "@/components/home/hero/HeroSearch";
 import { HeroStats } from "@/components/home/hero/HeroStats";
 
-export function HeroContent() {
+export function HeroContent({
+  collegeCount = 0,
+  courseCount = 0,
+}: {
+  collegeCount?: number;
+  courseCount?: number;
+}) {
   const reduce = useReducedMotion();
 
   const fade = (delay: number) => ({
@@ -87,7 +93,7 @@ export function HeroContent() {
       </motion.div>
 
       {/* stats */}
-      <HeroStats />
+      <HeroStats colleges={collegeCount} courses={courseCount} />
 
       {/* watch how it works */}
       <motion.div

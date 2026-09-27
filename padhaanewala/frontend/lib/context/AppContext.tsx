@@ -11,7 +11,18 @@ import {
   type ReactNode,
 } from "react";
 import type { AdmissionEnquiry, MockTestResult, NotificationItem, Review, StudentProfile } from "@/lib/types";
-import { clearAuth, fetchMyRoles, hasAdminRole } from "@/lib/api";
+import {
+  clearAuth,
+  fetchMyRoles,
+  getAccessToken,
+  hasAdminRole,
+} from "@/lib/api";
+import {
+  fetchSavedColleges,
+  saveCollegeRemote,
+  unsaveCollegeRemote,
+  type SavedCollegeRecord,
+} from "@/lib/api";
 
 export interface ToastItem {
   id: number;
@@ -58,6 +69,12 @@ interface AppContextValue {
 
   isSaved: (id: string) => boolean;
   toggleSave: (id: string, name?: string) => void;
+
+  /** Real saved-college records from the backend, plus how the load went. */
+  savedCollegeRecords: SavedCollegeRecord[];
+  savedSync: "idle" | "loading" | "synced" | "no-profile" | "error";
+  savedSyncMessage: string | null;
+  refreshSavedColleges: () => Promise<void>;
 
   isCourseSaved: (slug: string) => boolean;
   toggleCourseSave: (slug: string, name?: string) => void;
@@ -114,6 +131,11 @@ function save(key: string, value: unknown) {
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [savedColleges, setSavedColleges] = useState<string[]>([]);
+  const [savedCollegeRecords, setSavedCollegeRecords] = useState<SavedCollegeRecord[]>([]);
+  const [savedSync, setSavedSync] = useState<
+    "idle" | "loading" | "synced" | "no-profile" | "error"
+  >("idle");
+  const [savedSyncMessage, setSavedSyncMessage] = useState<string | null>(null);
   const [savedCourses, setSavedCourses] = useState<string[]>([]);
   const [savedScholarships, setSavedScholarships] = useState<string[]>([]);
   const [compareList, setCompareList] = useState<string[]>([]);
@@ -294,6 +316,88 @@ export function AppProvider({ children }: { children: ReactNode }) {
       });
     },
     [showToast],
+  );
+
+  /**
+   * Pull the signed-in user's saved colleges from the backend.
+   *
+   * The dashboard used to show a hardcoded shortlist, then a localStorage list, so
+   * what it displayed was never the user's real data. The server list is now
+   * authoritative: on success it replaces the local IDs, which means a save made
+   * on another device shows up here. A failure is surfaced rather than silently
+   * leaving the previous list on screen as if it were current.
+   */
+  const refreshSavedColleges = useCallback(async () => {
+    if (!getAccessToken()) {
+      setSavedSync("idle");
+      return;
+    }
+
+    setSavedSync("loading");
+    const result = await fetchSavedColleges();
+
+    if (result.state === "ok") {
+      setSavedCollegeRecords(result.records);
+      setSavedColleges(result.records.map((r) => String(r.college_id)));
+      setSavedSync("synced");
+      setSavedSyncMessage(null);
+      return;
+    }
+
+    if (result.state === "no-profile") {
+      // Nothing is wrong, there is simply nowhere to attach saves yet.
+      setSavedSync("no-profile");
+      setSavedSyncMessage("Complete your student profile to save colleges across devices.");
+      return;
+    }
+
+    setSavedSync("error");
+    setSavedSyncMessage(result.message);
+  }, []);
+
+  // Re-sync whenever the signed-in user changes, and once the token is readable.
+  // The call is deferred by a microtask because `refreshSavedColleges` sets the
+  // "loading" state before its first await; running that inside the synchronous
+  // effect body would cascade a render on every auth change.
+  useEffect(() => {
+    if (!authReady) return;
+    void Promise.resolve().then(() => refreshSavedColleges());
+  }, [authReady, isAuthenticated, refreshSavedColleges]);
+
+  /**
+   * Optimistic save/unsave that also writes through to the backend.
+   *
+   * The local list updates immediately so the UI stays responsive; if the server
+   * rejects the write the change is rolled back and the reason is surfaced rather
+   * than leaving a save that only exists in this browser.
+   */
+  const toggleSaveSynced = useCallback(
+    (id: string, name?: string) => {
+      const wasSaved = savedColleges.includes(id);
+      const numericId = Number(id);
+
+      toggleSave(id, name);
+
+      if (!getAccessToken() || !Number.isFinite(numericId)) return;
+
+      const call = wasSaved ? unsaveCollegeRemote(numericId) : saveCollegeRemote(numericId);
+      void call
+        .then(() => refreshSavedColleges())
+        .catch((err: unknown) => {
+          // Roll the optimistic change back.
+          setSavedColleges((prev) =>
+            wasSaved ? [id, ...prev] : prev.filter((x) => x !== id),
+          );
+          showToast({
+            variant: "error",
+            title: "Could not update your saved colleges",
+            description:
+              (err instanceof Error ? err.message : undefined) ??
+              (wasSaved ? "The college was not removed." : "The college was not saved."),
+          });
+        });
+    },
+    [savedColleges, toggleSave, refreshSavedColleges, showToast],
   );
 
   const toggleCourseSave = useCallback(
@@ -495,7 +599,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setAuthenticated,
       logout,
       isSaved: (id) => savedColleges.includes(id),
-      toggleSave,
+      // Writes through to the backend when signed in; the local list is a cache.
+      toggleSave: toggleSaveSynced,
+      savedCollegeRecords,
+      savedSync,
+      savedSyncMessage,
+      refreshSavedColleges,
       isCourseSaved: (slug) => savedCourses.includes(slug),
       toggleCourseSave,
       isScholarshipSaved: (id) => savedScholarships.includes(id),
@@ -522,6 +631,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }),
     [
       savedColleges,
+      savedCollegeRecords,
+      savedSync,
+      savedSyncMessage,
+      refreshSavedColleges,
       savedCourses,
       savedScholarships,
       compareList,
@@ -546,7 +659,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       refreshRoles,
       setAuthenticated,
       logout,
-      toggleSave,
+      toggleSaveSynced,
       toggleCourseSave,
       toggleScholarshipSave,
       toggleCompare,

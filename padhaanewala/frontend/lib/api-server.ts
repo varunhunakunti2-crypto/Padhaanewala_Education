@@ -105,7 +105,7 @@ export interface ApiCollegeListItem {
   city: string | null;
   state: string | null;
   university_name: string | null;
-  has_hostel: boolean;
+  has_hostel: boolean | null;
   total_reviews: number;
   average_rating: string;
   is_featured: boolean;

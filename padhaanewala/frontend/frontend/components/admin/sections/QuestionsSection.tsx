@@ -1,36 +1,31 @@
 "use client";
 
-
-import { useState } from "react";
-import { Badge } from "@/components/ui/Badge";
-import { DataTable } from "@/components/ui/DataTable";
-
-import { SectionHeading, AddButton, RowActions, FilterChips } from "@/components/admin/primitives";
-import { SAMPLE_QUESTIONS } from "@/components/admin/fixtures";
-
+/**
+ * No question bank exists.
+ *
+ * This panel used to list four textbook questions from `admin/fixtures.ts` —
+ * "The SI unit of force is:", "DNA replication occurs in which phase?" — as if
+ * they were rows in the platform's question bank. They were not; the database
+ * has no question tables, and nothing in the repo imports real question content
+ * (the mock PDFs were explicitly out of scope). Rather than keep a CRUD screen
+ * over data that does not exist, the panel states that plainly and explains what
+ * has to exist first.
+ */
 export function QuestionsSection() {
-  const [difficulty, setDifficulty] = useState<string | "all">("all");
-  const all = SAMPLE_QUESTIONS as unknown as { id: string; test: string; text: string; type: string; difficulty: string; topic: string }[];
-  const rows = difficulty === "all" ? all : all.filter((q) => q.difficulty === difficulty);
   return (
     <div>
-      <SectionHeading title="Question bank" description="Curate questions across all mock tests" count={all.length} action={<AddButton label="Add question" />} />
-      <div className="mb-4">
-        <FilterChips options={["Easy", "Medium", "Hard"] as const} value={difficulty} onChange={setDifficulty} />
+      <p className="font-display text-lg font-extrabold tracking-tight text-gray-900">Question bank</p>
+      <p className="mt-1 text-sm text-slate-500">Curate questions across mock tests</p>
+      <div className="mt-4 rounded-xl border border-dashed border-slate-200 px-6 py-10 text-center">
+        <p className="text-sm font-semibold text-slate-700">No question bank is connected.</p>
+        <p className="mx-auto mt-2 max-w-md text-xs leading-relaxed text-slate-500">
+          There are no question tables in the database and no importer wired up, so there is
+          nothing to list or edit here yet. This screen becomes usable once questions are stored
+          server-side — a question needs a stem, options, the correct option, a topic and a
+          difficulty, and every one of those has to come from a source rather than being typed
+          in by hand.
+        </p>
       </div>
-      <DataTable
-          columns={[
-            { key: "test", header: "Test" },
-            { key: "text", header: "Question" },
-            { key: "type", header: "Type" },
-            { key: "difficulty", header: "Difficulty", render: (q) => <Badge variant={q.difficulty === "Easy" ? "green" : q.difficulty === "Medium" ? "yellow" : "red"}>{q.difficulty}</Badge> },
-            { key: "topic", header: "Topic" },
-            { key: "actions", header: "", className: "text-right", render: (q) => <RowActions item={q.text.replace(/[?.]/g, "")} noun="question" /> },
-          ]}
-          rows={rows}
-          searchKeys={["text", "test", "topic"]}
-          searchPlaceholder="Search questions..."
-        />
     </div>
   );
 }

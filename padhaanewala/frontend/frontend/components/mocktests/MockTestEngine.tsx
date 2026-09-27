@@ -70,7 +70,7 @@ export function MockTestEngine({
       {testHistory.length > 0 && (
         <div className="mt-5 rounded-2xl border border-green-100 dark:border-emerald-800/50 bg-green-50/60 dark:bg-emerald-950/40 p-4">
           <p className="flex items-center gap-2 text-sm font-semibold text-green-800 dark:text-emerald-300">
-            <Trophy className="h-4 w-4" /> Last result: {testHistory[0].score}/{testHistory[0].maxScore} · {testHistory[0].percentile} percentile
+            <Trophy className="h-4 w-4" /> Last result: {testHistory[0].score}/{testHistory[0].maxScore} ({testHistory[0].correct} correct)
           </p>
         </div>
       )}
@@ -78,9 +78,9 @@ export function MockTestEngine({
       <div className="mt-5 flex items-start gap-3 rounded-2xl border border-amber-100 bg-amber-50/70 p-4">
         <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
         <p className="text-xs leading-relaxed text-amber-800">
-          Mock tests run in a <b>full-screen, timed mode</b> with a server-authoritative timer and
-          autosaved answers. Attempt history and scoring are stored against your account so your
-          results follow you across devices.
+          Mock tests run in a <b>full-screen, timed mode</b>. The timer and your answers
+          are held in this browser tab only — nothing is sent to a server, so closing the
+          tab discards the attempt.
         </p>
       </div>
 

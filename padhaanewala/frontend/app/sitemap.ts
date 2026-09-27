@@ -1,6 +1,7 @@
 import type { MetadataRoute } from "next";
 import { SITE_URL } from "@/lib/site";
 import { resolveSlugs } from "@/lib/content";
+import { LEGAL_NAV } from "@/lib/legal";
 
 export const revalidate = 3600;
 
@@ -46,7 +47,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     page("/resources", "monthly", 0.5),
     page("/contact", "yearly", 0.3),
     page("/about", "yearly", 0.3),
+    page("/plan", "yearly", 0.3),
     page("/login", "yearly", 0.3),
+    // Legal documents are driven by the same registry as /legal/[slug], so a
+    // new document appears here without a second edit.
+    ...LEGAL_NAV.map((entry) => page(entry.href, "yearly", 0.2)),
     // /dashboard and /admin are intentionally absent — both are noindex.
   ];
 }

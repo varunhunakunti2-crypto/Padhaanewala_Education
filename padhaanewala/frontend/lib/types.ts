@@ -237,7 +237,6 @@ export interface MockTestResult {
   score: number;
   maxScore: number;
   topicPerformance: Record<string, TopicPerformance>;
-  percentile: number;
 }
 
 export type BlogCategory =

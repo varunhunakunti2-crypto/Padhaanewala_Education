@@ -64,18 +64,15 @@ def main() -> None:
 
             existing_cities = {c.name for c in db.query(City).join(District).filter(District.state_id == state.id).all()}
 
-            # `SessionLocal` is configured with autoflush=False, so districts added
-            # a moment ago are still pending and would be invisible to a query.
-            # Collect them from the identity map as well, otherwise the city
-            # matcher below never sees them and silently seeds zero cities.
+            # `SessionLocal` is configured with autoflush=False, so the districts
+            # added a moment ago are still pending and a query would not see them.
+            # They must be flushed here, not read out of `session.identity_map`:
+            # that mapping only holds objects that already have an identity key, so
+            # on a fresh database it is empty and the matcher below silently seeds
+            # zero cities (the seed only appeared to work on re-runs).
+            db.flush()
             state_districts = list(
                 db.query(District).filter(District.state_id == state.id).all()
-            )
-            known_district_ids = {d.id for d in state_districts}
-            state_districts.extend(
-                d
-                for d in db.identity_map.values()
-                if isinstance(d, District) and d.state_id == state.id and d.id not in known_district_ids
             )
 
             matched_cities = 0

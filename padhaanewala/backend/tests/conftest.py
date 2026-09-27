@@ -13,10 +13,11 @@ seed scripts and Alembic all resolve tables inside the scratch schema.
 Run with:
 
     $env:PADHAANEWALA_SCHEMA = "test_suite"
-    python -m alembic upgrade head
-    python scripts/seed_roles.py
-    python scripts/seed_colleges_courses.py
-    pytest -v
+    python scripts/bootstrap_test_db.py   # migrate + seed, in the right order
+    pytest
+
+`.github/workflows/backend-tests.yml` runs exactly those two steps, so a green
+local run and a green CI run test the same thing.
 """
 
 import os

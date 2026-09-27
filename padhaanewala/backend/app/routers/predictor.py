@@ -1,3 +1,4 @@
+import hashlib
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -22,6 +23,20 @@ CATEGORY_CARRY_MAP = {
     "cuet-ug": {"General": 50000, "OBC": 90000, "EWS": 70000, "SC": 170000, "ST": 220000},
     "kcet": {"General": 25000, "OBC": 45000, "EWS": 35000, "SC": 70000, "ST": 90000},
 }
+
+
+def _stable_jitter(seed: int) -> int:
+    """Deterministic per-college value used to break ties in the confidence score.
+
+    This used to be `hash(str(cid))`. Python salts `hash()` for str per process
+    (PYTHONHASHSEED), so the same college drew a different nudge on every uvicorn
+    worker and after every restart. That made one college's confidence score
+    change between two identical requests and reordered the results, since
+    confidence is the secondary sort key. A content hash is stable across
+    processes, restarts and Python versions.
+    """
+    digest = hashlib.sha256(f"padhaanewala:predictor:{seed}".encode()).digest()
+    return int.from_bytes(digest[:4], "big")
 
 
 class PredictorRequest(BaseModel):
@@ -216,7 +231,7 @@ def predict_colleges(
             f"({payload.category}): #{avg_closing:,}"
         )
 
-        confidence += round((hash(str(cid)) % 11 - 5) * 1.5)
+        confidence += round((_stable_jitter(cid) % 11 - 5) * 1.5)
         confidence = max(4, min(97, confidence))
 
         college_item = CollegeListItemResponse(

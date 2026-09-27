@@ -25,7 +25,6 @@ export interface ResultSummary {
   incorrect: number;
   unattempted: number;
   timeTakenSec: number;
-  percentile: number;
   topicPerf: Record<string, { correct: number; total: number }>;
 }
 
@@ -110,8 +109,8 @@ export function TestResultScreen({
               <p className="text-xl font-extrabold">{pct}%</p>
             </div>
             <div className="rounded-2xl bg-white/10 p-3 backdrop-blur">
-              <p className="text-[11px] uppercase tracking-wide text-white/60">Percentile</p>
-              <p className="text-xl font-extrabold">{result.percentile}</p>
+              <p className="text-[11px] uppercase tracking-wide text-white/60">Correct</p>
+              <p className="text-xl font-extrabold">{result.correct}</p>
             </div>
           </div>
           <Badge variant={gradeTone} className="mt-4">

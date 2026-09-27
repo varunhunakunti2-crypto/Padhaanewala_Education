@@ -53,5 +53,5 @@ export async function POST(req: Request) {
     }
   }
 
-  return NextResponse.json({ reply: getAiResponse(message) });
+  return NextResponse.json({ reply: getAiResponse() });
 }

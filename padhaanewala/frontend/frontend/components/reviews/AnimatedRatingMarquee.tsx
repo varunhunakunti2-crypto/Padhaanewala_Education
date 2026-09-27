@@ -13,140 +13,6 @@ export interface MarqueeReview {
   comment: string;
 }
 
-// TOP ROW (Row 1): Moves RIGHT ->
-const DEFAULT_ROW1: MarqueeReview[] = [
-  {
-    id: "r1",
-    name: "Honey Atalkar",
-    role: "Software Engineering Student",
-    rating: 4.2,
-    avatarBg: "bg-gradient-to-br from-amber-500 to-orange-600",
-    avatarText: "HA",
-    comment: "Sheryians Coding School – Best Place To Learn Coding Offline! ☀️ The Teachers Explain Every Topic Step By Step",
-  },
-  {
-    id: "r2",
-    name: "Parth gup Ta",
-    role: "Frontend Developer",
-    rating: 4.7,
-    avatarBg: "bg-gradient-to-br from-purple-600 to-indigo-600",
-    avatarText: "P",
-    comment: "Learning At Sheryians Coding School Has Been An Amazing Experience! The Mentors Explain Everything Clearly",
-  },
-  {
-    id: "r3",
-    name: "Mohd Siraj",
-    role: "Web Developer",
-    rating: 4.1,
-    avatarBg: "bg-gradient-to-br from-blue-600 to-cyan-600",
-    avatarText: "MS",
-    comment: "I Had A Great Experience At Coaching. They Are Highly Supportive And Knowledgeable Mentors",
-  },
-  {
-    id: "r4",
-    name: "Neha Sharma",
-    role: "UI/UX Designer",
-    rating: 4.9,
-    avatarBg: "bg-gradient-to-br from-pink-500 to-rose-600",
-    avatarText: "NS",
-    comment: "The practical project-based learning model helped me land my dream tech job within 3 months!",
-  },
-  {
-    id: "r5",
-    name: "Vikram Rathore",
-    role: "Full Stack Engineer",
-    rating: 4.8,
-    avatarBg: "bg-gradient-to-br from-emerald-500 to-teal-700",
-    avatarText: "VR",
-    comment: "Concepts of Data Structures & Algorithms were explained from absolute scratch with real industry examples.",
-  },
-  {
-    id: "r6",
-    name: "Priyanshu Gupta",
-    role: "System Engineer",
-    rating: 4.6,
-    avatarBg: "bg-gradient-to-br from-red-500 to-amber-600",
-    avatarText: "PG",
-    comment: "Mentors guide you 1-on-1 throughout the course. Highly recommended for every tech enthusiast!",
-  },
-  {
-    id: "r7",
-    name: "Ananya Sen",
-    role: "React Native Developer",
-    rating: 4.9,
-    avatarBg: "bg-gradient-to-br from-violet-600 to-purple-800",
-    avatarText: "AS",
-    comment: "Outstanding coding environment! The live coding sessions & peer code reviews doubled my confidence.",
-  },
-];
-
-// DOWN ROW (Row 2): Moves LEFT <-
-const DEFAULT_ROW2: MarqueeReview[] = [
-  {
-    id: "r8",
-    name: "Akshat Sahu",
-    role: "Software Developer",
-    rating: 4.7,
-    avatarBg: "bg-gradient-to-br from-yellow-500 to-amber-600",
-    avatarText: "AS",
-    comment: "The Best Institute Is In Bhopal. I Have Learnt A Lot By Coming Here. After Coming Here, I Just Started Coding",
-  },
-  {
-    id: "r9",
-    name: "Om Singhal",
-    role: "Backend Developer",
-    rating: 4.4,
-    avatarBg: "bg-gradient-to-br from-rose-500 to-red-600",
-    avatarText: "OS",
-    comment: "☀️ Sheryians Coding School – Best Place To Learn Coding Online! ☀️ I Am Currently Learning Coding",
-  },
-  {
-    id: "r10",
-    name: "Aditya Kumar",
-    role: "Coding Mentor",
-    rating: 4.2,
-    avatarBg: "bg-gradient-to-br from-indigo-500 to-purple-700",
-    avatarText: "AK",
-    comment: "We Proudly Share Our Teaching Coding School, Helping Students Master New Technologies",
-  },
-  {
-    id: "r11",
-    name: "Sneha Patel",
-    role: "DevOps Engineer",
-    rating: 4.8,
-    avatarBg: "bg-gradient-to-br from-teal-500 to-emerald-600",
-    avatarText: "SP",
-    comment: "Top notch curriculum with live doubts support! Never felt lost during any complex programming module.",
-  },
-  {
-    id: "r12",
-    name: "Rohan Verma",
-    role: "AI & ML Aspirant",
-    rating: 4.6,
-    avatarBg: "bg-gradient-to-br from-violet-600 to-fuchsia-600",
-    avatarText: "RV",
-    comment: "Hands down the best place to clear your coding fundamentals and build impressive portfolio projects!",
-  },
-  {
-    id: "r13",
-    name: "Devansh Saxena",
-    role: "Cloud Architect",
-    rating: 4.7,
-    avatarBg: "bg-gradient-to-br from-sky-500 to-blue-700",
-    avatarText: "DS",
-    comment: "Super smooth learning curve! Every complex backend architecture topic was broken down effortlessly.",
-  },
-  {
-    id: "r14",
-    name: "Ishita Roy",
-    role: "Cybersecurity Specialist",
-    rating: 4.9,
-    avatarBg: "bg-gradient-to-br from-orange-500 to-pink-600",
-    avatarText: "IR",
-    comment: "Best investment in my tech career. The live projects gave me true hands-on engineering exposure!",
-  },
-];
-
 function AnimatedStarRating({ rating }: { rating: number }) {
   const full = Math.floor(rating);
   const hasHalf = rating - full >= 0.5;
@@ -217,15 +83,23 @@ function ReviewCardItem({ review }: { review: MarqueeReview }) {
 }
 
 export function AnimatedRatingMarquee({
+  reviews,
   title = "What Students Say",
-  subtitle = "Real reviews & ratings from thousands of aspiring coders & learners",
+  subtitle,
 }: {
+  reviews: MarqueeReview[];
   title?: string;
   subtitle?: string;
 }) {
-  // Duplicate arrays to create infinite seamless loop
-  const topRowItems = [...DEFAULT_ROW1, ...DEFAULT_ROW1, ...DEFAULT_ROW1];
-  const downRowItems = [...DEFAULT_ROW2, ...DEFAULT_ROW2, ...DEFAULT_ROW2];
+  if (reviews.length === 0) return null;
+
+  // Split the incoming reviews across two rows and duplicate each row so the
+  // marquee can loop seamlessly.
+  const half = Math.ceil(reviews.length / 2);
+  const row1 = reviews.slice(0, half);
+  const row2 = reviews.slice(half);
+  const topRowItems = [...row1, ...row1, ...row1];
+  const downRowItems = row2.length > 0 ? [...row2, ...row2, ...row2] : [];
 
   return (
     <section className="relative overflow-hidden bg-slate-50/70 dark:bg-[#070b14] border-y border-purple-100/60 dark:border-slate-800/80 py-12 text-gray-900 dark:text-white sm:py-16">
@@ -265,13 +139,15 @@ export function AnimatedRatingMarquee({
         </div>
 
         {/* DOWN LAYER (Row 2): Moves LEFT <- */}
-        <div className="mt-4 flex gap-4 py-2 sm:gap-5">
-          <div className="animate-marquee-left flex gap-4 sm:gap-5">
-            {downRowItems.map((rev, idx) => (
-              <ReviewCardItem key={`down-${rev.id}-${idx}`} review={rev} />
-            ))}
+        {downRowItems.length > 0 && (
+          <div className="mt-4 flex gap-4 py-2 sm:gap-5">
+            <div className="animate-marquee-left flex gap-4 sm:gap-5">
+              {downRowItems.map((rev, idx) => (
+                <ReviewCardItem key={`down-${rev.id}-${idx}`} review={rev} />
+              ))}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </section>
   );

@@ -17,7 +17,7 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { cn } from "@/lib/utils";
-import { getTestQuestions, computePercentile } from "@/lib/data/mockTests";
+import { getTestQuestions } from "@/lib/data/mockTests";
 import type { MockTest, MockTestQuestion } from "@/lib/types";
 import { useApp } from "@/lib/context/AppContext";
 import { TestSetupScreen } from "@/components/mocktests/TestSetupScreen";
@@ -292,9 +292,8 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
     });
     const score = correct * 3 - incorrect;
     const maxScore = qs.length * 3;
-    const percentile = computePercentile(Math.max(0, score), maxScore);
     const timeTakenSec = t.durationMins * 60 - seconds;
-    return { correct, incorrect, unattempted, score, maxScore, percentile, timeTakenSec, topicPerf };
+    return { correct, incorrect, unattempted, score, maxScore, timeTakenSec, topicPerf };
   }
 
   const finishTest = useCallback(() => {
@@ -325,7 +324,6 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
         score: Math.max(0, res.score),
         maxScore: res.maxScore,
         topicPerformance: res.topicPerf,
-        percentile: res.percentile,
       });
     }, [test, addTestResult, cleanupMedia]);
   useEffect(() => {

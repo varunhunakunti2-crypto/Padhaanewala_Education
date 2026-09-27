@@ -88,6 +88,7 @@ export interface EnquiryResponse {
 }
 
 export interface CatalogStats {
+  /** True only when every catalogue endpoint answered. See `failed`. */
   ok: boolean;
   colleges: number;
   courses: number;
@@ -95,6 +96,22 @@ export interface CatalogStats {
   scholarships: number;
   blogs: number;
   mockTests: number;
+  /** Per-source outcome, so a zero can be told apart from a source that is down. */
+  sourceStatus?: Record<string, "ok" | "error">;
+  /** Names of the sources that failed to answer. Empty when `ok` is true. */
+  failed?: string[];
+  /** Failure reason per failed source. */
+  errors?: Record<string, string>;
+  /** When these numbers were measured, as an ISO-8601 timestamp. */
+  checkedAt?: string;
+}
+
+/** Mirrors the backend `GET /health` payload. */
+export interface BackendHealth {
+  status: "ok" | "degraded" | "unreachable";
+  checks: Record<string, { ok: boolean; detail: string }>;
+  error?: string;
+  checkedAt?: string;
 }
 
 export const EMPTY_STATS: CatalogStats = {
@@ -105,6 +122,9 @@ export const EMPTY_STATS: CatalogStats = {
   scholarships: 0,
   blogs: 0,
   mockTests: 0,
+  failed: [],
+  sourceStatus: {},
+  errors: {},
 };
 
 export function getAccessToken(): string | null {
@@ -272,6 +292,89 @@ export async function fetchCatalogStats(fallback: CatalogStats = EMPTY_STATS): P
   } catch {
     return fallback;
   }
+}
+
+/**
+ * Read the backend's own health verdict. Never throws: an unreachable backend is
+ * reported as `status: "unreachable"` so the UI can show a measured state rather
+ * than a default that looks healthy.
+ */
+export async function fetchBackendHealth(): Promise<BackendHealth> {
+  try {
+    const res = await fetch("/api/health", { cache: "no-store" });
+    const data = await res.json();
+    return data as BackendHealth;
+  } catch {
+    return {
+      status: "unreachable",
+      checks: {},
+      error: "The health request could not be completed.",
+    };
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Saved colleges
+ *
+ * The dashboard used to render a hardcoded shortlist, then quietly fell back to
+ * the `cp_saved` localStorage list. These calls make the signed-in user's
+ * server-side list the source of truth; the local list is only a cache.
+ * ------------------------------------------------------------------ */
+
+export interface SavedCollegeRecord {
+  id: number;
+  college_id: number;
+  saved_at: string;
+  college: {
+    id: number;
+    college_id: string;
+    name: string;
+    slug: string;
+    college_type: string | null;
+    ownership: string | null;
+    city: string | null;
+    state: string | null;
+    university_name: string | null;
+    has_hostel: boolean | null;
+    total_reviews: number;
+    average_rating: string;
+    is_featured: boolean;
+  };
+}
+
+/** Distinguishes "no saved colleges" from "we could not ask the server". */
+export type SavedCollegesResult =
+  | { state: "ok"; records: SavedCollegeRecord[] }
+  /** 400: the account has no StudentProfile yet, so there is nothing to attach saves to. */
+  | { state: "no-profile" }
+  | { state: "error"; message: string };
+
+export async function fetchSavedColleges(): Promise<SavedCollegesResult> {
+  try {
+    const records = await apiFetch<SavedCollegeRecord[]>("/saved-colleges");
+    return { state: "ok", records: Array.isArray(records) ? records : [] };
+  } catch (err) {
+    if (isForbidden(err)) return { state: "error", message: "You do not have access to saved colleges." };
+    if (err instanceof ApiError && err.status === 400) return { state: "no-profile" };
+    if (err instanceof ApiError && err.status === 401) {
+      return { state: "error", message: "Sign in to see your saved colleges." };
+    }
+    return {
+      state: "error",
+      message: err instanceof Error ? err.message : "Could not load saved colleges.",
+    };
+  }
+}
+
+export async function saveCollegeRemote(collegeId: number): Promise<void> {
+  await apiFetch<SavedCollegeRecord>("/saved-colleges", {
+    method: "POST",
+    body: JSON.stringify({ college_id: collegeId }),
+  });
+}
+
+export async function unsaveCollegeRemote(collegeId: number): Promise<void> {
+  await apiFetch<void>(`/saved-colleges/${collegeId}`, { method: "DELETE" });
 }
 
 export function toStudentProfile(p: BackendProfile): StudentProfile {

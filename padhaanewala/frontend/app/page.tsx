@@ -15,6 +15,7 @@ import { StudentTestimonials } from "@/components/home/StudentTestimonials";
 import {
   resolveBlogPosts,
   resolveColleges,
+  resolveCourses,
   resolveExams,
   resolveMockTests,
   resolveScholarships,
@@ -23,10 +24,12 @@ import {
 export const revalidate = 300;
 
 export default async function HomePage() {
-  // All six requests are independent, so they are issued concurrently and each
-  // one independently falls back to bundled data if the backend is unavailable.
-  const [colleges, exams, scholarships, mockTests, posts] = await Promise.all([
+  // These six requests are independent, so they are issued concurrently. Each
+  // resolver returns only what the backend actually holds — an empty list when
+  // the table is empty, and the sections below render their own empty states.
+  const [colleges, courses, exams, scholarships, mockTests, posts] = await Promise.all([
     resolveColleges(),
+    resolveCourses(),
     resolveExams(),
     resolveScholarships(),
     resolveMockTests(),
@@ -35,7 +38,10 @@ export default async function HomePage() {
 
   return (
     <>
-      <HeroSection />
+      <HeroSection
+        collegeCount={colleges.data.length}
+        courseCount={courses.data.length}
+      />
       <QuickActions />
       <PopularCourses />
       <FeaturedColleges colleges={colleges.data} />

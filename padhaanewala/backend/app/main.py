@@ -1,9 +1,14 @@
 import logging
+import time
+from datetime import datetime, timezone
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.config import settings
+from app.database import SessionLocal
 from app.middleware.logging import (
     ErrorHandlingMiddleware,
     RequestContextMiddleware,
@@ -86,5 +91,47 @@ app.include_router(predictor.router)
 
 
 @app.get("/health", tags=["health"])
-async def health_check() -> dict[str, str]:
-    return {"status": "ok"}
+async def health_check(response: Response) -> dict[str, object]:
+    """Report real dependency health instead of a hardcoded "ok".
+
+    This used to return a constant ``{"status": "ok"}`` regardless of whether the
+    database was reachable, which is what allowed the admin panel to display
+    "PostgreSQL connectivity verified" while pointing at nothing. A trivial
+    ``SELECT 1`` proves the connection, the credentials and the pool are all
+    usable; it is cheap and does not touch application tables.
+
+    The endpoint answers 503 when a dependency is down so that load balancers and
+    uptime monitors can act on it, while still returning a body explaining which
+    check failed. Driver error text is reduced to the exception class name because
+    SQLAlchemy messages can embed the connection string and credentials.
+    """
+    checks: dict[str, dict[str, object]] = {}
+    healthy = True
+
+    started = time.perf_counter()
+    try:
+        db = SessionLocal()
+        try:
+            db.execute(text("SELECT 1"))
+        finally:
+            db.close()
+        elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
+        checks["database"] = {
+            "ok": True,
+            "detail": f"PostgreSQL answered SELECT 1 in {elapsed_ms} ms",
+        }
+    except SQLAlchemyError as exc:
+        healthy = False
+        checks["database"] = {
+            "ok": False,
+            "detail": f"PostgreSQL query failed ({type(exc).__name__})",
+        }
+
+    if not healthy:
+        response.status_code = 503
+
+    return {
+        "status": "ok" if healthy else "degraded",
+        "checks": checks,
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+    }

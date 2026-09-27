@@ -69,7 +69,14 @@ def admin():
 def test_health():
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+
+    # The endpoint now verifies PostgreSQL instead of returning a constant, so it
+    # reports a checks map and a measurement timestamp. `test_health.py` covers the
+    # failure path; this asserts the healthy shape.
+    body = response.json()
+    assert body["status"] == "ok"
+    assert body["checks"]["database"]["ok"] is True
+    assert body["checked_at"]
 
 
 def test_register_success(registered):

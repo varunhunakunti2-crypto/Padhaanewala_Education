@@ -1,91 +1,51 @@
 "use client";
 
-import { useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  Eye,
-  Search,
-  CalendarClock,
-  Award,
-  Settings,
   ArrowRight,
-  Bookmark,
+  Award,
   Bell,
-  Briefcase,
-  GraduationCap as EduIcon,
+  Bookmark,
+  GraduationCap,
   Home,
+  Scale,
+  Search,
+  Settings,
+  Sparkles,
 } from "lucide-react";
 import { useApp } from "@/lib/context/AppContext";
-import { cn } from "@/lib/utils";
-import { Badge } from "@/components/ui/Badge";
-import { Button } from "@/components/ui/Button";
+import { SITE } from "@/lib/site";
 
 /* ---------- data ---------- */
 
 const NAV = [
-  { id: "home", label: "Home", icon: <Home className="h-[19px] w-[19px]" />, active: true },
-  { id: "jobs", label: "Jobs", icon: <Briefcase className="h-[19px] w-[19px]" /> },
-  { id: "scholarships", label: "Scholarships", icon: <Award className="h-[19px] w-[19px]" /> },
-  { id: "events", label: "Events", icon: <CalendarClock className="h-[19px] w-[19px]" /> },
-];
-
-const CHIPS = ["All Saved", "Events", "Scholarships", "Jobs", "Resources", "Careers"] as const;
-type Chip = (typeof CHIPS)[number];
-
-const SAVED = [
-  {
-    id: "s1",
-    title: "Tech Day 2021",
-    cat: "Tech",
-    catClass: "bg-[#EDEDF1] text-[#55637B]",
-    org: "NerdWallet",
-  },
-  {
-    id: "s2",
-    title: "Political Strategy Fellow",
-    cat: "Politics",
-    catClass: "bg-[#FFF2A8] text-[#8A6D00]",
-    org: "Alect Political",
-  },
-  {
-    id: "s3",
-    title: "Paid Marketing Summer Intern",
-    cat: "Marketing",
-    catClass: "bg-[#E8C5F7] text-[#8A3FB8]",
-    org: "Levi’s",
-  },
-  {
-    id: "s4",
-    title: "NY Times Paid Internship",
-    cat: "Arts",
-    catClass: "bg-[#FFDDBF] text-[#B3660F]",
-    org: "The NY Times",
-  },
+  { id: "home", label: "Overview", href: "/dashboard", icon: <Home className="h-[19px] w-[19px]" />, active: true },
+  { id: "colleges", label: "Colleges", href: "/colleges", icon: <GraduationCap className="h-[19px] w-[19px]" /> },
+  { id: "compare", label: "Compare", href: "/compare", icon: <Scale className="h-[19px] w-[19px]" /> },
+  { id: "scholarships", label: "Scholarships", href: "/scholarships", icon: <Award className="h-[19px] w-[19px]" /> },
+  { id: "mock-tests", label: "Mock Tests", href: "/mock-tests", icon: <Sparkles className="h-[19px] w-[19px]" /> },
 ];
 
 /* ============ main ============ */
 
 export default function DashboardExplorer() {
-  const { profile, savedColleges, showToast } = useApp();
-  const [chip, setChip] = useState<Chip>("All Saved");
-  const name = profile?.name ?? "Pushkar";
-  const firstName = (name || "there").trim().split(" ")[0];
+  const {
+    profile,
+    savedColleges,
+    savedCollegeRecords,
+    savedSync,
+    savedSyncMessage,
+    compareList,
+    refreshSavedColleges,
+    notifications,
+    showToast,
+  } = useApp();
 
-  const rows = useMemo(
-    () =>
-      chip === "All Saved"
-        ? SAVED
-        : SAVED.filter((r) => {
-            const map: Record<string, string> = {
-              Events: "Tech",
-              Scholarships: "Politics",
-              Jobs: "Marketing",
-              Resources: "Arts",
-            };
-            return r.cat === map[chip];
-          }),
-    [chip],
-  );
+  const displayName = profile?.name?.trim() || "";
+  const firstName = displayName ? displayName.split(" ")[0] : "there";
+  const initial = displayName ? displayName.charAt(0).toUpperCase() : "U";
+
+  const unread = notifications.filter((n) => !n.read).length;
 
   return (
     <div className="grid min-h-screen grid-cols-1 bg-[#FAF9F6] text-[#16204A] lg:grid-cols-[300px_1fr]">
@@ -94,65 +54,67 @@ export default function DashboardExplorer() {
         {/* brand */}
         <Link href="/" className="flex items-center gap-2.5 px-2">
           <span className="grid h-10 w-10 place-items-center rounded-[14px] bg-[#16204A] text-white">
-            <EduIcon className="h-5 w-5" />
+            <GraduationCap className="h-5 w-5" />
           </span>
           <span>
-            <span className="block font-display text-[19px] font-extrabold tracking-tight">EduPath</span>
-            <span className="block text-[11px] font-medium text-[#A8B0BE]">Learn · Explore · Grow</span>
+            <span className="block font-display text-[19px] font-extrabold tracking-tight">{SITE.name}</span>
+            <span className="block text-[11px] font-medium text-[#A8B0BE]">{SITE.tagline}</span>
           </span>
         </Link>
 
         {/* profile */}
-        <button
-          type="button"
-          onClick={() => showToast({ variant: "info", title: "Profile", description: "Open your EduPath profile settings." })}
-          className="mt-6 flex w-full items-center gap-3 rounded-[18px] bg-[#FAF9F6] p-3 text-left ring-1 ring-[#EFE9E2] transition hover:bg-[#F4F2EC]"
-        >
-          <span className="grid h-[50px] w-[50px] shrink-0 place-items-center rounded-full bg-[#DCE4F5] text-[17px] font-bold text-[#3159C9]">
-            {(name || "P").charAt(0).toUpperCase()}
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-[16px] font-bold">{name}</span>
-            <span className="block text-[13px] text-[#8A96A9]">B.Tech · 1st Year</span>
-          </span>
-          <span className="text-[#A8B0BE]">⌄</span>
-        </button>
+        {displayName ? (
+          <button
+            type="button"
+            onClick={() => showToast({ variant: "info", title: "Profile", description: "Open your profile settings." })}
+            className="mt-6 flex w-full items-center gap-3 rounded-[18px] bg-[#FAF9F6] p-3 text-left ring-1 ring-[#EFE9E2] transition hover:bg-[#F4F2EC]"
+          >
+            <span className="grid h-[50px] w-[50px] shrink-0 place-items-center rounded-full bg-[#DCE4F5] text-[17px] font-bold text-[#3159C9]">
+              {initial}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[16px] font-bold">{displayName}</span>
+            </span>
+          </button>
+        ) : (
+          <Link
+            href="/login"
+            className="mt-6 flex w-full items-center gap-3 rounded-[18px] bg-[#FAF9F6] p-3 text-left ring-1 ring-[#EFE9E2] transition hover:bg-[#F4F2EC]"
+          >
+            <span className="grid h-[50px] w-[50px] shrink-0 place-items-center rounded-full bg-[#DCE4F5] text-[17px] font-bold text-[#3159C9]">
+              U
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[16px] font-bold">Sign in</span>
+              <span className="block text-[13px] text-[#8A96A9]">Sync your saved colleges</span>
+            </span>
+          </Link>
+        )}
 
         {/* nav */}
         <nav className="mt-4 space-y-1">
           {NAV.map((n) => (
-            <button
+            <Link
               key={n.id}
-              type="button"
-              onClick={() => showToast({ variant: "info", title: n.label, description: "Section — coming soon." })}
-              className={cn(
-                "flex w-full items-center gap-3 rounded-[14px] px-3.5 py-2.5 text-[15px] font-semibold text-[#55637B] transition hover:bg-[#F4F2EC]",
-                n.active && "bg-[#EEF1FF] text-[#3159C9]",
-              )}
+              href={n.href}
+              className={`flex w-full items-center gap-3 rounded-[14px] px-3.5 py-2.5 text-[15px] font-semibold text-[#55637B] transition hover:bg-[#F4F2EC] ${
+                n.active ? "bg-[#EEF1FF] text-[#3159C9]" : ""
+              }`}
             >
               {n.icon} {n.label}
-            </button>
+            </Link>
           ))}
         </nav>
 
         <div className="my-6 h-px bg-[#EEE9E2]" />
 
         <nav className="space-y-1">
-          <button
-            type="button"
-            onClick={() => showToast({ variant: "info", title: "Settings", description: "Open account settings." })}
+          <Link
+            href="/reviews"
             className="flex w-full items-center gap-3 rounded-[14px] px-3.5 py-2.5 text-[15px] font-semibold text-[#55637B] transition hover:bg-[#F4F2EC]"
           >
-            <Settings className="h-[19px] w-[19px]" /> Settings
-          </button>
-          <button
-            type="button"
-            onClick={() => showToast({ variant: "info", title: "Updates", description: "3 new updates are available." })}
-            className="relative flex w-full items-center gap-3 rounded-[14px] px-3.5 py-2.5 text-[15px] font-semibold text-[#55637B] transition hover:bg-[#F4F2EC]"
-          >
-            <Bell className="h-[19px] w-[19px]" /> Updates
-            <span className="ml-auto grid h-5 min-w-5 place-items-center rounded-full bg-[#F45D76] px-1.5 text-[11px] font-bold text-white">3</span>
-          </button>
+            <Settings className="h-[19px] w-[19px]" /> Reviews
+          </Link>
         </nav>
       </aside>
 
@@ -162,183 +124,166 @@ export default function DashboardExplorer() {
         <header className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <span className="grid h-[46px] w-[46px] place-items-center rounded-full bg-[#DCE4F5] text-[17px] font-bold text-[#3159C9]">
-              {(name || "P").charAt(0).toUpperCase()}
+              {initial}
             </span>
             <div>
               <h1 className="font-display text-[21px] font-extrabold tracking-tight">
-                Good morning, {firstName} <span>👋</span>
+                {displayName ? `Welcome back, ${firstName}` : "Your dashboard"}
               </h1>
-              <p className="text-[14px] text-[#8A96A9]">Here’s what’s fresh for you.</p>
+              <p className="text-[14px] text-[#8A96A9]">Your saved colleges, comparisons and updates in one place.</p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="grid h-10 w-10 place-items-center rounded-full bg-[#F2F0EA] text-[#A8B0BE]">
+            <Link
+              href="/colleges"
+              aria-label="Search colleges"
+              className="grid h-10 w-10 place-items-center rounded-full bg-[#F2F0EA] text-[#A8B0BE] transition hover:text-[#3159C9]"
+            >
               <Search className="h-[18px] w-[18px]" />
-            </span>
-            <button
-              type="button"
-              aria-label="Notifications"
-              onClick={() => showToast({ variant: "info", title: "Notifications", description: "3 unread updates." })}
-              className="relative grid h-10 w-10 place-items-center rounded-full bg-[#F2F0EA] text-[#A8B0BE]"
-            >
-              <Bell className="h-[18px] w-[18px]" />
-              <span className="absolute -right-0.5 -top-0.5 grid h-[18px] w-[18px] place-items-center rounded-full bg-[#F45D76] text-[10px] font-bold text-white ring-2 ring-white">3</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => showToast({ variant: "info", title: "Profile", description: "Open your profile menu." })}
-              className="flex items-center gap-2 rounded-full bg-white py-1.5 pl-1.5 pr-3 ring-1 ring-[#EFE9E2] transition hover:bg-[#FAF9F6]"
-            >
-              <span className="grid h-8 w-8 place-items-center rounded-full bg-[#DCE4F5] text-[14px] font-bold text-[#3159C9]">
-                {(name || "P").charAt(0).toUpperCase()}
+            </Link>
+            {displayName ? (
+              <span className="flex items-center gap-2 rounded-full bg-white py-1.5 pl-1.5 pr-3 ring-1 ring-[#EFE9E2]">
+                <span className="grid h-8 w-8 place-items-center rounded-full bg-[#DCE4F5] text-[14px] font-bold text-[#3159C9]">
+                  {initial}
+                </span>
+                <span className="text-sm font-semibold">{displayName}</span>
               </span>
-              <span className="text-sm font-semibold">{name}</span>
-              <span className="text-[#A8B0BE]">⌄</span>
-            </button>
+            ) : null}
           </div>
         </header>
 
-        {/* featured row */}
-        <div className="mt-8 grid grid-cols-1 gap-5 xl:grid-cols-[1.15fr_0.85fr]">
-          {/* TOP PICK */}
-          <article className="group flex flex-col overflow-hidden rounded-[24px] bg-white ring-1 ring-[#EFE9E2]">
-            <div className="relative overflow-hidden">
-              <div className="h-[150px] w-full bg-gradient-to-br from-[#E2E7F7] via-[#EEE9F4] to-[#F7E3E0]" />
-              <span className="absolute right-5 top-5 rounded-full bg-white px-3.5 py-1.5 text-[12px] font-bold text-[#3159C9] shadow-sm">
-                Top Pick
-              </span>
-            </div>
-            <div className="p-6">
-              <Badge variant="purple" className="mb-2">Apps & Extensions</Badge>
-              <h2 className="font-display text-[22px] font-extrabold tracking-tight">
-                Apps & Extensions Every Student Needs
-              </h2>
-              <p className="mt-3 text-[15px] leading-[1.6] text-[#66758C]">
-                Explore our team’s favorite article-to-podcast apps, AI note-takers, organization tools and browser extensions.
-              </p>
-              <button
-                type="button"
-                onClick={() => showToast({ variant: "info", title: "Apps & Extensions", description: "Opening the full article." })}
-                className="mt-4 inline-flex items-center gap-1.5 text-[14px] font-bold text-[#3159C9] transition hover:text-[#16204A]"
-              >
-                Read the article <ArrowRight className="h-4 w-4" />
-              </button>
-            </div>
-          </article>
-
-          {/* NASA */}
-          <article className="flex flex-col overflow-hidden rounded-[24px] bg-white ring-1 ring-[#EFE9E2]">
-            <div className="flex items-center gap-3 px-6 pt-6">
-              <span className="grid h-[46px] w-[46px] place-items-center rounded-[14px] bg-[#111827] text-[20px]">🚀</span>
-              <div className="min-w-0">
-                <p className="truncate text-[13px] font-bold text-[#F45D76]">NASA</p>
-                <h2 className="truncate font-display text-[17px] font-extrabold tracking-tight">
-                  NASA Fellowship & Internship
-                </h2>
-              </div>
-            </div>
-            <p className="px-6 pt-3 text-[14px] leading-[1.6] text-[#66758C]">
-              Leverage NASA’s unique missions and programs to enhance the capability, diversity and size of the nation’s future STEM workforce.
+        {/* saved / compare summary */}
+        <div className="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-3">
+          <Link
+            href="/colleges"
+            className="group flex flex-col overflow-hidden rounded-[24px] bg-white p-6 ring-1 ring-[#EFE9E2] transition hover:ring-[#DCE4F5]"
+          >
+            <span className="grid h-11 w-11 place-items-center rounded-[14px] bg-[#EEF1FF] text-[#3159C9]">
+              <Bookmark className="h-5 w-5" />
+            </span>
+            <p className="mt-4 font-display text-3xl font-extrabold tabular-nums">
+              {savedSync === "loading" ? "—" : savedColleges.length}
             </p>
-            <div className="mt-auto flex items-center justify-between px-6 py-5">
-              <div className="grid grid-cols-2 gap-6">
-                <div>
-                  <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#A8B0BE]">Type</p>
-                  <p className="text-[13px] font-bold text-[#F45D76]">Internship</p>
-                </div>
-                <div>
-                  <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#A8B0BE]">Time</p>
-                  <p className="text-[13px] font-bold text-[#F45D76]">Ongoing</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                aria-label="Save NASA opportunity"
-                onClick={() =>
-                  showToast({
-                    variant: savedColleges.includes("sat01") ? "info" : "success",
-                    title: savedColleges.includes("sat01") ? "Removed from saved" : "Saved",
-                    description: "NASA Fellowship & Internship",
-                  })
-                }
-                className="grid h-9 w-9 place-items-center rounded-full bg-[#F2F0EA] text-[#A8B0BE] transition hover:bg-[#EEF1FF] hover:text-[#3159C9]"
-              >
-                <Bookmark className="h-[17px] w-[17px]" />
-              </button>
-            </div>
-          </article>
-        </div>
+            <p className="mt-0.5 text-[15px] font-semibold">Colleges saved</p>
+            <span className="mt-3 inline-flex items-center gap-1.5 text-[14px] font-bold text-[#3159C9]">
+              Browse colleges <ArrowRight className="h-4 w-4" />
+            </span>
+          </Link>
 
-        {/* filter chips */}
-        <div className="mt-8 flex gap-2 overflow-x-auto pb-1">
-          {CHIPS.map((c) => (
-            <button
-              key={c}
-              type="button"
-              onClick={() => setChip(c)}
-              className={cn(
-                "inline-flex shrink-0 items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-bold transition",
-                chip === c ? "bg-[#EEF1FF] text-[#3159C9]" : "bg-white text-[#55637B] ring-1 ring-[#EFE9E2] hover:bg-[#F5F3ED]",
-              )}
-            >
-              <Bookmark className="h-3.5 w-3.5" /> {c}
-            </button>
-          ))}
-        </div>
+          <Link
+            href="/compare"
+            className="group flex flex-col overflow-hidden rounded-[24px] bg-white p-6 ring-1 ring-[#EFE9E2] transition hover:ring-[#DCE4F5]"
+          >
+            <span className="grid h-11 w-11 place-items-center rounded-[14px] bg-[#FFF2E8] text-[#B3660F]">
+              <Scale className="h-5 w-5" />
+            </span>
+            <p className="mt-4 font-display text-3xl font-extrabold tabular-nums">{compareList.length}</p>
+            <p className="mt-0.5 text-[15px] font-semibold">In comparison</p>
+            <span className="mt-3 inline-flex items-center gap-1.5 text-[14px] font-bold text-[#3159C9]">
+              Open comparison <ArrowRight className="h-4 w-4" />
+            </span>
+          </Link>
 
-        {/* saved list */}
-        <div className="mt-4 overflow-hidden rounded-[22px] bg-white ring-1 ring-[#EFE9E2]">
-          <div className="grid grid-cols-[1fr_150px_1fr_44px] items-center gap-3 border-b border-[#EEE9E2] px-6 py-4 text-[12px] font-bold uppercase tracking-[0.12em] text-[#A8B0BE]">
-            <span>Opportunity</span>
-            <span>Category</span>
-            <span>Organization</span>
-            <span />
+          <div className="flex flex-col overflow-hidden rounded-[24px] bg-white p-6 ring-1 ring-[#EFE9E2]">
+            <span className="grid h-11 w-11 place-items-center rounded-[14px] bg-[#FDE8EE] text-[#F45D76]">
+              <Bell className="h-5 w-5" />
+            </span>
+            <p className="mt-4 font-display text-3xl font-extrabold tabular-nums">{unread}</p>
+            <p className="mt-0.5 text-[15px] font-semibold">Unread updates</p>
+            <p className="mt-3 text-[14px] text-[#8A96A9]">Listed below.</p>
           </div>
+        </div>
+
+        {/* saved colleges — from the signed-in user's own account */}
+        <div className="mt-5 overflow-hidden rounded-[22px] bg-white ring-1 ring-[#EFE9E2]">
+          <div className="flex items-center justify-between border-b border-[#EEE9E2] px-6 py-4">
+            <h2 className="font-display text-[17px] font-extrabold tracking-tight">
+              Your saved colleges
+            </h2>
+            <Link
+              href="/colleges"
+              className="text-[13px] font-bold text-[#3159C9] hover:underline"
+            >
+              Find more
+            </Link>
+          </div>
+
           <div className="divide-y divide-[#EEE9E2]">
-            {rows.length === 0 ? (
+            {savedSync === "loading" ? (
               <p className="px-6 py-10 text-center text-[14px] text-[#A8B0BE]">
-                Nothing saved in {String(chip).toLowerCase()} yet.
+                Loading your saved colleges&hellip;
+              </p>
+            ) : savedSync === "error" ? (
+              <div className="px-6 py-10 text-center">
+                <p className="text-[14px] text-[#55637B]">
+                  {savedSyncMessage ?? "We could not load your saved colleges."}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void refreshSavedColleges()}
+                  className="mt-3 text-[13px] font-bold text-[#3159C9] hover:underline"
+                >
+                  Try again
+                </button>
+              </div>
+            ) : savedSync === "no-profile" ? (
+              <p className="px-6 py-10 text-center text-[14px] text-[#55637B]">
+                {savedSyncMessage ??
+                  "Complete your student profile to save colleges across devices."}
+              </p>
+            ) : savedCollegeRecords.length === 0 ? (
+              <p className="px-6 py-10 text-center text-[14px] text-[#A8B0BE]">
+                You haven&apos;t saved any colleges yet. Save one from a college profile and
+                it will appear here on any device you sign in from.
               </p>
             ) : (
-              rows.map((r) => (
-                <button
-                  key={r.id}
-                  type="button"
-                  onClick={() => showToast({ variant: "info", title: r.title, description: `Open from ${r.org}.` })}
-                  className="grid w-full grid-cols-[1fr_150px_1fr_44px] items-center gap-3 px-6 py-[15px] text-left transition hover:bg-[#FAF9F6]"
+              savedCollegeRecords.map((record) => (
+                <Link
+                  key={record.id}
+                  href={`/colleges/${record.college.slug}`}
+                  className="flex items-center justify-between gap-4 px-6 py-4 transition hover:bg-[#FAF9F7]"
                 >
-                  <span className="truncate text-[15px] font-semibold">{r.title}</span>
-                  <span className={cn("grid w-fit place-items-center rounded-full px-3 py-1 text-[12px] font-bold", r.catClass)}>
-                    {r.cat}
-                  </span>
-                  <span className="truncate text-[15px] text-[#55637B]">{r.org}</span>
-                  <span aria-hidden className="justify-self-end text-[#A8B0BE]">
-                    <Link2Icon />
-                  </span>
-                </button>
+                  <div className="min-w-0">
+                    <p className="truncate text-[15px] font-semibold">{record.college.name}</p>
+                    <p className="mt-0.5 text-[13px] text-[#8A96A9]">
+                      {[record.college.city, record.college.state].filter(Boolean).join(", ") ||
+                        "Location not recorded"}
+                    </p>
+                  </div>
+                  <ArrowRight className="h-4 w-4 shrink-0 text-[#A8B0BE]" />
+                </Link>
               ))
             )}
           </div>
-          <div className="flex items-center justify-end border-t border-[#EEE9E2] px-6 py-4">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() =>
-                showToast({ variant: "info", title: "Suggest an opportunity", description: "Share something great with the community." })
-              }
-              className="rounded-full"
-            >
-              Suggest an opportunity
-            </Button>
+        </div>
+
+        {/* notifications */}
+        <div className="mt-5 overflow-hidden rounded-[22px] bg-white ring-1 ring-[#EFE9E2]">
+          <div className="flex items-center justify-between border-b border-[#EEE9E2] px-6 py-4">
+            <h2 className="font-display text-[17px] font-extrabold tracking-tight">Recent updates</h2>
+            {unread > 0 ? (
+              <span className="rounded-full bg-[#FDE8EE] px-3 py-1 text-[12px] font-bold text-[#F45D76]">
+                {unread} unread
+              </span>
+            ) : null}
+          </div>
+          <div className="divide-y divide-[#EEE9E2]">
+            {notifications.length === 0 ? (
+              <p className="px-6 py-10 text-center text-[14px] text-[#A8B0BE]">
+                No updates yet. We&apos;ll let you know when something changes.
+              </p>
+            ) : (
+              notifications.slice(0, 5).map((n) => (
+                <div key={n.id} className="px-6 py-4">
+                  <p className="text-[15px] font-semibold">{n.title}</p>
+                  {n.message ? <p className="mt-1 text-[14px] text-[#55637B]">{n.message}</p> : null}
+                </div>
+              ))
+            )}
           </div>
         </div>
       </main>
     </div>
   );
-}
-
-function Link2Icon() {
-  return <Eye className="h-[17px] w-[17px]" />;
 }

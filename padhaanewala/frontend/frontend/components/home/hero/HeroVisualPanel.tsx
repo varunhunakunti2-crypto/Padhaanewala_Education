@@ -3,7 +3,7 @@
 import { motion } from "motion/react";
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowRight, Star } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 
 function Handwriting() {
   return (
@@ -60,12 +60,6 @@ const FLOATING_CARDS = [
   },
 ];
 
-const AVATARS = [
-  "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&h=100&q=80",
-  "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=100&h=100&q=80",
-  "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100&h=100&q=80",
-];
-
 export function HeroVisualPanel() {
   return (
     <div className="relative hidden h-[600px] w-full lg:block">
@@ -109,36 +103,6 @@ export function HeroVisualPanel() {
           </motion.div>
         ))}
 
-        {/* Bottom-right trust rating badge */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.75, ease: [0.22, 1, 0.36, 1] }}
-          className="pointer-events-auto absolute bottom-8 right-2 flex items-center gap-3 rounded-2xl border border-white/20 bg-slate-900/70 px-3.5 py-2.5 shadow-2xl backdrop-blur-md"
-        >
-          {/* Overlapping avatars */}
-          <div className="flex -space-x-2 overflow-hidden">
-            {AVATARS.map((src, i) => (
-              <div key={i} className="relative inline-block h-8 w-8 rounded-full ring-2 ring-purple-400/40 overflow-hidden">
-                <Image src={src} alt="" fill sizes="32px" className="object-cover" />
-              </div>
-            ))}
-          </div>
-
-          <div>
-            <p className="text-[11px] font-medium text-white/90">
-              Trusted by <span className="font-bold text-white">2.4M+</span> students
-            </p>
-            <div className="mt-0.5 flex items-center gap-1">
-              <div className="flex gap-0.5 text-amber-400">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <Star key={i} className="h-3 w-3 fill-amber-400 text-amber-400" />
-                ))}
-              </div>
-              <span className="text-[11px] font-bold text-white">4.9/5</span>
-            </div>
-          </div>
-        </motion.div>
       </div>
     </div>
   );

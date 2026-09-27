@@ -16,7 +16,7 @@ import { SectionHeading } from "@/components/ui/SectionHeading";
 const ACTIONS = [
   {
     title: "Find Colleges",
-    desc: "Search 12,000+ colleges by course, city and budget.",
+    desc: "Search the college catalogue by course, city and budget.",
     href: "/colleges",
     icon: Building2,
     grad: "from-purple-600 to-indigo-600",

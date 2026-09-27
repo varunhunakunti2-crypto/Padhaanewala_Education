@@ -61,7 +61,6 @@ export function AdminDashboard() {
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="purple">Admin Console</Badge>
-            <Badge variant="gray">Synced 2 min ago</Badge>
           </div>
           <h1 className="mt-2 font-display text-2xl font-extrabold text-gray-900 sm:text-3xl">
             Padhaanewala Admin

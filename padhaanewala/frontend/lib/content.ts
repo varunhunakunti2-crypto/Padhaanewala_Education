@@ -2,21 +2,20 @@
  * Content resolution layer.
  *
  * Single entry point every server component uses to read catalog content.
- * Resolution order:
- *   1. Live FastAPI backend (ISR-cached, see lib/api-server.ts)
- *   2. Bundled literals in lib/data/* — only as a resilience fallback so a
- *      backend outage degrades the page instead of taking it down.
  *
- * `source` is surfaced so the UI can be honest about where data came from, and
- * so operators can tell at a glance whether a page is running on live data.
+ * Resolution is API-only. These resolvers used to fall back to hardcoded
+ * literals in `lib/data/*` whenever the backend was unreachable or returned an
+ * empty list, which meant the site kept serving invented colleges, courses,
+ * exams, scholarships, blog posts and an 83-question mock-test bank during a
+ * backend outage — and quietly hid a dead or empty database behind a page that
+ * looked populated.
+ *
+ * Those literal datasets are now empty (see the comments in `lib/data/*`). The
+ * resolvers therefore return whatever the API actually holds: an empty list when
+ * the table is empty, `undefined` when a record does not exist. Rendering an
+ * honest empty state is the correct behaviour when there is no data.
  */
 
-import { BLOG_POSTS, BLOG_CATEGORIES } from "@/lib/data/blog";
-import { COLLEGES, getCollegeBySlug, getFeaturedColleges } from "@/lib/data/colleges";
-import { COURSES, getCourseBySlug } from "@/lib/data/courses";
-import { EXAMS, getExamBySlug as getBundledExamBySlug } from "@/lib/data/exams";
-import { MOCK_TESTS } from "@/lib/data/mockTests";
-import { SCHOLARSHIPS } from "@/lib/data/scholarships";
 import type { BlogPost, College, Exam, MockTest, Scholarship } from "@/lib/types";
 import type { CourseMeta } from "@/lib/data/courses";
 import {
@@ -42,150 +41,134 @@ import {
   mapScholarship,
 } from "@/lib/mappers";
 
-export type DataSource = "api" | "bundled";
+/**
+ * `api`  — the backend answered.
+ * `empty` — the backend answered with nothing (no rows, or record not found).
+ */
+export type DataSource = "api" | "empty";
 
 export interface Resolved<T> {
   data: T;
   source: DataSource;
 }
 
-const resolve = <T>(api: T | null | undefined, fallback: T): Resolved<T> => {
-  const isEmpty =
-    api === null ||
-    api === undefined ||
-    (Array.isArray(api) && api.length === 0);
-  return isEmpty ? { data: fallback, source: "bundled" } : { data: api, source: "api" };
-};
+const list = <In, Out>(rows: In[] | null | undefined, mapped: Out[]): Resolved<Out[]> => ({
+  data: mapped,
+  source: mapped.length ? "api" : "empty",
+});
 
 /* ------------------------------- colleges ----------------------------- */
 
 export async function resolveColleges(): Promise<Resolved<College[]>> {
   const rows = await getColleges();
-  return resolve(
-    rows.length ? rows.map((r) => mapCollegeListItem(r)) : null,
-    COLLEGES,
-  );
+  return list(rows, rows.map((r) => mapCollegeListItem(r)));
 }
 
 export async function resolveCollege(slug: string): Promise<Resolved<College | undefined>> {
   const bundle = await getCollegeBundle(slug);
-  const apiCollege = bundle ? mapCollege(bundle) : null;
-  return resolve(apiCollege, getCollegeBySlug(slug));
+  const college = bundle ? mapCollege(bundle) : undefined;
+  return { data: college, source: college ? "api" : "empty" };
 }
 
 export async function resolveFeaturedColleges(limit = 9): Promise<Resolved<College[]>> {
   const rows = await getColleges("featured=true&limit=50");
-  if (rows.length) {
-    return { data: rows.slice(0, limit).map((r) => mapCollegeListItem(r)), source: "api" };
-  }
-  return { data: getFeaturedColleges().slice(0, limit), source: "bundled" };
+  return list(rows, rows.slice(0, limit).map((r) => mapCollegeListItem(r)));
 }
 
 /* -------------------------------- courses ----------------------------- */
 
 export async function resolveCourses(): Promise<Resolved<CourseMeta[]>> {
   const rows = await getCourses();
-  return resolve(
-    rows.length ? rows.map((r, i) => mapCourseMeta(r, i)) : null,
-    COURSES,
-  );
+  return list(rows, rows.map((r, i) => mapCourseMeta(r, i)));
 }
 
 export async function resolveCourse(slug: string): Promise<Resolved<CourseMeta | undefined>> {
   const rows = await getCourses();
   const hit = rows.find((c) => c.slug === slug);
-  const apiCourse = hit ? mapCourseMeta(hit) : null;
-  return resolve(apiCourse, getCourseBySlug(slug));
+  const course = hit ? mapCourseMeta(hit) : undefined;
+  return { data: course, source: course ? "api" : "empty" };
 }
 
 /* --------------------------------- exams ------------------------------ */
 
 export async function resolveExams(): Promise<Resolved<Exam[]>> {
   const rows = await getExams();
-  return resolve(rows.length ? rows.map(mapExam) : null, EXAMS);
+  return list(rows, rows.map(mapExam));
 }
 
 export async function resolveExam(slug: string): Promise<Resolved<Exam | undefined>> {
-  const apiExam = await getExamBySlug(slug);
-  return resolve(apiExam ? mapExam(apiExam) : null, getBundledExamBySlug(slug));
+  const exam = await getExamBySlug(slug);
+  const mapped = exam ? mapExam(exam) : undefined;
+  return { data: mapped, source: mapped ? "api" : "empty" };
 }
 
 /* ----------------------------- scholarships --------------------------- */
 
 export async function resolveScholarships(): Promise<Resolved<Scholarship[]>> {
   const rows = await getScholarships();
-  return resolve(rows.length ? rows.map(mapScholarship) : null, SCHOLARSHIPS);
+  return list(rows, rows.map(mapScholarship));
 }
 
 export async function resolveScholarship(
   slug: string,
 ): Promise<Resolved<Scholarship | undefined>> {
-  const apiRow = await getScholarshipBySlug(slug);
-  const fallback = SCHOLARSHIPS.find((s) => s.id === slug || slugifyName(s.name) === slug);
-  return resolve(apiRow ? mapScholarship(apiRow) : null, fallback);
-}
-
-function slugifyName(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+  const row = await getScholarshipBySlug(slug);
+  const mapped = row ? mapScholarship(row) : undefined;
+  return { data: mapped, source: mapped ? "api" : "empty" };
 }
 
 /* --------------------------------- blogs ------------------------------ */
 
 export async function resolveBlogPosts(): Promise<Resolved<BlogPost[]>> {
   const rows = await getBlogs();
-  return resolve(rows.length ? rows.map(mapBlogPost) : null, BLOG_POSTS);
+  return list(rows, rows.map(mapBlogPost));
 }
 
 export async function resolveBlogPost(slug: string): Promise<Resolved<BlogPost | undefined>> {
-  const apiPost = await getBlogBySlug(slug);
-  const fallback = BLOG_POSTS.find((p) => p.slug === slug);
-  return resolve(apiPost ? mapBlogPost(apiPost) : null, fallback);
+  const post = await getBlogBySlug(slug);
+  const mapped = post ? mapBlogPost(post) : undefined;
+  return { data: mapped, source: mapped ? "api" : "empty" };
 }
 
 /* ------------------------------ mock tests ---------------------------- */
 
 export async function resolveMockTests(): Promise<Resolved<MockTest[]>> {
   const rows = await getMockTests();
-  return resolve(rows.length ? rows.map(mapMockTest) : null, MOCK_TESTS);
+  return list(rows, rows.map(mapMockTest));
 }
 
 export async function resolveMockTest(slug: string): Promise<Resolved<MockTest | undefined>> {
-  const apiRow = await getMockTestBySlug(slug);
-  const fallback = MOCK_TESTS.find((t) => t.slug === slug);
-  return resolve(apiRow ? mapMockTest(apiRow) : null, fallback);
+  const row = await getMockTestBySlug(slug);
+  const mapped = row ? mapMockTest(row) : undefined;
+  return { data: mapped, source: mapped ? "api" : "empty" };
 }
 
 /* ------------------------------- slugs -------------------------------- */
 
-/** Slug list for generateStaticParams / sitemap, from whichever source is live. */
+/** Slug list for generateStaticParams / sitemap, taken from the API. */
 export async function resolveSlugs(
   kind: "colleges" | "exams" | "courses" | "blogs" | "mock-tests",
 ): Promise<string[]> {
   switch (kind) {
     case "colleges": {
       const rows = await getColleges();
-      return rows.length ? rows.map((r) => r.slug) : COLLEGES.map((c) => c.slug);
+      return rows.map((r) => r.slug);
     }
     case "exams": {
       const rows = await getExams();
-      return rows.length ? rows.map((r) => r.slug) : EXAMS.map((e) => e.slug);
+      return rows.map((r) => r.slug);
     }
     case "courses": {
       const rows = await getCourses();
-      return rows.length ? rows.map((r) => r.slug) : COURSES.map((c) => c.slug);
+      return rows.map((r) => r.slug);
     }
     case "blogs": {
       const rows = await getBlogs();
-      return rows.length ? rows.map((r) => r.slug) : BLOG_POSTS.map((p) => p.slug);
+      return rows.map((r) => r.slug);
     }
     case "mock-tests": {
       const rows = await getMockTests();
-      return rows.length ? rows.map((r) => r.slug) : MOCK_TESTS.map((t) => t.slug);
+      return rows.map((r) => r.slug);
     }
   }
 }
-
-export { BLOG_CATEGORIES };

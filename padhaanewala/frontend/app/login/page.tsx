@@ -265,9 +265,9 @@ export default function LoginPage() {
 
       <p className="mt-6 text-center text-xs text-gray-400">
         By continuing you agree to our{" "}
-        <Link href="/about" className="text-blue-600 hover:underline">Terms</Link>
+        <Link href="/legal/terms" className="text-blue-600 hover:underline">Terms</Link>
         {" "}and{" "}
-        <Link href="/about" className="text-blue-600 hover:underline">Privacy Policy</Link>.
+        <Link href="/legal/privacy" className="text-blue-600 hover:underline">Privacy Policy</Link>.
       </p>
     </section>
   );

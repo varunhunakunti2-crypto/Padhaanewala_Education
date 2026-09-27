@@ -1,11 +1,12 @@
 import uuid
+from datetime import datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from app.database import SessionLocal
 from app.main import app
-from app.models import MockTest, Role, TestQuestion, User
+from app.models import MockTest, Role, TestAttempt, TestQuestion, User
 
 client = TestClient(app)
 
@@ -77,6 +78,23 @@ def _cleanup(mock_test_id: int) -> None:
         if mock_test:
             db.delete(mock_test)
             db.commit()
+
+
+def _expire_attempt(attempt_id: int, minutes_ago: int = 5) -> datetime:
+    """Backdate an attempt's deadline and return the expiry that was written."""
+    with SessionLocal() as db:
+        attempt = db.get(TestAttempt, attempt_id)
+        expires_at = datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)
+        attempt.expires_at = expires_at
+        db.commit()
+        return expires_at
+
+
+def _reload_attempt(attempt_id: int) -> TestAttempt:
+    """Read the attempt back in a fresh session, i.e. only committed state."""
+    with SessionLocal() as db:
+        db.expire_all()
+        return db.get(TestAttempt, attempt_id)
 
 
 def _auth_headers(token: str) -> dict:
@@ -510,5 +528,284 @@ def test_attempt_detail_nested_path():
             assert wrong.status_code == 404
         finally:
             _cleanup(other_test.id)
+    finally:
+        _cleanup(mock_test.id)
+
+
+# --------------------------------------------------------------------------
+# P0-1: the attempt deadline was not enforced
+# --------------------------------------------------------------------------
+
+
+def test_expired_attempt_submit_is_finalised_at_the_deadline():
+    """`submit_attempt` carried no expiry check at all.
+
+    A student could let the clock run out (or walk away for hours) and still get
+    an attempt graded and committed as though it were on time. The deadline now
+    finalises the attempt, and `submitted_at` records the deadline rather than
+    whenever the request happened to notice.
+    """
+    mock_test = _create_mock_test(attempts_allowed=3)
+    try:
+        user = _register_user()
+        headers = _auth_headers(user["access_token"])
+        start = client.post(
+            f"/api/v1/mock-tests/{mock_test.slug}/start", headers=headers
+        ).json()
+        attempt_id = start["attempt"]["id"]
+        q1 = start["questions"][0]["id"]
+
+        # Answer legitimately, while the attempt is still live.
+        saved = client.put(
+            f"/api/v1/mock-tests/{mock_test.slug}/attempts/{attempt_id}/answers/{q1}",
+            json={"selected_answer": "A"},
+            headers=headers,
+        )
+        assert saved.status_code == 200
+
+        expires_at = _expire_attempt(attempt_id)
+
+        response = client.post(
+            f"/api/v1/mock-tests/{mock_test.slug}/attempts/{attempt_id}/submit",
+            headers=headers,
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["attempt"]["status"] == "submitted"
+
+        # Grading is committed and stamped with the deadline, not with "now".
+        stored = _reload_attempt(attempt_id)
+        assert stored.status == "submitted"
+        assert stored.submitted_at is not None
+        committed = stored.submitted_at
+        if committed.tzinfo is None:
+            committed = committed.replace(tzinfo=timezone.utc)
+        assert abs((committed - expires_at).total_seconds()) < 1
+        # The one correct answer saved before the deadline still counts.
+        assert stored.correct_count == 1
+        assert stored.incorrect_count == 0
+    finally:
+        _cleanup(mock_test.id)
+
+
+def test_bulk_submit_after_expiry_persists_the_auto_grade():
+    """The bulk submit path graded the expired attempt, then raised 400.
+
+    Raising rolled the session back, so the auto-grade was thrown away and the
+    attempt stayed `in_progress` forever, still consuming one of the student's
+    `attempts_allowed` with no result ever recorded. The late answers must be
+    discarded, but the finalisation must be committed.
+    """
+    mock_test = _create_mock_test(attempts_allowed=2)
+    try:
+        user = _register_user()
+        headers = _auth_headers(user["access_token"])
+        start = client.post(
+            f"/api/v1/mock-tests/{mock_test.slug}/start", headers=headers
+        ).json()
+        attempt_id = start["attempt"]["id"]
+        q1, q2, _ = [q["id"] for q in start["questions"]]
+
+        client.put(
+            f"/api/v1/mock-tests/{mock_test.slug}/attempts/{attempt_id}/answers/{q1}",
+            json={"selected_answer": "A"},
+            headers=headers,
+        )
+        expires_at = _expire_attempt(attempt_id)
+
+        response = client.post(
+            f"/api/v1/mock-tests/{mock_test.slug}/submit",
+            json={"answers": [{"question_id": q2, "selected_answer": "A"}]},
+            headers=headers,
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["attempt"]["status"] == "submitted"
+
+        # Committed, not rolled back.
+        stored = _reload_attempt(attempt_id)
+        assert stored.status == "submitted"
+        committed = stored.submitted_at
+        if committed.tzinfo is None:
+            committed = committed.replace(tzinfo=timezone.utc)
+        assert abs((committed - expires_at).total_seconds()) < 1
+
+        # The late answer to q2 was discarded, so only q1 is graded.
+        assert stored.correct_count == 1
+        assert stored.incorrect_count == 0
+        assert stored.unanswered_count == 2
+    finally:
+        _cleanup(mock_test.id)
+
+
+def test_save_answer_after_expiry_is_rejected_and_finalises():
+    mock_test = _create_mock_test(attempts_allowed=3)
+    try:
+        user = _register_user()
+        headers = _auth_headers(user["access_token"])
+        start = client.post(
+            f"/api/v1/mock-tests/{mock_test.slug}/start", headers=headers
+        ).json()
+        attempt_id = start["attempt"]["id"]
+        q1, q2, _ = [q["id"] for q in start["questions"]]
+
+        _expire_attempt(attempt_id)
+
+        response = client.put(
+            f"/api/v1/mock-tests/{mock_test.slug}/attempts/{attempt_id}/answers/{q1}",
+            json={"selected_answer": "A"},
+            headers=headers,
+        )
+        assert response.status_code == 400
+        assert "already submitted" in response.json()["detail"]
+
+        stored = _reload_attempt(attempt_id)
+        assert stored.status == "submitted"
+        assert stored.correct_count == 0
+    finally:
+        _cleanup(mock_test.id)
+
+
+# --------------------------------------------------------------------------
+# P0-3: non-MCQ answers were always tallied as incorrect
+# --------------------------------------------------------------------------
+
+
+def _create_mixed_mock_test() -> MockTest:
+    """One gradable MCQ, one subjective question, one MCQ published with no key."""
+    mock_test = MockTest(
+        name=f"Mixed Test {uuid.uuid4().hex[:6]}",
+        slug=f"mixed-test-{uuid.uuid4().hex[:8]}",
+        difficulty="medium",
+        question_type="mcq",
+        duration_minutes=30,
+        total_marks=0,
+        negative_marking=True,
+        negative_marks_value=1,
+        attempts_allowed=2,
+        result_visibility="immediate",
+        is_active=True,
+    )
+    mock_test.questions = [
+        TestQuestion(
+            question_text="Gradable multiple choice",
+            question_type="mcq",
+            options=["A", "B"],
+            correct_answer="A",
+            marks=4,
+            negative_marks=2,
+            sort_order=1,
+        ),
+        TestQuestion(
+            question_text="Explain the reasoning in your own words",
+            question_type="essay",
+            options=None,
+            correct_answer="A model answer, for manual marking",
+            marks=6,
+            negative_marks=3,
+            sort_order=2,
+        ),
+        TestQuestion(
+            question_text="Published without an answer key",
+            question_type="mcq",
+            options=["A", "B"],
+            correct_answer=None,
+            marks=2,
+            negative_marks=1,
+            sort_order=3,
+        ),
+    ]
+    with SessionLocal() as db:
+        db.add(mock_test)
+        db.commit()
+        db.refresh(mock_test)
+        return mock_test
+
+
+def test_ungradable_answers_are_not_counted_incorrect():
+    """A subjective answer was falling into the `else` branch of the grading loop.
+
+    `is_correct` is None for anything that is not auto-gradable, and None is
+    falsy, so every essay/numeric answer was tallied as incorrect while scoring
+    zero marks, and it was also excluded from `unanswered_count` because it had a
+    selected_answer. These must instead be left for manual review.
+    """
+    mock_test = _create_mixed_mock_test()
+    try:
+        user = _register_user()
+        headers = _auth_headers(user["access_token"])
+        question_bank = client.get(
+            f"/api/v1/mock-tests/{mock_test.slug}/questions"
+        ).json()
+        assert len(question_bank) == 3
+        by_text = {q["question_text"]: q["id"] for q in question_bank}
+        mcq = by_text["Gradable multiple choice"]
+        essay = by_text["Explain the reasoning in your own words"]
+        keyless = by_text["Published without an answer key"]
+
+        # Every answer is submitted, and the two ungradable ones even match the
+        # stored key, so a correct answer cannot be what turned them incorrect.
+        response = client.post(
+            f"/api/v1/mock-tests/{mock_test.slug}/submit",
+            json={
+                "answers": [
+                    {"question_id": mcq, "selected_answer": "A"},
+                    {"question_id": essay, "selected_answer": "A model answer, for manual marking"},
+                    {"question_id": keyless, "selected_answer": "A"},
+                ]
+            },
+            headers=headers,
+        )
+        assert response.status_code == 200, response.text
+        attempt = response.json()["attempt"]
+
+        assert attempt["correct_count"] == 1
+        assert attempt["incorrect_count"] == 0
+        # The two ungradable answers are pending review, not marked wrong. They
+        # sit in unanswered_count so the three tallies still partition the paper.
+        assert attempt["unanswered_count"] == 2
+        assert (
+            attempt["correct_count"]
+            + attempt["incorrect_count"]
+            + attempt["unanswered_count"]
+            == 3
+        )
+        # Only the gradable question contributes marks. Negative marking is on,
+        # so a regression here would also show up as a negative score.
+        assert float(attempt["score"]) == 4
+        assert float(attempt["total_marks"]) == 12
+        assert float(attempt["percentage"]) == 33.33
+
+        rows = {q["id"]: q for q in response.json()["questions"]}
+        assert rows[essay]["is_correct"] is None
+        assert rows[essay]["marks_awarded"] is None
+        assert rows[keyless]["is_correct"] is None
+        assert rows[keyless]["marks_awarded"] is None
+        assert rows[mcq]["is_correct"] is True
+        assert float(rows[mcq]["marks_awarded"]) == 4
+    finally:
+        _cleanup(mock_test.id)
+
+
+def test_wrong_mcq_still_gets_negative_marks():
+    """The fix must not stop genuinely wrong MCQs from being penalised."""
+    mock_test = _create_mock_test(negative_marking=True)
+    try:
+        user = _register_user()
+        headers = _auth_headers(user["access_token"])
+        question_bank = client.get(
+            f"/api/v1/mock-tests/{mock_test.slug}/questions"
+        ).json()
+        q1 = question_bank[0]["id"]
+
+        response = client.post(
+            f"/api/v1/mock-tests/{mock_test.slug}/submit",
+            json={"answers": [{"question_id": q1, "selected_answer": "B"}]},
+            headers=headers,
+        )
+        assert response.status_code == 200, response.text
+        attempt = response.json()["attempt"]
+        assert attempt["correct_count"] == 0
+        assert attempt["incorrect_count"] == 1
+        assert attempt["unanswered_count"] == 2
+        assert float(attempt["score"]) == -1
     finally:
         _cleanup(mock_test.id)

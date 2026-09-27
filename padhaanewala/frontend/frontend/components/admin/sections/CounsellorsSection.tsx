@@ -1,35 +1,27 @@
 "use client";
 
-
-import { DataTable } from "@/components/ui/DataTable";
-import { initialsOf } from "@/lib/utils";
-
-import { SectionHeading, AddButton, RowActions } from "@/components/admin/primitives";
-import { SAMPLE_COUNSELLORS } from "@/components/admin/fixtures";
-
+/**
+ * No counsellor records exist.
+ *
+ * This panel used to list four invented counsellors with invented lead counts,
+ * conversion counts and star ratings (Anita Sharma: 142 leads, 61 converted,
+ * 4.8★). There is no counsellor table, no endpoint and no import path for them,
+ * so every number on that screen was fiction presented as performance data.
+ * The panel now says so instead of rendering it.
+ */
 export function CounsellorsSection() {
   return (
     <div>
-      <SectionHeading title="Counsellors" description="Track team performance and conversions" count={SAMPLE_COUNSELLORS.length} action={<AddButton label="Add counsellor" />} />
-      <DataTable
-          columns={[
-            { key: "name", header: "Counsellor", render: (c) => (
-              <span className="flex items-center gap-2.5">
-                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-purple-50 text-xs font-bold text-purple-700">{initialsOf(c.name)}</span>
-                <span className="font-semibold text-gray-900">{c.name}</span>
-              </span>
-            ) },
-            { key: "region", header: "Region" },
-            { key: "leads", header: "Leads" },
-            { key: "converted", header: "Converted", render: (c) => <span className="font-semibold text-green-600">{c.converted}</span> },
-            { key: "conversionRate", header: "Rate", render: (c) => `${Math.round((c.converted / c.leads) * 100)}%` },
-            { key: "rating", header: "Rating", render: (c) => `${c.rating} ★` },
-            { key: "actions", header: "", className: "text-right", render: (c) => <RowActions item={c.name} noun="counsellor" /> },
-          ]}
-          rows={SAMPLE_COUNSELLORS as unknown as { id: string; name: string; region: string; leads: number; converted: number; rating: number }[]}
-          searchKeys={["name", "region"]}
-          searchPlaceholder="Search counsellors..."
-        />
+      <p className="font-display text-lg font-extrabold tracking-tight text-gray-900">Counsellors</p>
+      <p className="mt-1 text-sm text-slate-500">Track team performance and conversions</p>
+      <div className="mt-4 rounded-xl border border-dashed border-slate-200 px-6 py-10 text-center">
+        <p className="text-sm font-semibold text-slate-700">No counsellor records are connected.</p>
+        <p className="mx-auto mt-2 max-w-md text-xs leading-relaxed text-slate-500">
+          There is no counsellor table in the database, so there are no lead counts, conversion
+          rates or ratings to show. Those figures have to be computed from real enquiry records
+          before this screen can display anything.
+        </p>
+      </div>
     </div>
   );
 }

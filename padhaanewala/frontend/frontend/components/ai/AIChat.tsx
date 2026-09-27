@@ -73,14 +73,14 @@ export function AIChat() {
         body: JSON.stringify({ message: q }),
       });
       const data = await res.json();
-      const reply = data?.reply || getAiResponse(q);
+      const reply = data?.reply || getAiResponse();
       const aiMsg: ChatMessage = { id: nextId(), role: "ai", text: reply };
       setMessages((m) => [...m, aiMsg]);
     } catch {
       const aiMsg: ChatMessage = {
         id: nextId(),
         role: "ai",
-        text: getAiResponse(q),
+        text: getAiResponse(),
       };
       setMessages((m) => [...m, aiMsg]);
     } finally {

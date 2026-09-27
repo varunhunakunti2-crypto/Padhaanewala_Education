@@ -904,10 +904,25 @@ def delete_admission(
 # Public read-only endpoints so the predictor and frontend can query enrichment
 # data by course/year without a college path prefix.
 
+def _with_stable_order(query):
+    """Append the primary key to an existing ORDER BY so paging is repeatable.
+
+    The caller's ORDER BY is preserved as the leading sort. Without a unique
+    tiebreaker, rows that compare equal (same year, same exam, same category...)
+    come back in whatever order the planner produces, so LIMIT/OFFSET pages can
+    repeat or skip rows between two requests.
+    """
+    entity = query.column_descriptions[0]["entity"]
+    if entity is None:
+        return query
+    return query.order_by(entity.id)
+
 def _paginated(
     query, db: Session, limit: int | None, offset: int | None
 ) -> list:
-    q = query.order_by(None)
+    # This used to call `query.order_by(None)`, which threw away the ordering the
+    # caller had just applied and made every page non-deterministic.
+    q = _with_stable_order(query)
     if limit is not None:
         q = q.limit(limit)
     if offset is not None:
@@ -1026,6 +1041,12 @@ def catalog_rankings(
     offset: int | None = Query(default=None, ge=0),
     db: Session = Depends(get_db),
 ):
+    # Two tables are merged into one response, so a single limit/offset window has
+    # to be applied to the combined set. Handing `limit` to each sub-query meant
+    # `?limit=10` could return 20 rows and `?offset=20` skipped 20 per source.
+    # Each source is over-fetched to offset+limit, which is always enough rows to
+    # resolve the merged window, then the window is cut once in Python.
+    fetch_limit = None if limit is None else (offset or 0) + limit
     rows = []
     if ranking_type in (None, "nirf"):
         conditions = []
@@ -1041,8 +1062,8 @@ def catalog_rankings(
             .where(*conditions)
             .order_by(NIRFRanking.year.desc()),
             db,
-            limit,
-            offset,
+            fetch_limit,
+            None,
         )
         for r in nirf:
             college = r.college
@@ -1061,13 +1082,33 @@ def catalog_rankings(
             .where(*conditions)
             .order_by(OtherRanking.year.desc()),
             db,
-            limit,
-            offset,
+            fetch_limit,
+            None,
         )
         for r in other:
             college = r.college
             rows.append(_to_ranking("other", college, r))
-    return rows
+    return _ranking_window(rows, limit, offset)
+
+def _ranking_sort_key(row: RankingResponse) -> tuple:
+    """Total order over the merged ranking set: nirf block then other block, each
+    newest year first, with college and id breaking ties deterministically."""
+    return (
+        0 if row.ranking_type == "nirf" else 1,
+        -(row.year or 0),
+        row.category or "",
+        row.college_id or 0,
+        row.id,
+    )
+
+def _ranking_window(
+    rows: list[RankingResponse], limit: int | None, offset: int | None
+) -> list[RankingResponse]:
+    if limit is None and offset is None:
+        return rows
+    rows.sort(key=_ranking_sort_key)
+    start = offset or 0
+    return rows[start : start + limit] if limit is not None else rows[start:]
 
 @catalog_router.get("/seat-matrix", response_model=list[SeatMatrixResponse])
 def catalog_seat_matrix(

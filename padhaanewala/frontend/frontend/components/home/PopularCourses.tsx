@@ -17,60 +17,48 @@ const COURSES = [
     desc: "AI · Data Science · CSE",
     href: "/colleges?q=computer science",
     icon: Laptop,
-    stat: "240+ colleges",
     tile: "bg-gradient-to-br from-blue-600 to-indigo-600",
     iconBg: "bg-white/15",
-    chip: "bg-white/20",
   },
   {
     title: "Engineering",
     desc: "B.Tech · M.Tech",
     href: "/colleges?q=B.Tech",
     icon: Cpu,
-    stat: "320+ colleges",
     tile: "bg-gradient-to-br from-purple-600 to-blue-600",
     iconBg: "bg-white/15",
-    chip: "bg-white/20",
   },
   {
     title: "Medicine",
     desc: "MBBS · BDS · Nursing",
     href: "/colleges?q=medicine",
     icon: Stethoscope,
-    stat: "180+ colleges",
     tile: "bg-gradient-to-br from-orange-500 to-amber-500",
     iconBg: "bg-white/15",
-    chip: "bg-white/20",
   },
   {
     title: "Business",
     desc: "MBA · BBA · PGDM",
     href: "/colleges?q=MBA",
     icon: Briefcase,
-    stat: "210+ colleges",
     tile: "bg-gradient-to-br from-amber-500 to-yellow-500",
     iconBg: "bg-white/15",
-    chip: "bg-white/20",
   },
   {
     title: "Design",
     desc: "B.Des · B.Arch · UX",
     href: "/colleges?q=design",
     icon: Palette,
-    stat: "90+ colleges",
     tile: "bg-gradient-to-br from-violet-600 to-purple-600",
     iconBg: "bg-white/15",
-    chip: "bg-white/20",
   },
   {
     title: "Law",
     desc: "LLB · BA-LLB · LLM",
     href: "/colleges?q=law",
     icon: Scale,
-    stat: "120+ colleges",
     tile: "bg-gradient-to-br from-blue-700 to-purple-700",
     iconBg: "bg-white/15",
-    chip: "bg-white/20",
   },
 ];
 
@@ -116,10 +104,7 @@ export function PopularCourses() {
                   {c.title}
                 </h3>
                 <p className="relative mt-0.5 text-[11px] opacity-85 sm:text-xs">{c.desc}</p>
-                <div className="relative mt-4 flex flex-1 items-end justify-between gap-1">
-                  <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${c.chip}`}>
-                    {c.stat}
-                  </span>
+                <div className="relative mt-4 flex flex-1 items-end justify-end gap-1">
                   <span className="grid h-7 w-7 place-items-center rounded-full bg-white/20 opacity-0 transition-all duration-300 group-hover:opacity-100">
                     <ArrowRight className="h-3.5 w-3.5" />
                   </span>

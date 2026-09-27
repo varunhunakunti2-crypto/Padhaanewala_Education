@@ -326,6 +326,119 @@ select:focus-visible {
   box-shadow: 0 12px 32px -18px rgba(80, 40, 180, 0.35);
 }
 
+/* Long-form legal copy: privacy, terms, cookie policy, disclaimer.
+   `@utility` rather than `@layer components` per Tailwind v4 — a utility sorts
+   into the utilities layer alongside the built-ins, so it wins on specificity
+   ties and stays overridable with a plain utility on the element. Declared as
+   one rule with nested element selectors rather than per-element classes so the
+   six documents cannot drift apart typographically. */
+@utility legal-prose {
+  color: var(--foreground);
+  font-size: 0.9375rem;
+  line-height: 1.75;
+
+  /* Spacing lives on `section + section` rather than a blanket `* + *`. A
+     universal sibling margin would fight the h2's own top margin through
+     margin-collapsing, because the wrapper <section> has no padding or border
+     to contain it. */
+  & section + section {
+    margin-top: 2.25rem;
+  }
+
+  & p {
+    color: var(--muted);
+  }
+
+  & p + p {
+    margin-top: 0.875rem;
+  }
+
+  & strong {
+    color: var(--foreground);
+    font-weight: 600;
+  }
+
+  /* Section headings get a scroll-margin so `scroll-behavior: smooth` on html
+     does not park them under the sticky header when jumping from the TOC. */
+  & h2 {
+    margin-bottom: 0.75rem;
+    scroll-margin-top: 6rem;
+    font-family: var(--font-jakarta), var(--font-inter), sans-serif;
+    font-size: 1.125rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--foreground);
+  }
+
+  & ul {
+    margin-top: 0.75rem;
+    list-style: none;
+    padding-left: 0;
+  }
+
+  & ul > li {
+    position: relative;
+    padding-left: 1.5rem;
+    color: var(--muted);
+
+    &::before {
+      content: "";
+      position: absolute;
+      left: 0.25rem;
+      top: 0.7em;
+      width: 0.375rem;
+      height: 0.375rem;
+      border-radius: 9999px;
+      background: var(--brand-purple);
+      opacity: 0.55;
+    }
+  }
+
+  & li + li {
+    margin-top: 0.5rem;
+  }
+
+  /* A list carries `margin-top` but no `margin-bottom`, and `p + p` does not
+     match when the previous sibling is a `ul`. Without this, a closing
+     paragraph after a list renders flush against its last bullet. */
+  & ul + p,
+  & ul + ul {
+    margin-top: 0.875rem;
+  }
+
+  & a {
+    color: var(--brand-purple);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+
+    &:hover {
+      color: var(--brand-purple-deep);
+    }
+  }
+
+  @variant dark {
+    & a:hover {
+      color: #c084fc;
+    }
+  }
+}
+
+/* Callout for the one point a reader must not skim past. */
+@utility legal-note {
+  margin-top: 1rem;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(124, 58, 237, 0.18);
+  background: var(--brand-purple-soft);
+  padding: 0.875rem 1rem;
+  font-size: 0.875rem;
+  line-height: 1.65;
+  color: var(--foreground);
+
+  @variant dark {
+    border-color: rgba(167, 139, 250, 0.28);
+  }
+}
+
 /* Match percentage pill (yellow-orange) */
 .match-badge {
   background: linear-gradient(135deg, #f59e0b, #facc15);

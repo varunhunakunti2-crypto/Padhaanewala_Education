@@ -1,0 +1,110 @@
+# Backend test suite.
+#
+# The 187 pytest tests run against a real PostgreSQL schema, not SQLite or an
+# in-memory fake: tests/conftest.py migrates `$PADHAANEWALA_SCHEMA` and the
+# catalog tests assert against seeded rows. So this workflow provisions a real
+# Postgres service and bootstraps the schema with the same script developers
+# run locally (backend/scripts/bootstrap_test_db.py).
+name: backend-tests
+
+on:
+  push:
+    # Only the long-lived branches. Pushing "**" here would run every pull
+    # request twice - once for the branch push, once for the PR event.
+    branches: [main, develop]
+  pull_request:
+  workflow_dispatch:
+
+# A new push to the same branch makes the in-flight run irrelevant.
+concurrency:
+  group: backend-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: padhaanewala/backend
+
+jobs:
+  pytest:
+    name: pytest (postgresql ${{ matrix.postgres }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # 15 is the major version the dev database image is built from
+        # (padhaanewala/docker/db). Bump deliberately, not by accident.
+        postgres: ["15"]
+
+    services:
+      postgres:
+        # Plain upstream image on purpose: docker/db is a security-hardened
+        # rebuild that needs a Go toolchain to build, which is wasted minutes
+        # in CI. Same major version, same SQL semantics.
+        image: postgres:${{ matrix.postgres }}-alpine
+        env:
+          POSTGRES_DB: padhaanewala_ci
+          POSTGRES_USER: padhaanewala
+          POSTGRES_PASSWORD: ci_password_123
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U padhaanewala -d padhaanewala_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql+psycopg2://padhaanewala:ci_password_123@localhost:5432/padhaanewala_ci
+      PADHAANEWALA_SCHEMA: test_suite
+      # R3.3/R3.4 are assertions about how a deployment is *configured*, so CI
+      # has to supply a compliant configuration: two distinct signing secrets
+      # and an access-token lifetime inside the 60-minute containment window
+      # (logout is a no-op, so a token cannot be revoked). `.env.development`
+      # is gitignored and, where it exists, sets both secrets to `change-me`.
+      JWT_SECRET_KEY: ci-access-secret-not-a-real-key
+      JWT_REFRESH_SECRET_KEY: ci-refresh-secret-not-a-real-key
+      JWT_ACCESS_TOKEN_EXPIRE_MINUTES: "30"
+      APP_ENV: development
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          # 3.14 matches the interpreter in backend/venv, and is the only
+          # version with prebuilt Linux wheels for every pinned native
+          # dependency: cryptography==50.0.1 publishes cp314 manylinux wheels
+          # but no cp312/cp313, so an older pin would silently fall back to a
+          # Rust source build here.
+          python-version: "3.14"
+          cache: pip
+          # Both files are installed below, so both belong in the cache key -
+          # keying on requirements-dev.txt alone would serve a stale cache after
+          # a runtime pin changes.
+          cache-dependency-path: |
+            padhaanewala/backend/requirements.txt
+            padhaanewala/backend/requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Migrate and seed the test schema
+        run: python scripts/bootstrap_test_db.py
+
+      - name: Run the test suite
+        run: pytest --junitxml=pytest-report.xml
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-report-postgres-${{ matrix.postgres }}
+          path: padhaanewala/backend/pytest-report.xml
+          if-no-files-found: warn

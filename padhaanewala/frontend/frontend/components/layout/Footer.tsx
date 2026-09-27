@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { LEGAL_NAV } from "@/lib/legal";
 import { Logo } from "@/components/layout/Header";
 function InstagramIcon({ className }: { className?: string }) {
   return (
@@ -166,9 +167,34 @@ export function Footer() {
           </div>
         </div>
 
-        {/* Bottom copyright line */}
-        <div className="mt-12 border-t border-gray-100 dark:border-slate-800/80 pt-6 text-center sm:text-right">
-          <p className="text-xs text-gray-400 dark:text-slate-500">
+        {/* Legal documents + copyright.
+            These live in the bottom bar rather than a fourth FOOTER_COLS entry:
+            the grid above is `lg:grid-cols-6` and fully consumed by
+            brand (col-span-2) + 3 nav columns + the doodle block, so a "Legal"
+            column would have meant either a 7th track with ~15rem-wide columns
+            or dropping the brand block. A single wrapping row is also the more
+            conventional placement, and it keeps the six documents together. */}
+        <div className="mt-12 border-t border-gray-100 pt-6 dark:border-slate-800/80">
+          <nav aria-label="Legal">
+            <ul className="flex flex-wrap items-center justify-center gap-x-2 gap-y-2 sm:justify-start">
+              {LEGAL_NAV.map((entry, index) => (
+                <li key={entry.slug} className="flex items-center gap-2">
+                  {index > 0 && (
+                    <span aria-hidden="true" className="text-gray-300 dark:text-slate-700">
+                      |
+                    </span>
+                  )}
+                  <Link
+                    href={entry.href}
+                    className="text-xs text-gray-500 transition-colors hover:text-purple-600 dark:text-slate-400 dark:hover:text-purple-400"
+                  >
+                    {entry.label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </nav>
+          <p className="mt-4 text-center text-xs text-gray-400 sm:text-left dark:text-slate-500">
             © 2026 padhaanewala. All rights reserved.
           </p>
         </div>

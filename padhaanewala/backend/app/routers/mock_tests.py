@@ -97,8 +97,18 @@ def _find_attempt(db: Session, attempt_id: int, user: User) -> TestAttempt:
     return attempt
 
 def _finalize_if_expired(db: Session, attempt: TestAttempt) -> bool:
+    """Auto-submit an attempt whose deadline has passed. Returns True if it graded.
+
+    Callers MUST commit before responding with an error, otherwise the
+    finalisation is rolled back with the session and the attempt stays
+    `in_progress` forever, which both defeats the deadline and burns one of the
+    student's `attempts_allowed` without ever recording a result.
+    """
     if attempt.status == "in_progress" and attempt.time_remaining_seconds == 0:
         _grade_attempt(db, attempt)
+        # The deadline is the submission time, not whenever a request happened to
+        # notice the clock had run out.
+        attempt.submitted_at = attempt.expires_at
         return True
     return False
 
@@ -114,29 +124,31 @@ def _grade_attempt(db: Session, attempt: TestAttempt) -> None:
         if answer is None or answer.selected_answer is None:
             continue
         if answer.is_correct is None:
-            is_correct = _is_answer_correct(attempt, q, answer)
-            if is_correct is not None:
-                answer.marks_awarded = _marks_for(attempt, q, is_correct)
+            answer.is_correct = _is_answer_correct(attempt, q, answer)
+        if answer.is_correct is None:
+            # Not auto-gradable: subjective types (essay/numeric/descriptive) and
+            # MCQs published without an answer key. Previously these fell through to
+            # the `else` branch, so every one of them was tallied as incorrect
+            # (inflating incorrect_count) while still scoring 0 marks, and it was
+            # excluded from unanswered_count because it had a selected_answer.
+            # They are left for manual review instead: no marks, no verdict. They
+            # still land in unanswered_count below, which keeps the partition
+            # correct + incorrect + unanswered == len(questions).
+            answer.marks_awarded = None
+            continue
+        answer.marks_awarded = _marks_for(attempt, q, answer.is_correct)
         if answer.is_correct:
             correct += 1
-            score += answer.marks_awarded or 0
         else:
             incorrect += 1
-            score += answer.marks_awarded or 0
+        score += answer.marks_awarded or 0
 
-    answered_ids = {
-        a.question_id
-        for a in answers.values()
-        if a.selected_answer is not None
-    }
     total_marks = sum(q.marks for q in questions)
     attempt.score = score
     attempt.total_marks = total_marks
     attempt.correct_count = correct
     attempt.incorrect_count = incorrect
-    attempt.unanswered_count = len(questions) - len(
-        answered_ids & {q.id for q in questions}
-    )
+    attempt.unanswered_count = len(questions) - correct - incorrect
     attempt.percentage = (
         round(score * 100 / total_marks, 2) if total_marks else 0
     )
@@ -449,9 +461,12 @@ def submit_mock_test(
 
     if attempt.status == "submitted":
         raise HTTPException(status_code=400, detail="Attempt already submitted")
-    _finalize_if_expired(db, attempt)
-    if attempt.status == "submitted":
-        raise HTTPException(status_code=400, detail="Attempt already submitted")
+    if _finalize_if_expired(db, attempt):
+        # The deadline passed, so these answers are late and are discarded. The
+        # auto-grading is committed first (raising here used to roll it back) and
+        # the graded result is returned so the client still gets its outcome.
+        db.commit()
+        return _build_result(attempt, db)
 
     questions = {q.id: q for q in _active_questions(db, mock_test.id)}
     for submission in payload.answers:
@@ -559,8 +574,11 @@ def save_answer(
         raise HTTPException(
             status_code=400, detail="Attempt already submitted"
         )
-    _finalize_if_expired(db, attempt)
-    if attempt.status == "submitted":
+    if _finalize_if_expired(db, attempt):
+        # The answer is late, so it is rejected, but the finalisation is committed
+        # first — raising without committing rolled it back and left the attempt
+        # `in_progress` past its deadline.
+        db.commit()
         raise HTTPException(status_code=400, detail="Attempt already submitted")
 
     question = db.scalar(
@@ -607,9 +625,13 @@ def submit_attempt(
     attempt = _find_attempt(db, attempt_id, user)
     if attempt.mock_test_id != mock_test.id:
         raise HTTPException(status_code=404, detail="Attempt not found for this mock test")
+    # This endpoint carried no expiry check, so an attempt whose clock had run out
+    # could still be submitted and graded as if it were on time. Finalise on the
+    # deadline instead; re-submitting an already-graded attempt stays idempotent.
+    _finalize_if_expired(db, attempt)
     if attempt.status == "in_progress":
         _grade_attempt(db, attempt)
-        db.commit()
+    db.commit()
     return _build_result(attempt, db)
 
 @router.get(

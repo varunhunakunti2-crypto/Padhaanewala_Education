@@ -38,6 +38,8 @@ dist/
 .htmlcov/
 .coverage
 .coverage.*
+pytest-report.xml
+junit.xml
 *.log
 
 # ============================================================================

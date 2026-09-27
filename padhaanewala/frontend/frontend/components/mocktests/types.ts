@@ -31,6 +31,5 @@ export interface BuildResult {
   incorrect: number;
   unattempted: number;
   timeTakenSec: number;
-  percentile: number;
   topicPerf: Record<string, { correct: number; total: number }>;
 }
