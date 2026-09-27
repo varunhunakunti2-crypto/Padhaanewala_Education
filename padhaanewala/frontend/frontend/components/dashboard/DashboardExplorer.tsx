@@ -50,7 +50,13 @@ export default function DashboardExplorer() {
   return (
     <div className="grid min-h-screen grid-cols-1 bg-[#FAF9F6] text-[#16204A] lg:grid-cols-[300px_1fr]">
       {/* ================= SIDEBAR ================= */}
-      <aside className="hidden border-r border-[#EEE9E2] bg-white px-4 py-6 lg:block">
+      {/* `pt-24` clears the global floating header, which is `fixed` and ends
+          78px down the viewport (16px margin-top + 62px pill). Without it the
+          brand block and profile chip render underneath the header pill. This
+          also clears the compact scrolled header, which ends at 62px. The
+          sidebar and <main> must share the same offset or the two columns
+          start at different heights. */}
+      <aside className="hidden border-r border-[#EEE9E2] bg-white px-4 pb-6 pt-24 lg:block">
         {/* brand */}
         <Link href="/" className="flex items-center gap-2.5 px-2">
           <span className="grid h-10 w-10 place-items-center rounded-[14px] bg-[#16204A] text-white">
@@ -119,7 +125,7 @@ export default function DashboardExplorer() {
       </aside>
 
       {/* ================= MAIN ================= */}
-      <main className="min-w-0 px-5 py-6 sm:px-7 lg:px-8">
+      <main className="min-w-0 px-5 pb-6 pt-24 sm:px-7 lg:px-8">
         {/* header */}
         <header className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
