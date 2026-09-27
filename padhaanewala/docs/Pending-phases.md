@@ -1,8 +1,9 @@
 # Padhaanewala — Security & Deployment Phase Tracker
 
 > **Status as of 28 September 2026**
-> Branch `main` · HEAD `f483d3c` · pushed to `origin`
+> Branch `main` · HEAD `719f09d`
 > **Phases 0 and 1 complete and verified (47 sub-tasks). Phases 2–9 not started.**
+> **1 Critical and 1 High bug confirmed by running the app — see Bug register.**
 
 This document is the working tracker for taking Padhaanewala from a local
 development checkout to a publicly deployable, security-audited product.
@@ -409,12 +410,13 @@ window is therefore the entire containment strategy.
 - [ ] **3.2** `refresh_tokens` table: hashed token, `family`, `used_at`,
       `expires_at`, `revoked_at`, with a new Alembic migration.
 - [ ] **3.3** **Rotation.** Every `/auth/refresh` issues a new refresh token and
-      invalidates the presented one.
+      invalidates the presented one. **Confirmed broken — see BUG-01.**
 - [ ] **3.4** **Reuse detection.** Presenting an already-rotated token revokes the
       entire rotation family and forces re-authentication. Reuse of a rotated-away
       token is strong evidence of theft, not user error.
+      **Confirmed broken — see BUG-01.**
 - [ ] **3.5** **Real `logout`.** Revoke the session server-side instead of
-      echoing.
+      echoing. **Confirmed broken — see BUG-01.**
 - [ ] **3.6** **HttpOnly cookie migration.** Refresh token moves to
       `HttpOnly` + `Secure` + `SameSite=Strict`; access token becomes
       **memory-only**. `lib/api.ts` already defines `getRefreshToken()` at
@@ -423,6 +425,14 @@ window is therefore the entire containment strategy.
       `isAuthenticated` stays `true` because it only checks token *presence*.
 - [ ] **3.7** CSRF protection for the cookie-authenticated refresh endpoint
       (`SameSite` plus an Origin check), and a refresh-on-401 interceptor.
+- [ ] **3.8** **Raise the auth rate limit or make it failure-aware.**
+      Confirmed while testing BUG-01: the limiter correctly returned 429 after
+      five requests to `/api/v1/auth/refresh` inside a minute, which is the
+      intended behaviour, but auth now has **eleven** endpoints (OTP send and
+      verify, mobile verification, forgot and reset password, verify and resend
+      email). A user who retries a login and then requests a password reset can
+      lock themselves out. Buckets are per-path, which limits the blast radius,
+      but the ceiling is too low for a multi-step authentication flow.
 
 **Verification:** new test file covering rotation, reuse detection, logout
 revocation, and the cookie flags (`HttpOnly`, `Secure`, `SameSite`) actually
@@ -617,6 +627,16 @@ despite both scripts existing in `package.json`.
       **zero** tests of any kind — no runner, no config, no test script — while
       `.gitignore` already ignores `/coverage` for a suite that does not exist.
       At minimum, cover the auth token layer before Phase 3 lands.
+- [ ] **7.6** **Close the gap BUG-01 exposed.** The 225-test suite passed while
+      logout did nothing, because **no test ever logs out**. The regression tests
+      Phase 3 must add are the single highest-value test work in the plan:
+      - logout, then assert the refresh token is rejected
+      - logout, then assert the access token is rejected
+      - refresh, then assert the *previous* refresh token is rejected
+      - replay a rotated-away token and assert the whole family is revoked
+      - assert `HttpOnly`, `Secure` and `SameSite` are actually set on the
+        refresh cookie
+      Until these exist, a future change can silently reopen the same hole.
 
 ---
 
@@ -726,8 +746,8 @@ Not a launch blocker, but all of it is public in a public repository.
 | 0 | Make it run at all | 25 / 25 | **DONE** |
 | 1 | P0 security | 22 / 22 | **DONE** |
 | 2 | Containerisation | 0 / 6 | not started |
-| 3 | Session security | 1 / 7 | **critical** |
-| 4 | Data leakage | 0 / 14 | not started |
+| 3 | Session security | 1 / 8 | **BLOCKED BY BUG-01** |
+| 4 | Data leakage | 0 / 14 | not started — **BUG-02** |
 | 5 | Headers + CSP | 0 / 5 | not started |
 | 6 | Beta scope | 0 / 7 | not started |
 | 7 | CI gate | 0 / 5 | not started |
@@ -735,31 +755,193 @@ Not a launch blocker, but all of it is public in a public repository.
 | 9 | Legal / DPDP | 0 / 7 | not started |
 | — | Repository hygiene | 0 / 5 | not started |
 
-**48 of 108 sub-tasks complete.** Phases 0 and 1 are closed. The critical path
+**48 of 109 sub-tasks complete.** Phases 0 and 1 are closed. The critical path
 to a deployable, defensible product runs **2 → 3 → 4 → 5 → 7 → 8**. Phase 3 is
 the one change that should get its own branch and its own review, because it
 rewrites session handling end to end and a mistake there either locks every user
 out or, worse, leaves sessions revocable in name only.
 
+**Phase 3 is no longer merely the largest remaining item — it is where the worst
+known defect in the project lives.** BUG-01 means that today, logging out does
+nothing: the logout endpoint succeeds, the access token keeps working, and the
+refresh token mints a brand-new 30-day pair on demand. Nothing built on top of
+this should go live before that is fixed.
+
 ---
 
-# Standing risk register
+# Bug register
+
+Bugs found by **executing** the running application on 28 September 2026, after
+Phases 0 and 1 were verified green. The automated suite passed throughout —
+225 tests, clean typecheck, clean lint, clean build — which is the point: none of
+these are caught by the tests that exist. They were found by driving the live
+API and reading the HTTP responses.
+
+## BUG-01 — Sessions cannot be ended 🔴 CRITICAL
+
+**Phase 3.** Reproduced against `http://127.0.0.1:8000` with a freshly
+registered account.
+
+```
+refresh #1            200
+REUSE old token       200   ← a replayed refresh token is accepted
+logout                200   {"success":true,"data":{"received_refresh_token":true}}
+refresh post-logout   200   ← a new token pair is still minted
+access post-logout    200   ← the access token is still accepted
+```
+
+Three separate failures compound:
+
+1. **`POST /auth/logout` is a no-op.** It returns
+   `{"received_refresh_token": true}` and invalidates nothing. There is no
+   denylist, no `jti` store and no `revoked_at`.
+2. **Refresh tokens are never rotated.** `POST /auth/refresh` re-issues a fresh
+   pair for any valid token, with no record of the previous one. The token
+   minted in Phase 1.7 carries a `jti`, but nothing persists it.
+3. **Replay is undetected.** Reusing a superseded refresh token succeeds, so
+   token theft leaves no trace at all.
+
+**Impact.** Anyone who walks away from an unlocked browser retains valid access
+indefinitely, because logout → refresh yields a brand-new 30-day pair. The
+30-minute access-token window is irrelevant: the refresh path never closes.
+Combined with `localStorage` storage of the refresh token, a single XSS yields
+permanent account takeover with no revocation path.
+
+**Fix:** Phase 3 in full — 3.2 through 3.7.
+
+## BUG-02 — Predictor advertises a field it rejects 🟠 HIGH
+
+**Phase 4.** The two endpoints disagree about what an exam is.
+
+```
+GET  /api/v1/predictor/exams
+     -> [{"slug":"neet-ug","name":"NEET UG"},{"slug":"jee-main","name":"JEE Main"}]
+
+POST /api/v1/predictor  {"exam":"JEE Main",  "rank":5000,"category":"general"}
+     -> 400  {"detail":"Invalid exam 'JEE Main'. Must be one of: neet-ug, jee-main, cuet-ug, kcet"}
+
+POST /api/v1/predictor  {"exam":"jee-main",  "rank":5000,"category":"general"}
+     -> 400  {"detail":"Invalid category 'general'. Must be one of: General, OBC, EWS, SC, ST"}
+
+POST /api/v1/predictor  {"exam":"jee-main",  "rank":5000,"category":"General"}
+     -> 200
+```
+
+Two mismatches:
+
+1. `/predictor/exams` publishes a human-readable `name` alongside `slug`, but
+   `POST /predictor` validates against `VALID_EXAMS` which holds **slugs only**.
+   The field a user interface actually displays is the field the API rejects.
+2. `VALID_CATEGORIES` is capitalised (`"General"`), so a lower-case
+   `category: "general"` — the natural serialisation of a value a human typed —
+   is rejected.
+
+**Impact is currently low** because the frontend does not call this endpoint.
+`PredictorForm.tsx` imports `predictColleges` from `lib/data/predictor`, a
+client-side scoring function, and the backend router is entirely unused. It is
+nonetheless a live trap for the first real API consumer, and the duplicated
+scoring logic is itself a divergence risk: the two implementations will produce
+different recommendations.
+
+**Fix:** accept both `slug` and `name`, normalise case for `category`, and
+decide whether the backend or the client owns prediction. Two implementations
+of the same feature is the real defect.
+
+## BUG-03 — Auth rate limit too low for a multi-step flow 🟡 MEDIUM
+
+**Phase 3, task 3.8.** While reproducing BUG-01 the limiter returned `429` after
+five requests to `/api/v1/auth/refresh` within 60 seconds. That is the limiter
+working correctly — but auth now has **eleven** endpoints, and a single sign-in
+attempt can legitimately touch several of them:
+
+```
+/register  /login  /refresh  /logout  /verify-email  /verify-email/resend
+/login/otp/send  /login/otp/verify  /verify-mobile/send
+/verify-mobile/verify  /forgot-password  /reset-password
+```
+
+Buckets are keyed per path, which contains the damage, but five per minute is
+still tight for a flow that now involves OTP and password reset. A user who
+mistypes a password twice, then requests a reset, can lock themselves out with no
+way to recover short of waiting.
+
+**Fix:** separate, more generous buckets for non-credential operations
+(`forgot-password`, `verify-*/resend`, `otp/send`), keeping the tight limit on
+`login` and `refresh` where brute force actually matters.
+
+## BUG-04 — PowerShell misreports HTTP error bodies on Windows 🟡 LOW
+
+**Not an application bug. A testing trap, recorded because it caused a false
+positive during this session.**
+
+`Invoke-WebRequest` on a non-2xx response, followed by
+`StreamReader(...).ReadToEnd()`, returned an empty `[]` for a body that was
+actually present and correct:
+
+```
+PowerShell:  code=400  body=[]
+httpx:       code=400  {"detail":"Invalid exam 'JEE Main'. Must be one of: ..."}
+```
+
+`[]` is PowerShell unrolling an empty result, not the server's response. Every
+error body in the API is well-formed. When probing this API from Windows, use
+`httpx`, `curl.exe` or a browser — do not conclude the server returned an empty
+body.
+
+---
+
+# What the automated checks did and did not prove
+
+| Check | Result | What it does **not** cover |
+|---|---|---|
+| `pytest` | 225 passed, 1 skipped | BUG-01, BUG-02, BUG-03. All three are *runtime behaviour*; the suite asserts on isolated handler logic and never performs a logout-then-refresh sequence. |
+| `npm run typecheck` | clean | Nothing behavioural |
+| `npm run lint` | clean | Nothing behavioural |
+| `npm run build` | exit 0 | Nothing behavioural |
+| Anonymous-access probe | all 401/403 | Nothing about session *termination* |
+
+The lesson is specific and worth carrying into Phase 7: **the highest-severity
+defect in the project is invisible to the test suite**, because the suite never
+logs out. A three-line test — logout, then assert the refresh token is rejected —
+would have caught BUG-01, and the assertion is exactly what Phase 3 must add.
+
+## Confirmed working during this pass
+
+Recorded so the next session does not re-verify it:
+
+- Student RBAC: 200 on `/users/me`, `/users/me/roles`, `/notifications/my`,
+  `/saved-colleges`, `/consent`; **403** on `/leads`, `/roles`, `/audit-logs`,
+  `/seo`
+- Privilege escalation blocked: `PATCH /users/1` with `role_ids` → 403;
+  `DELETE /colleges/{id}` → 403
+- `limit` bounds enforced: `0`, `-5`, `abc` all 422
+- OTP send returns a non-enumerating message — *"If that mobile is registered,
+  an OTP is on its way."* — correct privacy behaviour
+- Weak `reset-password` rejected 422; malformed verify/reset tokens rejected 422
+- `TrustedHostMiddleware`: spoofed `Host` → 400, valid → 200
+- Production guards refuse placeholder CORS, missing `ALLOWED_HOSTS`,
+  `BCRYPT_ROUNDS=4`; a valid production config passes
+
+---
 
 Live issues, none of which are resolved by the phases above alone.
 
 | Risk | Severity | Note |
 |---|---|---|
+| **BUG-01: sessions cannot be ended — logout is a no-op, refresh tokens never rotate, replay undetected** | **Critical** | **Empirically confirmed. Phase 3** |
 | Refresh token in `localStorage`, 30-day, unrevocable | **Critical** | Phase 3 |
-| `POST /auth/logout` is a no-op | **Critical** | Phase 3 |
+| **BUG-02: predictor advertises `name` but rejects it; `category` case-sensitive** | **High** | **Empirically confirmed. Phase 4** |
+| **BUG-03: auth rate limit 5/60s too low for an 11-endpoint multi-step flow** | **Medium** | **Empirically confirmed. Phase 3.8** |
 | No security headers, no CSP | High | Phase 5 |
 | No rate limit on `/api/ai`; unbounded OpenAI spend | High | Phase 4 |
-| `X-Forwarded-For` trust | High | *Partially closed in Phase 1.5* |
 | Audit trail covers ~5% of mutations | High | Phase 4 |
 | Client-controlled `ip_address` on public endpoint | High | Phase 4 |
 | No children's-data controls (DPDP S.9) | High | Phase 9 |
+| Duplicate predictor logic in client and server | Medium | Phase 4, with BUG-02 |
 | `error.tsx` claims a team was notified; nobody is | Medium | Phase 5.4 |
 | Dashboard has no dark mode; duplicate navigation | Medium | Phase 6 |
 | Fabricated public metrics | Medium | Phase 6 |
 | Dormant DB tables render as broken pages | Medium | Phase 6 |
 | 56 of 60 documented env vars are unread | Low | Phase 5.5 |
 | 4.6 MB duplicated agent-skill bundles | Low | Hygiene |
+| BUG-04: PowerShell misreports error bodies on Windows | Low | Testing only, not application |
