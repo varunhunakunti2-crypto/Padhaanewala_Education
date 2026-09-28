@@ -110,11 +110,43 @@ def _active_questions(db: Session, mock_test_id: int) -> list[TestQuestion]:
     ).all()
 
 def _shuffled_options(question: TestQuestion) -> list | None:
-    if not question.options or not isinstance(question.options, list):
-        return question.options
-    options = list(question.options)
-    random.Random(question.id).shuffle(options)
-    return options
+        if not question.options or not isinstance(question.options, list):
+            return question.options
+        options = list(question.options)
+        random.Random(question.id).shuffle(options)
+        return options
+
+
+def _question_fields(
+    question: TestQuestion, *, options_override: list | None = None
+) -> dict:
+    """The fields every question response shape shares, read once from the row.
+
+    Six call sites used to restate these by hand, so adding a field to
+    `TestQuestionResponse` meant editing six places. What made that worse than
+    tedious was that it failed silently: a newly added *optional* field falls
+    back to its default at whichever sites nobody remembered, and the endpoint
+    just omits it -- no error, no trace, a field quietly missing from one
+    response shape and present in another. Reading them from one place means
+    the shared surface is defined once.
+
+    `options_override` exists because four of the six sites serve an attempt and
+    may present shuffled options, while the result and admin views use the
+    canonical order. Everything else is identical across all six.
+    """
+    return {
+        "id": question.id,
+        "question_text": question.question_text,
+        "question_type": question.question_type,
+        "options": question.options if options_override is None else options_override,
+        "marks": question.marks,
+        "negative_marks": question.negative_marks,
+        "difficulty": question.difficulty,
+        "sort_order": question.sort_order,
+        "subject": question.subject,
+        "topic": question.topic,
+    }
+
 
 def _find_attempt(db: Session, attempt_id: int, user: User) -> TestAttempt:
     attempt = db.scalar(
@@ -451,16 +483,12 @@ def get_mock_test_questions(mock_test_ref: str, db: Session = Depends(get_db)):
     questions = _active_questions(db, mock_test.id)
     return [
         TestQuestionResponse(
-            id=q.id,
-            question_text=q.question_text,
-            question_type=q.question_type,
-            options=_shuffled_options(q) if mock_test.option_randomization else q.options,
-            marks=q.marks,
-            negative_marks=q.negative_marks,
-            difficulty=q.difficulty,
-            sort_order=q.sort_order,
-            subject=q.subject,
-            topic=q.topic,
+            **_question_fields(
+                q,
+                options_override=(
+                    _shuffled_options(q) if mock_test.option_randomization else None
+                ),
+            )
         )
         for q in questions
     ]
@@ -670,21 +698,19 @@ def start_mock_test(
 
     return StartAttemptResponse(
         attempt=_attempt_view(attempt),
-        questions=[
-            AttemptQuestionResponse(
-                id=q.id,
-                question_text=q.question_text,
-                question_type=q.question_type,
-                options=_shuffled_options(q) if mock_test.option_randomization else q.options,
-                marks=q.marks,
-                negative_marks=q.negative_marks,
-                difficulty=q.difficulty,
-                sort_order=q.sort_order,
-                subject=q.subject,
-                topic=q.topic,
-            )
-            for q in questions
-        ],
+            questions=[
+                AttemptQuestionResponse(
+                    **_question_fields(
+                        q,
+                        options_override=(
+                            _shuffled_options(q)
+                            if mock_test.option_randomization
+                            else None
+                        ),
+                    )
+                )
+                for q in questions
+            ],
     )
 
 @router.post("/{mock_test_ref}/submit", response_model=TestResultResponse)
@@ -806,26 +832,22 @@ def get_attempt(
     }
     return AttemptDetailResponse(
         attempt=_attempt_view(attempt),
-        questions=[
-            AttemptQuestionResponse(
-                id=q.id,
-                question_text=q.question_text,
-                question_type=q.question_type,
-                options=_shuffled_options(q)
-                if attempt.mock_test.option_randomization
-                else q.options,
-                marks=q.marks,
-                negative_marks=q.negative_marks,
-                difficulty=q.difficulty,
-                sort_order=q.sort_order,
-                selected_answer=answers[q.id].selected_answer
-                if q.id in answers
-                else None,
-                subject=q.subject,
-                topic=q.topic,
-            )
-            for q in questions
-        ],
+            questions=[
+                AttemptQuestionResponse(
+                    **_question_fields(
+                        q,
+                        options_override=(
+                            _shuffled_options(q)
+                            if attempt.mock_test.option_randomization
+                            else None
+                        ),
+                    ),
+                    selected_answer=answers[q.id].selected_answer
+                    if q.id in answers
+                    else None,
+                )
+                for q in questions
+            ],
     )
 
 @router.put(
@@ -872,19 +894,15 @@ def save_answer(
     db.refresh(answer)
 
     return AttemptQuestionResponse(
-        id=question.id,
-        question_text=question.question_text,
-        question_type=question.question_type,
-        options=_shuffled_options(question)
-        if attempt.mock_test.option_randomization
-        else question.options,
-        marks=question.marks,
-        negative_marks=question.negative_marks,
-        difficulty=question.difficulty,
-        sort_order=question.sort_order,
+        **_question_fields(
+            question,
+            options_override=(
+                _shuffled_options(question)
+                if attempt.mock_test.option_randomization
+                else None
+            ),
+        ),
         selected_answer=answer.selected_answer,
-        subject=question.subject,
-        topic=question.topic,
     )
 
 @router.post(
@@ -952,20 +970,11 @@ def _build_result(attempt: TestAttempt, db: Session) -> TestResultResponse:
     return TestResultResponse(
         attempt=_attempt_view(attempt),
         questions=[
-            ResultQuestionResponse(
-                id=q.id,
-                question_text=q.question_text,
-                question_type=q.question_type,
-                options=q.options,
-                marks=q.marks,
-                negative_marks=q.negative_marks,
-                difficulty=q.difficulty,
-                sort_order=q.sort_order,
-                selected_answer=answers[q.id].selected_answer
-                if q.id in answers
-                else None,
-                subject=q.subject,
-                topic=q.topic,
+                ResultQuestionResponse(
+                    **_question_fields(q),
+                    selected_answer=answers[q.id].selected_answer
+                    if q.id in answers
+                    else None,
                 is_correct=grade_by_question.get(q.id, (None, None))[0],
                 marks_awarded=grade_by_question.get(q.id, (None, None))[1],
                 correct_answer=q.correct_answer if show_key else None,
@@ -1085,23 +1094,14 @@ def admin_get_mock_test(mock_test_ref: str, db: Session = Depends(get_db)):
         is_active=mock_test.is_active,
         attempt_count=attempt_count,
         questions=[
-            AdminQuestionResponse(
-                id=q.id,
-                question_text=q.question_text,
-                question_type=q.question_type,
-                options=q.options,
-                correct_answer=q.correct_answer,
-                marks=q.marks,
-                negative_marks=q.negative_marks,
-                difficulty=q.difficulty,
-                explanation=q.explanation,
-                sort_order=q.sort_order,
-                is_active=q.is_active,
-                subject=q.subject,
-                topic=q.topic,
-                numeric_answer=q.numeric_answer,
-                tolerance=q.tolerance,
-            )
+                AdminQuestionResponse(
+                    **_question_fields(q),
+                    correct_answer=q.correct_answer,
+                    explanation=q.explanation,
+                    is_active=q.is_active,
+                    numeric_answer=q.numeric_answer,
+                    tolerance=q.tolerance,
+                )
             for q in questions
         ],
     )

@@ -288,7 +288,7 @@ def test_create_rejects_negative_tolerance(admin_headers):
         _cleanup(paper.id)
 
 
-def test_create_rejects_an_essay_needing_neither_options_nor_key(admin_headers):
+def test_create_accepts_an_essay_needing_neither_options_nor_key(admin_headers):
     """Essay is routed to manual review, so the mcq rules must not apply to it."""
     paper = _create_paper()
     try:
