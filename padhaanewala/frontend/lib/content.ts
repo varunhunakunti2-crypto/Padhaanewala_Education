@@ -150,10 +150,47 @@ export async function resolveMockTests(): Promise<Resolved<MockTest[]>> {
   return { data: MOCK_TESTS, source: MOCK_TESTS.length ? "local" : "empty" };
 }
 
+/**
+ * Reconciles an API paper row with its local catalogue entry.
+ *
+ * `mapMockTest` translates an `ApiMockTest` faithfully, but the response simply
+ * does not carry the fields the runner needs, and two of the ones it does carry
+ * are actively misleading once mapped:
+ *
+ *   * `questionIds` — absent. Without it `getTestQuestions` falls back to
+ *     sampling a subject pool, which is how an API-sourced paper ends up empty.
+ *   * `subject` — `text(api.subject, "Mixed")`. A three-subject paper stores NULL
+ *     (that is the documented "mixed" signal, see `MockTest.subject`), so it maps
+ *     to the string "Mixed", which matches no subject pool.
+ *   * `marksPerCorrect` / `marksPerWrong` — absent, so `resolveMarks` would apply
+ *     its +3 / −1 default. A JEE Main paper is +4 / −1, so a real paper would be
+ *     scored with the wrong scheme.
+ *   * `description` — read from `instructions`, which is null for this paper, so
+ *     the blurb would vanish.
+ *
+ * So the local catalogue stays the base: it is the curated definition of what a
+ * paper contains. The API row is authoritative only for the two things it alone
+ * knows, the database id and how many attempts the policy allows. Anything else
+ * here would be inventing a merge rule per field, and a future API field would
+ * silently keep defaulting.
+ *
+ * A paper with no local entry is returned as mapped. That is correct for the
+ * listing, and it will render an empty runner rather than silently serving a
+ * different paper's questions.
+ */
+function withLocalContent(api: MockTest, slug: string): MockTest {
+  const local = getMockTest(slug);
+  if (!local) return api;
+  return {
+    ...local,
+    id: api.id,
+    attempts: api.attempts,
+  };
+}
+
 export async function resolveMockTest(slug: string): Promise<Resolved<MockTest | undefined>> {
   const row = await getMockTestBySlug(slug);
-  const mapped = row ? mapMockTest(row) : undefined;
-  if (mapped) return { data: mapped, source: "api" };
+  if (row) return { data: withLocalContent(mapMockTest(row), slug), source: "api" };
   const local = getMockTest(slug);
   return { data: local, source: local ? "local" : "empty" };
 }

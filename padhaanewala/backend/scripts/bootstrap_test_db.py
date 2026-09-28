@@ -35,6 +35,8 @@ SEED_SCRIPTS = (
     "seed_colleges_courses.py",
     "seed_scholarships.py",
     "seed_exams.py",
+    # Needs an `exams` row to link each paper to; still loads without one.
+    "seed_mock_tests.py",
 )
 
 
