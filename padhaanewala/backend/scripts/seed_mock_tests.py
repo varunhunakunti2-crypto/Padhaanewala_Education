@@ -42,10 +42,6 @@ BACKEND_ROOT = Path(__file__).resolve().parent.parent
 #: `backend/scripts/` -> `padhaanewala/frontend/lib/data/mockTests.json`.
 DEFAULT_SOURCE = BACKEND_ROOT.parent / "frontend" / "lib" / "data" / "mockTests.json"
 
-#: `correct_answer` is a String and the autograder compares it verbatim, so the
-#: 0-based `correctIndex` in the JSON becomes an option letter.
-LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-
 
 def load_papers(path: Path) -> list[dict]:
     if not path.exists():
@@ -97,8 +93,6 @@ def validate(paper: dict) -> None:
                 raise SystemExit(
                     f"{where}: correctIndex {index} outside 0..{len(options) - 1}"
                 )
-            if len(options) > len(LETTERS):
-                raise SystemExit(f"{where}: more options than letters")
         else:
             if question.get("numericAnswer") is None:
                 raise SystemExit(f"{where}: {kind} has no numericAnswer")
@@ -147,9 +141,19 @@ def build_questions(paper: dict) -> list[TestQuestion]:
                 question_text=question["text"],
                 question_type=kind,
                 options=question.get("options") or None,
-                # Only one of these is ever set, so an MCQ can never be graded
-                # against a number and a numeric one never against a letter.
-                correct_answer=LETTERS[question["correctIndex"]] if is_mcq else None,
+                # `correct_answer` must be one of this question's own option
+                # values, because that is what the autograder compares verbatim
+                # and what the authoring endpoint's `_check_gradeable`
+                # validates. The source JSON expresses the key as a 0-based
+                # `correctIndex`, so it is resolved against `options` here.
+                # Writing an option *letter* instead stored "B" against options
+                # like ['2 V', '3 V'], so no submission could ever match: 0 of
+                # 60 seeded MCQs were gradable.
+                correct_answer=(
+                    (question.get("options") or [])[question["correctIndex"]]
+                    if is_mcq
+                    else None
+                ),
                 numeric_answer=(
                     None if is_mcq else Decimal(str(question["numericAnswer"]))
                 ),

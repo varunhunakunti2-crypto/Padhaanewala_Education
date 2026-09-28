@@ -139,14 +139,13 @@ def test_validate_rejects_a_missing_correct_index():
     assert "outside 0.." in str(excinfo.value)
 
 
-def test_validate_rejects_more_options_than_there_are_letters():
+def test_validate_accepts_many_options():
+    """The key is an option value, so there is no letter ceiling any more."""
     question = _one_question(
-        options=[str(n) for n in range(len(seed.LETTERS) + 1)],
-        correctIndex=0,
+        options=[f"opt-{n}" for n in range(40)],
+        correctIndex=39,
     )
-    with pytest.raises(SystemExit) as excinfo:
-        seed.validate(_one_paper(questions=[question]))
-    assert "more options than letters" in str(excinfo.value)
+    seed.validate(_one_paper(questions=[question]))
 
 
 def test_validate_rejects_a_numeric_question_with_no_numeric_answer():
@@ -196,17 +195,6 @@ def test_a_question_is_never_graded_against_both_a_letter_and_a_number(papers):
                 assert built.correct_answer is None, f"{paper['slug']} Q{position}"
 
 
-def test_mcq_correct_index_becomes_the_option_letter(papers):
-    for paper in papers:
-        for position, source in enumerate(paper["questions"], start=1):
-            if source.get("type", QuestionType.MCQ.value) != QuestionType.MCQ.value:
-                continue
-            built = seed.build_questions(paper)[position - 1]
-            assert built.correct_answer == seed.LETTERS[source["correctIndex"]]
-            return
-    pytest.skip("no mcq in the canonical file")
-
-
 def test_both_randomisation_flags_are_off(papers):
     """Shuffling would defeat the only reason `sort_order` exists."""
     fields = seed.build_paper_fields(papers[0], exam_id=None)
@@ -242,19 +230,15 @@ def test_a_three_subject_paper_leaves_the_paper_subject_null(papers):
 # --- the seeded data must clear the contracts the API now enforces -----------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "the seed maps correctIndex to a LETTER but stores the option VALUES, so "
-        "correct_answer 'B' is not among options ['2 V', '3 V', ...]. The autograder "
-        "compares verbatim (mock_tests.py:265), so a seeded mcq cannot be graded "
-        "correct, and the authoring endpoint rejects the same shape at :557. Fixing "
-        "the seed flips this to XPASS, which is the signal to drop the marker."
-    ),
-)
 def test_every_seeded_mcq_key_is_one_of_its_own_options(papers):
     """The same rule `POST /questions` enforces; a seed that broke it would
-    produce a paper the authoring endpoint could never recreate."""
+    produce a paper the authoring endpoint could never recreate.
+
+    The seed used to write an option *letter* while storing the option *values*,
+    so `correct_answer` was "B" against options like ['2 V', '3 V'] and the
+    autograder's verbatim comparison could never match: 0 of 60 seeded MCQs
+    were gradable.
+    """
     offenders = []
     for paper in papers:
         for position, question in enumerate(paper["questions"], start=1):

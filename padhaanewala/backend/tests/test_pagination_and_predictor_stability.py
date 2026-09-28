@@ -63,10 +63,16 @@ def _make_cutoffs(college: College, years: list[int]) -> list[int]:
                 exam_name="neet-ug",
                 year=year,
                 category="General",
+                # Distinct per row. `uq_cutoff_identity_coalesce` covers quota, so
+                # callers that pass the same year twice (to force a sort-key tie)
+                # would otherwise collide. Quota is deliberately chosen because it
+                # is in that constraint but NOT in the ORDER BY, so the tie these
+                # tests are about survives.
+                quota=f"q{position}",
                 closing_rank=1000 * (10 - year % 10),
                 opening_rank=100,
             )
-            for year in years
+            for position, year in enumerate(years)
         ]
     )
 
