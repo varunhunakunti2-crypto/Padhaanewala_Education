@@ -826,6 +826,13 @@ def _build_result(attempt: TestAttempt, db: Session) -> TestResultResponse:
                 marks_awarded=grade_by_question.get(q.id, (None, None))[1],
                 correct_answer=q.correct_answer if show_key else None,
                 numeric_answer=q.numeric_answer if show_key else None,
+                # Reported as the tolerance grading actually applied, so a NULL
+                # column reads as 0 rather than as "unknown".
+                tolerance=(
+                    (q.tolerance if q.tolerance is not None else Decimal(0))
+                    if show_key
+                    else None
+                ),
                 explanation=q.explanation if show_key else None,
             )
             for q in questions

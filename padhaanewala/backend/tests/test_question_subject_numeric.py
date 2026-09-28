@@ -633,6 +633,66 @@ def test_numeric_answer_is_shown_when_visibility_is_immediate():
         _cleanup(paper.id)
 
 
+def test_tolerance_is_published_with_the_key_so_the_verdict_is_reproducible():
+    """A student told "correct" should be able to see why.
+
+    `tolerance` sits on ResultQuestionResponse only. It says how much slack the
+    key allowed, so a submission of 1.41 against a key of 1.4142 is explainable,
+    and a client can re-derive the verdict the server reached instead of having
+    to trust an exact-match check that would call the same answer wrong. It is
+    withheld while the key is withheld, so publishing it costs no more than
+    publishing `numeric_answer` does.
+    """
+    def make_question():
+        # A fresh instance per paper: the same ORM object cannot belong to two
+        # mock_tests, and re-using it silently re-parents the question.
+        return _numeric(
+            "Numerically, what is the square root of 2?",
+            4,
+            Decimal("1.4142"),
+            tolerance=Decimal("0.005"),
+        )
+
+    released = _create_paper([make_question()], result_visibility="immediate")
+    withheld = _create_paper([make_question()], result_visibility="after_submission")
+    try:
+        result = _submit_one(
+            released, "Numerically, what is the square root of 2?", "1.41"
+        )
+        shown = result["questions"][0]
+        assert shown["is_correct"] is True
+        assert float(shown["numeric_answer"]) == 1.4142
+        assert float(shown["tolerance"]) == 0.005
+
+        result = _submit_one(
+            withheld, "Numerically, what is the square root of 2?", "1.41"
+        )
+        hidden = result["questions"][0]
+        assert hidden["is_correct"] is True
+        assert hidden["numeric_answer"] is None
+        assert hidden["tolerance"] is None
+    finally:
+        _cleanup(released.id)
+        _cleanup(withheld.id)
+
+
+def test_tolerance_defaults_to_zero_rather_than_null_in_a_released_result():
+    """A NULL tolerance column means exact, and should read that way."""
+    question = _numeric(
+        "Numerically, what is the value?", 1, Decimal("9.8"), tolerance=None
+    )
+    paper = _create_paper([question], result_visibility="immediate")
+    try:
+        result = _submit_one(paper, "Numerically, what is the value?", "9.8")
+        # Compared as a number: the column's scale decides the string form, and
+        # what matters to a client is that the margin is zero, not how it prints.
+        assert float(result["questions"][0]["tolerance"]) == 0
+        result = _submit_one(paper, "Numerically, what is the value?", "9.81")
+        assert result["questions"][0]["is_correct"] is False
+    finally:
+        _cleanup(paper.id)
+
+
 def test_admin_detail_exposes_the_full_key():
     paper = _create_paper(
         [

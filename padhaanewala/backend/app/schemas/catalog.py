@@ -300,6 +300,11 @@ class ResultQuestionResponse(AttemptQuestionResponse):
     # exactly like correct_answer -- publishing it unconditionally would hand the
     # key to anyone mid-attempt.
     numeric_answer: Decimal | None = None
+    # How much slack the key allowed. Without it a student who submitted 1.41
+    # against a key of 1.4142 sees a green tick and no way to reproduce it, and
+    # the client cannot re-derive the verdict the server reached. Gated the same
+    # way, so it appears only once the key does.
+    tolerance: Decimal | None = None
 
 
 class TestAttemptResponse(BaseModel):
