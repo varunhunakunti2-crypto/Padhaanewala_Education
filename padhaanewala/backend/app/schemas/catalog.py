@@ -4,6 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.models.mock_test import SELECTED_ANSWER_MAX_LENGTH
 from app.question_types import QuestionType
 
 
@@ -357,12 +358,16 @@ class StartAttemptResponse(BaseModel):
 
 
 class SaveAnswerRequest(BaseModel):
-    selected_answer: str | None = None
+    selected_answer: str | None = Field(
+        default=None, max_length=SELECTED_ANSWER_MAX_LENGTH
+    )
 
 
 class AnswerSubmission(BaseModel):
     question_id: int
-    selected_answer: str | None = None
+    selected_answer: str | None = Field(
+        default=None, max_length=SELECTED_ANSWER_MAX_LENGTH
+    )
 
 
 class SubmitAttemptRequest(BaseModel):

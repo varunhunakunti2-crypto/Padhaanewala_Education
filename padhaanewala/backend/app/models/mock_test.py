@@ -18,6 +18,12 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 from app.question_types import ALL_QUESTION_TYPES
 
+#: The widest answer a submission may carry, in characters. Postgres raises
+#: `value too long for type character varying(255)` on overflow, which surfaces
+#: as a 500 and fails the whole submission, so the bound is repeated on the
+#: request schemas -- where it can be a 422 -- rather than left to the column.
+SELECTED_ANSWER_MAX_LENGTH = 255
+
 #: Shared by both tables. `test_questions` is the one that matters: it has no
 #: create endpoint and no seed script, so rows arrive by hand or ad-hoc script
 #: and this constraint is the only guard on the value. A typo would otherwise
@@ -206,7 +212,7 @@ class TestAnswer(Base):
         Integer, ForeignKey("test_questions.id", ondelete="CASCADE"), index=True
     )
     selected_answer: Mapped[str | None] = mapped_column(
-        String(255), nullable=True
+        String(SELECTED_ANSWER_MAX_LENGTH), nullable=True
     )
     is_correct: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     marks_awarded: Mapped[Decimal | None] = mapped_column(

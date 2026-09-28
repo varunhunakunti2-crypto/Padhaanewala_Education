@@ -665,6 +665,94 @@ def test_save_answer_after_expiry_is_rejected_and_finalises():
         _cleanup(mock_test.id)
 
 
+def test_overlong_answer_is_rejected_as_a_request_error():
+    """`selected_answer` is a varchar(255) with nothing bounding it in the schema.
+
+    A student who pastes a long option, or any client that sends an oversized
+    string, reached the column and Postgres raised `value too long for type
+    character varying(255)`. That is a 500: the whole submission fails and the
+    student is told the server is broken rather than that their answer was too
+    long. The bound belongs on the request, where it can be a 422.
+    """
+    mock_test = _create_mock_test()
+    try:
+        user = _register_user()
+        headers = _auth_headers(user["access_token"])
+        start = client.post(
+            f"/api/v1/mock-tests/{mock_test.slug}/start", headers=headers
+        ).json()
+        attempt_id = start["attempt"]["id"]
+        question_id = start["questions"][0]["id"]
+        overlong = "x" * 300
+
+        saved = client.put(
+            f"/api/v1/mock-tests/{mock_test.slug}/attempts/{attempt_id}"
+            f"/answers/{question_id}",
+            json={"selected_answer": overlong},
+            headers=headers,
+        )
+        assert saved.status_code == 422, saved.text
+
+        submitted = client.post(
+            f"/api/v1/mock-tests/{mock_test.slug}/submit",
+            json={
+                "answers": [
+                    {"question_id": question_id, "selected_answer": overlong}
+                ]
+            },
+            headers=headers,
+        )
+        assert submitted.status_code == 422, submitted.text
+
+        # The boundary itself stays allowed: the column holds exactly 255.
+        at_limit = "y" * 255
+        saved = client.put(
+            f"/api/v1/mock-tests/{mock_test.slug}/attempts/{attempt_id}"
+            f"/answers/{question_id}",
+            json={"selected_answer": at_limit},
+            headers=headers,
+        )
+        assert saved.status_code == 200, saved.text
+    finally:
+        _cleanup(mock_test.id)
+
+
+def test_submit_with_a_question_that_is_not_in_the_paper_is_a_client_error():
+    """A question_id the attempt does not contain must not reach the database.
+
+    `question_id` is a bare `int` on AnswerSubmission, and the answers table has
+    a foreign key to test_questions. Sending an id that is not in the paper
+    either violates that key or silently attaches an answer to the wrong
+    question, and both surface as a 500.
+    """
+    mock_test = _create_mock_test()
+    other = _create_mock_test()
+    try:
+        user = _register_user()
+        headers = _auth_headers(user["access_token"])
+
+        response = client.post(
+            f"/api/v1/mock-tests/{mock_test.slug}/submit",
+            json={"answers": [{"question_id": 999_999_999, "selected_answer": "A"}]},
+            headers=headers,
+        )
+        assert response.status_code in (404, 422), response.text
+
+        # A real question, but from a different paper.
+        stranger = client.get(
+            f"/api/v1/mock-tests/{other.slug}/questions"
+        ).json()[0]["id"]
+        response = client.post(
+            f"/api/v1/mock-tests/{mock_test.slug}/submit",
+            json={"answers": [{"question_id": stranger, "selected_answer": "A"}]},
+            headers=headers,
+        )
+        assert response.status_code in (404, 422), response.text
+    finally:
+        _cleanup(mock_test.id)
+        _cleanup(other.id)
+
+
 def test_reported_total_marks_tracks_the_questions_that_can_be_answered():
     """The advertised total must be the number grading divides by.
 
