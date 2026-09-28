@@ -1,5 +1,6 @@
 import logging
 import time
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 from fastapi import FastAPI, Response
@@ -15,6 +16,7 @@ from app.middleware.logging import (
     RequestContextMiddleware,
 )
 from app.middleware.ratelimit import RateLimitMiddleware
+from app.services.redis_client import close_redis, redis_is_reachable
 from app.routers import (
 audit,
     auth,
@@ -48,6 +50,22 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s - %(message)s",
 )
 
+logger = logging.getLogger("padhaanewala.app")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Start with no required warmup, shut the Redis pool down cleanly.
+
+    The client itself is created lazily on first use, so a process whose
+    traffic never touches a throttled route opens no connection at all. What
+    the lifespan owns is teardown: without `close_redis` the async connection
+    pool's sockets are only reclaimed by the garbage collector, which on a
+    reload or a test session means one leaked pool per restart.
+    """
+    yield
+    await close_redis()
+
 _IS_PRODUCTION = settings.APP_ENV == "production"
 
 # The interactive API docs are a complete, clickable map of every route,
@@ -66,6 +84,7 @@ app = FastAPI(
     docs_url=_DOCS_PATH,
     redoc_url=_REDOC_PATH,
     openapi_url=_OPENAPI_PATH,
+    lifespan=lifespan,
 )
 
 # Starlette applies middleware in reverse registration order, so the list
@@ -131,6 +150,14 @@ async def health_check(response: Response) -> dict[str, object]:
     uptime monitors can act on it, while still returning a body explaining which
     check failed. Driver error text is reduced to the exception class name because
     SQLAlchemy messages can embed the connection string and credentials.
+
+    Redis is checked for the same reason the database is: the rate limiter is the
+    only thing throttling `/api/v1/auth`, and it now fails *closed* there, so a
+    dead Redis turns login into 503 for every caller. That is the correct
+    security posture but it is still an outage, and a health check that cannot see
+    it is the reason the outage is discovered from support tickets instead of from
+    the probe. A Redis failure degrades the verdict without raising, so this
+    endpoint still returns a body explaining which check failed.
     """
     checks: dict[str, dict[str, object]] = {}
     healthy = True
@@ -153,6 +180,20 @@ async def health_check(response: Response) -> dict[str, object]:
             "ok": False,
             "detail": f"PostgreSQL query failed ({type(exc).__name__})",
         }
+
+    started = time.perf_counter()
+    redis_ok = await redis_is_reachable()
+    elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
+    checks["redis"] = {
+        "ok": redis_ok,
+        "detail": (
+            f"Redis answered PING in {elapsed_ms} ms"
+            if redis_ok
+            else "Redis did not answer PING; throttled routes will fail closed"
+        ),
+    }
+    if not redis_ok:
+        healthy = False
 
     if not healthy:
         response.status_code = 503

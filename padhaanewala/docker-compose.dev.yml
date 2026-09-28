@@ -12,5 +12,27 @@ services:
   redis:
     image: redis:7-alpine
     ports: ["6379:6379"]
+    # Redis has no memory ceiling of its own, so an unbounded keyspace grows
+    # until the kernel OOM-kills the container -- which takes the rate limiter
+    # down with it and turns a cache miss into a login outage. 256 MB is
+    # generous for dev (rate-limit keys alone are well under 1 MB).
+    command:
+      - redis-server
+      - --maxmemory
+      - 256mb
+      # `volatile-lru` evicts only keys that carry a TTL, never a key without
+      # one. Every key this app writes has a TTL (rate-limit windows, cache
+      # entries), so the memory ceiling can never silently delete a persistent
+      # key to satisfy itself. `allkeys-lru` would be the wrong choice: it also
+      # evicts the rate-limit counters mid-window, handing the attacker the
+      # fresh bucket that `allkeys-lru` was meant to buy memory for.
+      - --maxmemory-policy
+      - volatile-lru
+      # Rate-limit and cache keys are derived from request data, so a stale
+      # socket that has not been read in a day is a leaked connection. Quoted
+      # because YAML reads a bare 300 as an int and compose rejects a non-string
+      # argv element.
+      - --timeout
+      - "300"
 volumes:
   pgdata:

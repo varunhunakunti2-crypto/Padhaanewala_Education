@@ -1,18 +1,24 @@
 """Pytest bootstrap.
 
-Four safety measures are applied before the application is imported:
+Five safety measures are applied before the application is imported:
 
 1. Rate limiting is disabled so auth tests are not throttled by Redis.
 2. Email verification is not enforced at login, because registration creates
    users with `is_email_verified=False` and roughly fifteen tests across eight
-    files register-then-login expecting tokens. The gate itself is still covered
-    explicitly in `test_otp.py`, which re-enables it per-test via monkeypatch.
+   files register-then-login expecting tokens. The gate itself is still covered
+   explicitly in `test_otp.py`, which re-enables it per-test via monkeypatch.
 3. The `Host` header the suite presents is allowlisted, because
-    `TrustedHostMiddleware` otherwise rejects TestClient's default
-    `testserver` with a bodiless 400 before any route runs.
+   `TrustedHostMiddleware` otherwise rejects TestClient's default
+   `testserver` with a bodiless 400 before any route runs.
 4. The suite runs inside a dedicated PostgreSQL **schema** rather than the
-    default `public` schema. Previously it ran against the developer database and
-    executed `TRUNCATE TABLE users CASCADE` on it, silently destroying real data.
+   default `public` schema. Previously it ran against the developer database and
+   executed `TRUNCATE TABLE users CASCADE` on it, silently destroying real data.
+5. Redis is stubbed. `GET /health` pings it and reports degraded when it does not
+   answer, so without a stub the suite's outcome depends on whether a
+   `redis:7-alpine` container happens to be up -- tests that assert `200` on
+   `/health` would fail for a reason that has nothing to do with the code under
+   test. `test_ratelimit_redis.py` installs its own counting and failing stubs
+   to exercise the limiter's real behaviour.
 
 `PADHAANEWALA_SCHEMA` is honoured by `app/database.py`, so the FastAPI app, the
 seed scripts and Alembic all resolve tables inside the scratch schema.
@@ -55,6 +61,43 @@ from app.database import engine
 from app.roles import ALL_ROLES
 
 TEST_SCHEMA = os.environ["PADHAANEWALA_SCHEMA"]
+
+
+class _StubRedis:
+    """A Redis that answers, so `/health` and the limiter are exercised offline.
+
+    Only the commands the application actually issues are implemented. Anything
+    else would be a silent lie, so `__getattr__` is deliberately absent: an
+    unexpected command raises instead of returning a plausible-looking empty
+    reply.
+    """
+
+    async def ping(self) -> bool:
+        return True
+
+    async def eval(self, script: str, numkeys: int, key: str, window: str) -> list[int]:
+        return [1, int(window)]
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _stub_redis():
+    """Replace the Redis client for the whole suite.
+
+    Patched on `app.services.redis_client` rather than on each call site,
+    because `ratelimit.py` does `from ... import get_redis` and captured its own
+    reference at import time; patching the defining module is the only target
+    that reaches the health check. `test_ratelimit_redis.py` patches
+    `app.middleware.ratelimit.get_redis` for the limiter, and the two patches
+    are independent.
+    """
+    import app.services.redis_client as redis_client
+
+    original = redis_client.get_redis
+    redis_client.get_redis = lambda: _StubRedis()
+    try:
+        yield
+    finally:
+        redis_client.get_redis = original
 
 
 def pytest_sessionstart(session):

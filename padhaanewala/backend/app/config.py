@@ -75,6 +75,25 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
     RATE_LIMIT_ENABLED: bool = True
 
+    #: Socket timeout for Redis commands. Deliberately small: Redis is a
+    #: fast-fail dependency on the request path, and the default 5 s socket
+    #: timeout would hold a request open for five seconds on every write while
+    #: a Redis node is unreachable. Failing fast is what lets the rate limiter
+    #: decide its open/closed behaviour instead of the whole worker stalling.
+    REDIS_SOCKET_TIMEOUT_SECONDS: float = 0.25
+
+    #: `health_check` pings Redis to decide whether to report degraded. Kept
+    #: short for the same reason, but independent of the request-path timeout
+    #: so a probe can be retried without compounding the outage.
+    REDIS_HEALTH_TIMEOUT_SECONDS: float = 0.5
+
+    #: Whether a Redis failure throttles or permits. `False` keeps the previous
+    #: fail-open behaviour for every route; the rate limiter still fails closed
+    #: on `/api/v1/auth/*` regardless, because an unreachable counter on the
+    #: login path is exactly the window an attacker picks. This flag governs the
+    #: public lead-capture and predictor routes only.
+    RATE_LIMIT_FAIL_OPEN: bool = True
+
     JWT_SECRET_KEY: str = "change-me"
     JWT_REFRESH_SECRET_KEY: str = "change-me"
     JWT_ALGORITHM: str = "HS256"
@@ -141,6 +160,13 @@ class Settings(BaseSettings):
             )
         if self.TRUSTED_PROXY_HOPS < 0:
             raise ValueError("TRUSTED_PROXY_HOPS must be >= 0")
+        if self.REDIS_SOCKET_TIMEOUT_SECONDS <= 0 or self.REDIS_HEALTH_TIMEOUT_SECONDS <= 0:
+            # redis-py treats a non-positive socket timeout as "block forever",
+            # which silently turns a Redis outage into a hung event loop.
+            raise ValueError(
+                "REDIS_SOCKET_TIMEOUT_SECONDS and REDIS_HEALTH_TIMEOUT_SECONDS "
+                "must both be > 0"
+            )
         if self.APP_ENV == "production":
             if self.JWT_SECRET_KEY in ("change-me", ""):
                 raise ValueError("JWT_SECRET_KEY must be set in production")
