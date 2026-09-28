@@ -28,6 +28,7 @@ BACKEND_ROOT = Path(__file__).resolve().parent.parent
 #   colleges    - needs states/districts/universities and creates the courses
 #   scholarships- needs states
 #   exams       - standalone
+#   mock tests  - needs an `exams` row to link each paper to; still loads without
 SEED_SCRIPTS = (
     "seed_roles.py",
     "seed_locations.py",
@@ -35,7 +36,6 @@ SEED_SCRIPTS = (
     "seed_colleges_courses.py",
     "seed_scholarships.py",
     "seed_exams.py",
-    # Needs an `exams` row to link each paper to; still loads without one.
     "seed_mock_tests.py",
 )
 
