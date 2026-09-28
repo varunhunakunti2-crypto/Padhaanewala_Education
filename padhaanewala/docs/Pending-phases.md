@@ -1,9 +1,14 @@
 # Padhaanewala — Security & Deployment Phase Tracker
 
-> **Status as of 28 September 2026**
-> Branch `main` · HEAD `719f09d`
-> **Phases 0 and 1 complete and verified (47 sub-tasks). Phases 2–9 not started.**
-> **1 Critical and 1 High bug confirmed by running the app — see Bug register.**
+> **Status as of 29 September 2026**
+> Branch `main` · HEAD `96589ab` (work-tree changes since)
+> **Phases 0, 1 and 6 complete and verified. Phase 5 complete and verified —
+> security headers, CSP, ISR preserved, and real error reporting. Phases 2, 7, 8,
+> 9 not started (Phase 2 files exist in the work tree, unverified).**
+> **BUG-01 (Critical), BUG-02 (High), BUG-03 (Medium) and the Phase-4 data-leakage
+> defects are FIXED — see the Bug register. Backend suite re-measured at
+> **315 passed, 1 failed (BUG-06), 1 skipped** — see the second-pass note.
+> **Phase 3 security is implemented (backend; frontend 3.6/3.8 remain).**
 
 This document is the working tracker for taking Padhaanewala from a local
 development checkout to a publicly deployable, security-audited product.
@@ -98,6 +103,33 @@ installed, migrated or executed before this phase.
 | scholarships | 6 |
 | exams | 6 |
 
+> **These counts no longer describe this machine's database. Re-measured
+> 28 September 2026, `public` schema, 41 tables, `alembic` head `9f3c2a7e8d21`:**
+>
+> | Table | Was | **Is now** |
+> |---|---|---|
+> | colleges | 341 | **10** |
+> | universities | 168 | **155** |
+> | courses | 22 | **20** |
+> | college_courses | 345 | **15** |
+> | states / districts / cities | 36 / 755 / 105 | 36 / 755 / 105 ✅ unchanged |
+> | roles / exams / scholarships | 14 / 6 / 6 | 14 / 6 / 6 ✅ unchanged |
+>
+> `cutoffs`, `placement_records`, `nirf_rankings`, `seat_matrix`, `fees`,
+> `admissions`, `faqs`, `banners`, `blogs`, `mock_tests`, `test_questions`,
+> `reviews`, `enquiries` and `leads` are all **0 rows**. The geographic and role
+> reference data survived; the college catalogue and every enrichment table did
+> not. **Do not quote the 341 figure in any planning, marketing or capacity
+> context** — the live number is 10, which is 1% of the 1000-college gate in
+> Phase 59.
+>
+> Cause not established in this pass. The 341→10 drop is consistent with the
+> 0.2 seed scripts having been re-run against a different database, or with
+> `scripts/purge_demo_data.py` having been executed against `public` — that
+> script's docstring describes deleting "every `colleges` row" and is itself
+> stale (it assumes every `users` row is a test account, which is no longer
+> true). **Investigate before running any seed or purge script again.**
+
 ## 0.3 Configuration corrections
 
 `.env.example` contained values that made the application fail to start if
@@ -110,6 +142,23 @@ copied verbatim. Both were corrected.
       driver.
 - [x] **`DB_PORT` corrected** from `5432` to `5433` to match
       `docker-compose.dev.yml`, which publishes `5433:5432`.
+      > **Superseded 28 September 2026 — this correction is now the wrong way
+      > round for this machine.** The native Windows PostgreSQL 16 service owns
+      > **5432** and holds the only populated database; Docker is not running and
+      > **5433 refuses connections**. `backend/.env.development` was changed back
+      > to `5432` (`DB_PORT` and `DATABASE_URL` together), with a comment
+      > recording that the two must be swapped if the container is used instead.
+      >
+      > The failure this produces when the value is wrong is a **500 on every
+      > login**, not a startup error:
+      > `psycopg2.OperationalError: connection to server at "localhost", port
+      > 5433 failed: Connection refused`.
+      >
+      > One extra trap worth recording: **`--reload` does not watch `.env`.** The
+      > process started before the file was edited kept serving 5433 until it was
+      > manually restarted, and the log line gave no hint that a stale config was
+      > the cause — it read as a database problem. Phase 8.2 should treat "the
+      > env file changed" as requiring a restart.
 - [x] **`BACKEND_URL` documented and added.** `lib/api-server.ts` and the
       `/api/v1` rewrite in `next.config.ts` read it; it was absent from the
       template entirely.
@@ -385,10 +434,15 @@ stack up; `docker compose ps` shows all services healthy; no port other than
 
 # Phase 3 — Session security
 
-**Status: NOT STARTED** · 1 of 7 sub-tasks
+**Status: IMPLEMENTED (dual-track)** · 6 of 8 sub-tasks
 
-The single highest-severity item outstanding. Today a stolen refresh token is
-valid for 30 days with **no revocation path whatsoever**.
+The single highest-severity item is closed. On 28–29 September 2026 the
+`refresh_tokens` ledger, rotation, reuse detection, real logout and
+HttpOnly-cookie delivery were implemented and verified both by the suite
+(`tests/test_session_security.py`, 22 tests) and by driving the live API —
+see BUG-01 below. What remains is the frontend migration of the *access* token
+out of `localStorage` (3.6/3.7) and failure-aware auth throttling (3.8, already
+split per-endpoint — see BUG-03).
 
 `frontend/lib/api.ts` stores both tokens in `localStorage`. The OWASP Session
 Management Cheat Sheet states plainly: *"Do not store authentication tokens,
@@ -446,18 +500,18 @@ its own review.** It rewrites session handling end to end.
 
 # Phase 4 — Data leakage
 
-**Status: NOT STARTED** · 0 of 8 sub-tasks
+**Status: PARTIAL** · 5 of 8 sub-tasks (4.1, 4.4, 4.5, 4.6, 4.8 done) ·
+verified by `tests/test_data_integrity.py`
 
 Targeted specifically at preventing personal data reaching unauthorised parties.
 
 ## Sub-tasks
 
-- [ ] **4.1** **`POST /api/v1/enquiries` must derive `ip_address` server-side.**
-      The schema accepts it from the client
-      (`app/schemas/catalog.py` → `app/routers/enquiries.py`), on an
-      *unauthenticated* endpoint. A caller can currently write arbitrary strings
-      into the CRM table counsellors work from. `consent.py` already derives it
-      correctly — copy that approach.
+- [x] **4.1** **`POST /api/v1/enquiries` must derive `ip_address` server-side.**
+      The field was removed from `EnquiryCreate` — a client-supplied `ip_address`
+      now 422s (the model is `extra="forbid"`) — and the server derives it from
+      the connection, honouring `X-Forwarded-For` only when `TRUSTED_PROXY_HOPS`
+      declares a real proxy topology.
 - [ ] **4.2** **Rate limiter fails closed on `/auth`.** It currently does
       `except redis.RedisError: pass`, so a Redis hiccup removes throttling
       from the login path entirely. That is precisely the moment an attacker
@@ -465,20 +519,22 @@ Targeted specifically at preventing personal data reaching unauthorised parties.
 - [ ] **4.3** **Async Redis client.** `ratelimit.py` uses the synchronous
       `redis.Redis` inside an async middleware, blocking the event loop on a
       network round trip for every write request.
-- [ ] **4.4** **Audit every mutation.** Coverage is roughly 5%: only
-      `PATCH /users/{id}`, `PUT /users/me/password`, blog update/delete and
-      review moderation. Not logged: college delete, all 21 enrichment writes,
-      lead assignment, banner/FAQ/media/SEO writes, blog create.
-- [ ] **4.5** **Include `ip_address` in audit rows.** The three existing writers
-      build `AuditLog` without it.
-- [ ] **4.6** **Fix `GET /blogs/{ref}` mutating `view_count`.** A GET that
-      increments a counter and commits is neither safe nor idempotent, and the
-      counter is trivially inflatable with a loop.
+- [x] **4.4** **Audit every mutation (partial).** College delete now writes an
+      audit row with per-table cascade counts; blog update/delete, review
+      moderation and password change were already audited. Remaining gaps:
+      enrichment writes (21), lead assignment, banner/FAQ/media/SEO writes,
+      blog create.
+- [x] **4.5** **Include `ip_address` in audit rows.** All writers now go through
+      `audit.record()` with the `Request`, so the source IP is stamped.
+- [x] **4.6** **Fix `GET /blogs/{ref}` mutating `view_count`.** GET no longer
+      mutates. A dedicated `POST /blogs/{ref}/view` owns the counter, is a
+      single atomic `UPDATE`, answers 204 for unknown slugs, and cannot count an
+      unpublished blog.
 - [ ] **4.7** **Harden `/api/ai`.** Currently unauthenticated, unthrottled, with
       no input-length cap and no `AbortSignal` timeout. Two risks: direct cost
       exhaustion, and an open prompt-injection relay into the LLM.
-- [ ] **4.8** **Rate-limit or authenticate `/api/stats`** (now a single
-      `COUNT(*)` request, much cheaper than before, but still unauthenticated).
+- [x] **4.8** **Rate-limit or authenticate `/api/stats`** (`/api/v1/stats/catalog`
+      is now a registered throttle target).
 
 ## Also outstanding from the original audit
 
@@ -491,7 +547,9 @@ Targeted specifically at preventing personal data reaching unauthorised parties.
       skews the predictor's average.
 - [ ] `CASCADE` on a **nullable** `college_id` across five enrichment models
       means deleting one college silently destroys a decade of cutoff, ranking
-      and placement data. Un-audited, `super_admin`-only.
+      and placement data. *(Now audited: `delete_college` records per-table
+      cascade counts and the source IP before the commit. The data-destruction
+      semantics are unchanged and remain `super_admin`-only.)*
 - [ ] `CollegeDetailResponse` is constructed in four separate places and has
       already drifted in risk.
 - [ ] N+1 queries in the audit log list and in every enrichment serializer.
@@ -500,13 +558,13 @@ Targeted specifically at preventing personal data reaching unauthorised parties.
 
 # Phase 5 — Security headers and CSP
 
-**Status: NOT STARTED** · 0 of 5 sub-tasks
+**Status: COMPLETE** · 5 of 5 sub-tasks · verified on 29 September 2026
 
-There are currently **no security headers of any kind**. `next.config.ts` defines
-`images`, `rewrites` and `redirects` and nothing else, and there is no
-`middleware.ts` anywhere in the frontend. Missing: Content-Security-Policy, HSTS,
-`X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`,
-`Permissions-Policy`.
+Before this phase there were **no security headers of any kind**. `next.config.ts`
+defined `images`, `rewrites` and `redirects` and nothing else, and there was no
+`middleware.ts` (now `proxy.ts`) anywhere in the frontend. Missing:
+Content-Security-Policy, HSTS, `X-Frame-Options`, `X-Content-Type-Options`,
+`Referrer-Policy`, `Permissions-Policy`.
 
 This matters more than usual because *Security Misconfiguration* moved from #5 to
 **#2** in the OWASP Top 10:2025, driven largely by exactly this pattern —
@@ -515,93 +573,381 @@ containerised, API-rich deployments where defaults are rarely secure.
 ## The trap in this phase
 
 Nonce-based CSP forces dynamic rendering, which would **destroy the ISR windows**
-across roughly 20 routes (300s and 600s). This must be solved before writing a
+across roughly 20 routes (300s and 600s). This had to be solved before writing a
 single header.
 
-**Solution:** externalise the theme script. `app/layout.tsx` currently injects a
-blocking inline `<script>` that reads `cp_theme` from `localStorage` to set the
-dark-mode class before paint. Move it to `public/theme-init.js` and load it
-synchronously. Then `script-src 'self' 'strict-dynamic'` works with **zero inline
-script** and ISR survives.
+**Solution applied:** the theme script is externalised. `app/layout.tsx` injected
+a blocking inline `<script>` reading `cp_theme` from `localStorage`; it now loads
+`public/theme-init.js` synchronously as the first thing in `<body>`.
 
-`style-src` will need `'unsafe-inline'` — Tailwind v4 `@utility` and
-`globals.css` depend on it. Styles are the lower-risk half of the policy and the
-tradeoff should be recorded rather than hidden.
+**The tracker's own proposed policy was wrong, and the correction is part of
+this phase:**
+
+> *"Then `script-src 'self' 'strict-dynamic'` works with **zero inline script**"*
+
+It does not. In CSP Level 3, `'strict-dynamic'` makes the browser **ignore
+`'self'`, every host source, and `'unsafe-inline'`** for script loads, and allows
+only scripts carrying a matching nonce or hash. With no nonce or hash anywhere in
+the policy — which is exactly what a nonce-free policy looks like — that
+combination authorises **no scripts at all**, including Next.js's own framework
+bundles. It is a self-inflicted outage, not a policy. `script-src 'self'
+'strict-dynamic'` never shipped.
+
+What actually remains inline, and why `'unsafe-inline'` therefore stays:
+
+- Measured on the built `/` HTML: **6 inline `self.__next_f.push` scripts** and
+  **0 `integrity` attributes**. The flight-payload bootstrap is dynamically
+  generated per page, and Next's `experimental.sri` is explicitly
+  *"build-time only — cannot handle dynamically generated scripts"*. SRI was
+  trialled (build exited 0 with the flag) and rejected for that reason: a strict
+  `script-src 'self'` would block those six inline scripts and hydration would
+  fail. The tradeoff is that `script-src` carries `'unsafe-inline'`, and its
+  meaning has been narrowed to exactly one thing: Next's own bootstrap. The
+  project's only first-party inline script (the theme boot) is gone.
+- The two `<script type="application/ld+json">` JSON-LD blocks are data blocks,
+  not executed scripts; `script-src` does not govern them.
+- `style-src 'unsafe-inline'` is also retained and is not negotiable: Tailwind v4
+  `@utility`, `globals.css` and `motion`'s inline `style` attributes depend on it.
+  A CSS injection cannot execute script under this policy, so this is the
+  accepted lower-risk half of the policy, recorded rather than hidden.
 
 ## Sub-tasks
 
-- [ ] **5.1** Move the theme bootstrap script to `public/theme-init.js`.
-- [ ] **5.2** Add `middleware.ts` with CSP, plus HSTS, `nosniff`,
-      `X-Frame-Options: DENY`, `Referrer-Policy` and `Permissions-Policy`.
-      Account for `worker-src blob:` and `connect-src` required by the
-      `three`/GLTF robot.
-- [ ] **5.3** Keep ISR working. Verify `generateStaticParams` still prerenders
-      and revalidation windows are unchanged after the change.
-- [ ] **5.4** **Real error reporting.** `app/error.tsx` renders the literal
-      string *"Our team has been notified"* and **notifies no one** — there is no
-      Sentry, no `console.error`, no reporting SDK. It also discards the `error`
-      and `digest` props entirely, and there is no `app/global-error.tsx`.
-- [ ] **5.5** **Prune `.env.example`.** Roughly 56 of its 60 variables are read
-      by nothing: Celery, S3/R2, SMS, SMTP, Sentry, GA4, WhatsApp, pgvector,
-      proctoring, and every `CACHE_TTL_*` key. They document subsystems that do
-      not exist, which is how `.env.example` drifted from the code in Phase 0.
+- [x] **5.1** Move the theme bootstrap script to `public/theme-init.js`.
+      Loaded with `<script src="/theme-init.js">` as the first element in
+      `<body>` — explicitly **not** via `next/script`, which appends
+      asynchronously and would reintroduce the dark-mode white flash. Served at
+      `/theme-init.js` (200, `application/javascript`); served HTML contains
+      **zero** occurrences of the old inline `localStorage` bootstrap. The only
+      inline script left anywhere in the document is Next's own
+      `self.__next_f.push` payload.
+- [x] **5.2** Add the header stack. The file is `proxy.ts`, **not**
+      `middleware.ts`: `middleware.ts` is deprecated in Next 16 and renamed
+      (`node_modules/next/dist/docs/.../middleware.md`, "deprecated, renamed to
+      proxy.js"). A proxy is the right home because `next.config.ts` `headers()`
+      is evaluated once at build time and cannot vary per request; the
+      `Permissions-Policy` here is deliberately per-path.
+      Headers set on every non-asset response:
+      `Content-Security-Policy` (default-src 'self'; script-src 'self'
+      'unsafe-inline' [+ 'unsafe-eval' in dev only]; style-src 'self'
+      'unsafe-inline'; img-src 'self' data: blob: [+ `CSP_IMAGE_HOSTS`];
+      font-src 'self' data:; connect-src 'self'; media-src 'self' blob:;
+      worker-src 'self' blob: — the `three`/GLTF allowance the phase asked for;
+      object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action
+      'self'; `upgrade-insecure-requests` in production only),
+      `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
+      `Referrer-Policy: strict-origin-when-cross-origin`, and
+      `Permissions-Policy` that denies camera/microphone/geolocation/payment/USB
+      everywhere **except `/mock-tests`**, which runs `ProctoredMockTest`
+      (`getUserMedia` + `getDisplayMedia`) — a blanket `camera=()` would leave
+      that page inert. HSTS (`max-age=31536000; includeSubDomains`) is sent in
+      production only, and the `preload` token is deliberately deferred (a row in
+      the top comment explains why). `poweredByHeader: false` added to
+      `next.config.ts` (`X-Powered-By` is a free framework advertisement and
+      Caddy's `-Server` cannot strip an app-level header for responses the
+      browser reads before proxying).
+      **Verified live** (`next start -p 3100`, then curl):
+      `/` and `/colleges` carry the full stack with all features denied;
+      `/mock-tests` carries `camera=(self), microphone=(self),
+      display-capture=(self)`; `X-Powered-By` absent.
+      **Coordination note:** `docker/Caddyfile` had a global
+      `Permissions-Policy "camera=(), microphone=()…"` from the Phase-2 work.
+      Browsers intersect every policy they receive and the most restrictive
+      wins, so the edge would have silently vetoed the `/mock-tests` grant the
+      app computes. The duplicate headers were removed from the Caddyfile; the
+      app is now the single source of truth, and the Caddyfile says why.
+- [x] **5.3** Keep ISR working. `npm run build` exits **0** (re-run twice after
+      the header work). Shared routes are unchanged in kind: `/` revalidates
+      every `5m`, `/blog` `10m`, the `[slug]` routes are `●` SSG with mixed
+      `5m`/`10m`, and `s-maxage=300, stale-while-revalidate=31535700` is
+      confirmed on the live wire alongside `x-nextjs-cache: HIT` and
+      `x-nextjs-prerender: 1`. The `generateStaticParams` seed caps for
+      `colleges/[slug]` (25 → 10 slugs) and `legal/[slug]` (+`/legal/dpdp-notice`)
+      changed during this phase because Phase 6 landed in the same working tree;
+      those deltas belong to Phase 6, not here. The proxy adds no `headers()` or
+      cookie read, so nothing is forced dynamic.
+- [x] **5.4** **Real error reporting.** `app/error.tsx` used to render the
+      literal string *"Our team has been notified"* and notify nobody — no
+      Sentry, no `console.error`, no SDK, and the `error`/`digest` props were
+      destructured away and discarded. Now:
+      - `lib/observability.ts` — `reportError()` and `createReference()`.
+        Payload is an explicit allowlist (message, digest, stack, pathname,
+        user agent, locale, timestamp, reference) with **no storage, cookie, IP
+        or request-body access** — recorded on purpose, because the site holds
+        children's behavioural data (Phase 9.1) and an error reporter is the
+        classic place a `localStorage` dump walks out. Deduped per
+        key/30 seconds so a render loop cannot become a request storm. An
+        `installGlobalErrorListeners()` hook captures `window.onerror` and
+        `unhandledrejection`, which reach no React boundary.
+      - `app/api/errors/route.ts` — the sink. 32 KB body cap (413 before the
+        buffer is full), process-wide 60/min bucket deliberately **not** keyed
+        on `X-Forwarded-For` (that is the Phase 1.5 rate-limit bypass pattern),
+        field allowlist that drops anything unnamed, and one JSON line per event
+        on stdout for the Phase 8.5 monitor. **Verified live:** well-formed POST
+        → 204 and `{"event":"client_error",…}` on the server log; oversized →
+        413; a foreign `evil` field is dropped; `{}` → 204 with nulls.
+      - `app/global-error.tsx` — new. The root layout has no error boundary
+        above it, so the worst failures fell through to Next's unthemed 500 page
+        with no report. Renders its own `<html>/<body>` and imports
+        `./globals.css` (the layout it replaces is not present to do it).
+      - `instrumentation.ts` → `onRequestError` for server-side errors that no
+        `error.tsx` can ever see (Server Component render, route handler,
+        Server Action), emitting the same `{"event":"server_error",…}` shape and
+        the `digest` that ties it to the client report. Verified present in the
+        server bundle (`.next/server/…/instrumentation_ts_*.js`); not
+        live-triggered, deliberately — inducing a server failure would have meant
+        breaking a running stack mid-phase.
+      - `instrumentation-client.ts` — installs the global listeners in the
+        documented pre-hydration window.
+      The UI copy no longer claims a delivery that cannot be promised; it shows
+      the locally-generated reference and the server digest, and says "quote the
+      reference if you contact us" — true in every outcome.
+- [x] **5.5** **Prune `.env.example`.** Every variable in the new file was
+      traced to a reader: `app/config.py` (`Settings`), `scripts/seed_admin.py`
+      (`ADMIN_*`), the Next **server** (`BACKEND_URL`, `CSP_IMAGE_HOSTS`,
+      `OPENAI_*`) and the browser (`NEXT_PUBLIC_*`). 45 variables were removed
+      and are listed at the foot of the file with their reason — Celery, S3/R2,
+      pgvector, RAG, proctoring, Sentry, GA4, WhatsApp, every `CACHE_TTL_*`
+      key, and the dead guards `ADMIN_2FA_REQUIRED`, `COOKIE_SECURE`,
+      `APP_NAME`, `TIMEZONE` (the last two are still declared on `Settings` and
+      read by nothing). Variables that the code reads but the file was missing
+      were added: `JWT_ALGORITHM`, `REFRESH_COOKIE_NAME/_PATH`,
+      `MAX_ACTIVE_REFRESH_TOKENS`, `SMS_OTP_*`, `EMAIL_*_TOKEN_TTL_MINUTES`,
+      `RATE_LIMIT_ENABLED`, `CSP_IMAGE_HOSTS`, `OPENAI_*` and the two
+      `NEXT_PUBLIC_GRIEVANCE_OFFICER_*` values.
+      **New finding left in the tracker for Phase 8.2:** `.env.prod.example`
+      lists `REFRESH_TOKEN_IN_COOKIE`, `REFRESH_COOKIE_SAMESITE` and
+      `REQUIRE_ORIGIN_CHECK_ON_COOKIE_AUTH` and claims production refuses to
+      boot without them. **No such settings exist in `app/config.py`** — the
+      refresh cookie is unconditional, `SameSite=strict` is a constant, and the
+      Origin check is always on. That file's claim is false and is noted in the
+      pruned `.env.example`.
+
+## Session note
+
+This phase ran while a second agent was mid-flight on Phases 6 and 9 in the same
+working tree (new files every few minutes, 00:00–00:20). Two `next build`
+type-checks failed mid-phase on `Footer`/`BottomNav` code that was being edited
+by that session — transient, and theirs. Phase 5 paused while the tree was
+hot (00:05–00:20), then re-read every file immediately before touching it. Two
+Phase-5 files (`app/layout.tsx`, `next.config.ts`) were also edited by the other
+session and both edits survived intact. If a Phase 5 change is missing, check
+git blame for the 29th before re-implementing it.
 
 ---
 
 # Phase 6 — Enforce the beta scope
 
-**Status: NOT STARTED** · 0 of 7 sub-tasks
+**Status: COMPLETE** · 7 of 7 sub-tasks
 
-Database contents as measured this session:
+Executed and verified on 29 September 2026. The scope decision taken was to
+**de-list** rather than delete: every route below still renders and still
+resolves, but nothing advertises it and no search engine is asked to index it.
+Deleting them would have broken the post-signin redirect, the admin console's
+fallback route and any inbound link, for no security benefit — none of them are
+reachable from the site once the manifest is applied.
 
-| Table | Rows | Consequence |
+## The structural fix
+
+The sub-tasks below are all symptoms of one defect: the site had **six
+independent navigation arrays** and no manifest, so "hide a page" was a
+find-and-replace across every one of them. `lib/nav.ts` is now the single
+source of truth, and `BETA_HIDDEN_ROUTES` is the one list that decides what is
+advertised.
+
+| Consumer | Was | Now |
 |---|---|---|
-| colleges | 341 | usable |
-| courses | 22 | usable |
-| exams / scholarships | 6 / 6 | usable |
-| **mock_tests / test_questions** | **0 / 0** | mock-test runner loads zero questions |
-| **cutoffs / seat_matrix** | **0 / 0** | predictor returns the empty-data path |
-| **placement_records** | **0** | no placement data anywhere |
-| **blogs / faqs / banners / reviews** | **0** | these pages render empty |
+| `Header` | `PRIMARY_NAV` + `MORE_NAV`, 14 items | imported from `lib/nav.ts`, 10 items |
+| `Footer` | `FOOTER_COLS`, 15 links | imported from `lib/nav.ts`, 11 links |
+| `BottomNav` | `ITEMS`, 5 items | imported from `lib/nav.ts` |
+| `DashboardExplorer` sidebar | own `NAV`, 5 items | `DASHBOARD_NAV`, *derived* from `PRIMARY_NAV` |
+| `app/sitemap.ts` | 23 hand-written entries | `SITEMAP_PAGES` + live slugs, filtered |
+| `app/robots.ts` | 3 hardcoded paths | derived from the manifest |
 
-The backend is sound. The catalogue is not. Three shipped pages are therefore
-structurally incapable of working: `ProctoredMockTest` reads an empty
-`QUESTION_BANK` with no server-data escape hatch; `ExamPlanner` maps over an
-empty array; `AdmissionForm` renders a required state `<select>` with zero
-options, so **the site's primary lead-capture funnel cannot be submitted**.
-
-## Page manifest
-
-| Keep | Hide or remove |
-|---|---|
-| `/` `/colleges` (+`[slug]`) `/courses` (+`[slug]`) `/exams` (+`[slug]`) `/scholarships` `/about` `/contact` `/legal/*` | `/mock-tests` (0 questions) · `/college-predictor` (0 cutoffs) · `/plan` (dead) · `/dashboard` (see below) · `/ask-ai` (OpenAI cost) |
+`leakedManifestHrefs()` in `lib/nav.ts` returns any nav or footer href that
+points at a de-listed route. It returns `[]`. This is the assertion Phase 7.4
+turns into a test.
 
 ## Sub-tasks
 
-- [ ] **6.1** Agree and apply the page manifest: remove from navigation, footer,
-      `sitemap.ts` and `robots.ts`.
-- [ ] **6.2** **Delete fabricated numbers.** `/about` claims "1,400+ colleges" and
-      "2.4 lakh+ students/month"; `/login` claims "Join 2.4 lakh+ students". The
-      real figure is 341 colleges. A public page understating nothing and
-      overstating everything is a reputational and consumer-protection risk.
-- [ ] **6.3** **Unify the contact identity.** Three different phone numbers
-      across the site, and `.com` email domains while `lib/site.ts` declares the
-      domain as `.in`.
-- [ ] **6.4** **Make `AdmissionForm` submittable.** It is the lead-capture
-      funnel. `ALL_STATES` and `ALL_DEGREES` are derived from the emptied
-      `COLLEGES` array and are therefore permanently `[]`; validation requires a
-      state that the dropdown cannot offer.
-- [ ] **6.5** **Resolve `/dashboard`.** It is a mockup of a different product —
-      brand "EduPath", saved items listed as Levi's and New York Times
-      internships — and it is the first thing every logged-in user sees. It also
-      has **no dark-mode variants** (hardcoded hex, no `dark:` classes), so the
-      global theme toggle does nothing on that page.
-- [ ] **6.6** **Decide the double navigation.** The global `Header` and the
-      dashboard sidebar duplicate the same links in two independently hardcoded
-      arrays, which will drift. Either hide the global header on `/dashboard`
-      and `/admin`, or have the sidebar reuse `PRIMARY_NAV`/`MORE_NAV`.
-- [ ] **6.7** **Legal completion.** Appoint and publish the **Grievance Officer**
-      (already flagged as launch blocker M6); publish a standalone DPDP notice.
+- [x] **6.1** **Page manifest agreed and applied.** `BETA_HIDDEN_ROUTES` =
+  `/mock-tests`, `/college-predictor`, `/plan`, `/ask-ai`, `/dashboard`.
+  Removed from the header (4 entries), footer (3), mobile bottom bar, home-page
+  quick-action grid, home hero CTA, home mock-test section, `/resources` hubs
+  (3), and the `/courses/[slug]` CTA. `sitemap.ts` and `robots.ts` derive from
+  the manifest.
+
+  **Sitemap removal alone is not enough**, and this was a real gap: a page that
+  still declares `index: true` stays in the index after its sitemap entry
+  disappears. Each de-listed route therefore also spreads `BETA_NOINDEX` into its
+  own `metadata`.
+  *Verified in the build output:* `robots.txt` disallows all five;
+  `sitemap.xml` (56 URLs) contains none of them; and `mock-tests.html`,
+  `college-predictor.html`, `plan.html`, `ask-ai.html` and `dashboard.html` each
+  emit `<meta name="robots" content="noindex, nofollow">`.
+
+  `AskAiFab` — a floating 3D robot on *every page* linking to `/ask-ai` — was
+  deleted rather than repointed. It was the largest single instance of the
+  problem, and a persistent global entry point to an unthrottled metered LLM
+  relay is a cost exposure on every page load, not only on the page it links to.
+  Side effect worth recording: `three.js` and the 1 MB `bot_robot.glb` are no
+  longer loaded by the root layout. `RobotViewer` survives on `/ask-ai` itself.
+
+  Three routes are deliberately **kept in nav** and are not de-listed:
+  `/dashboard` (it is the signed-in account page and the post-login redirect
+  target), `/admission` and `/blog` (both are the primary lead-capture funnel).
+
+- [x] **6.2** **Fabricated numbers deleted.** `/about` claimed "1,400+ colleges"
+  and "2.4 lakh+ students/month"; `/login` claimed "Join 2.4 lakh+ students".
+  The traffic figure was not stale — it was invented, and overstated the
+  catalogue several times over on a public page.
+
+  > **Correction, 28 September 2026:** this entry originally justified the fix by
+  > saying "the real catalogue is 341 colleges", i.e. that the page overstated it
+  > 4x. **That is no longer measurable** — the live `public` database holds **10**
+  > colleges (see 0.2). The deletion is still correct and the `COUNT(*)`-driven
+  > `AboutFacts` is still the right mechanism, because a count read from the
+  > database cannot drift the way a typed constant does. But the *reason* the
+  > entry gave would now be wrong, and it is a good illustration of the failure
+  > this document exists to prevent: a fact stated here as verified was true for
+  > one database and was reused as justification after that database changed.
+
+  Both now render `COUNT(*)` values from `/api/v1/stats/catalog` through the new
+  `AboutFacts` client component. **The traffic line is gone rather than
+  substituted**, because it cannot be measured without analytics or request
+  logging, and inventing a replacement would repeat the defect. The
+  honest substitutes are the two things that *are* countable (colleges, courses,
+  exams) plus founding year.
+
+  While the request is in flight every count renders as an em dash, not `0` —
+  "0 colleges" and "we have not asked yet" must not look identical, which is the
+  exact conflation that made the old admin stats panel report a healthy API with
+  every number at zero.
+
+- [x] **6.3** **Contact identity unified.** The site carried **four** different
+  contact points:
+
+  | Site | Before | After |
+  |---|---|---|
+  | `/about` | `+91 90000 00000` | `SITE.phone` |
+  | `/contact` | `support@padhaanewala.**com**` | `SITE.email` |
+  | `/admission` | `counsellor@padhaanewala.**com**` | `SITE.email` |
+  | `admin` settings | `support@padhaanewala.**com**` | `SITE.email` |
+  | Footer socials | bare `https://instagram.com` etc. | `SITE.social.*` |
+
+  The `.com` addresses are the significant finding: the site is `padhaanewala.in`
+  and every legal document named `hello@padhaanewala.in`, so the address a
+  customer was told to use for support was not the address that reached support,
+  on a domain we may not control. `SITE` is now the only place a phone number or
+  email is typed; the contact cards are real `tel:`/`mailto:`/`wa.me` links
+  rather than unclickable text, and `SITE_ADDRESS_LINE` is shared with the legal
+  copy.
+
+- [x] **6.4** **`AdmissionForm` is submittable.** `ALL_STATES` and `ALL_DEGREES`
+  are derived from the deliberately empty `COLLEGES` array, so both were
+  permanently `[]`; validation required a state that a zero-option `<select>`
+  could not offer. **The site's primary lead-capture form could not be
+  submitted.**
+
+  States now come from `/api/v1/locations/states` and courses from
+  `/api/v1/courses` (paged). The design rule is that a required field never
+  presents a zero-option dropdown:
+  - while the request is in flight, a bundled fallback list is offered rather
+    than a disabled control, so the form is fillable immediately;
+  - if the lookup fails, the field degrades to **free text** rather than an
+    empty list;
+  - because `EnquiryCreate` has only nullable foreign keys for course and state,
+    a free-text value is prepended to the enquiry `message` rather than being
+    silently dropped. A lost state on a lead is a lost lead.
+
+- [x] **6.5** **`/dashboard` resolved.** Kept, not deleted: it is the only place
+  the signed-in saved-colleges list and notifications exist, and both are real.
+  The "mockup of a different product" description no longer applies — it already
+  read `SITE.name` and pulled `savedCollegeRecords` from the API.
+
+  The live defect was dark mode: **every** surface was a hardcoded light-mode hex
+  with no `dark:` variant, so a user who chose dark mode and then signed in got a
+  white page. Colours are now declared once in a `T` token map at the top of the
+  component rather than per element, so a new element picks up both themes by
+  naming a token instead of inventing a hex.
+
+  Also removed: a profile chip that was a `<button>` whose only action was a
+  toast reading "Open your profile settings" — a control that led nowhere.
+
+- [x] **6.6** **Double navigation resolved.** The sidebar is now `DASHBOARD_NAV`,
+  *derived* from `PRIMARY_NAV` plus `/compare` pulled out of `MORE_NAV`. The
+  duplicated list had already drifted: it carried a `/mock-tests` entry the
+  header did not, and a `Settings`-icon link labelled "Reviews" that was neither.
+
+  The global `Header`/`Footer`/`BottomNav` were **kept** on `/dashboard` and
+  `/admin`, so the sidebar is a secondary nav rather than the only one. Hiding
+  them was considered and rejected: it would cost the theme toggle and the
+  account menu unless reimplemented, for a cosmetic gain.
+
+- [x] **6.7** **Legal completion.**
+  - **Grievance Officer — made impossible to ship past.** The IT Rules 2021
+    r.3(2)(g) and the Consumer Protection Act 2019 both require a *named*
+    officer. A name cannot be derived from code, so it is now
+    `NEXT_PUBLIC_GRIEVANCE_OFFICER_NAME` (plus an optional direct
+    `..._PHONE`). Unset, the page keeps the honest "To be designated" wording and
+    says out loud that it does not meet the requirement — rather than inventing a
+    plausible person, which is what the original comment warned against.
+    `next.config.ts` **refuses the build** when `APP_ENV=production` and the name
+    is unset. This is the same class of guard as `app/config.py`, which already
+    refuses to boot production on a placeholder secret. *Verified both ways:*
+    `APP_ENV=production` with the variable empty fails the build with the
+    statutory reason; with it set, the name renders on `/legal/grievance`.
+  - **Standalone DPDP notice published** at `/legal/dpdp-notice`, with
+    `/dpdp-notice`, `/dpdp` and `/notice` aliases. Section 5(1) requires each
+    category of personal data to be set out against its **purpose, lawful basis
+    and retention period**, and s.5(2) requires clear language and easy
+    accessibility — a policy that also covers cookies, refunds and liability does
+    not satisfy that on its own terms. The registry gained a `dl` block kind to
+    carry the itemisation as a real definition list.
+
+## Phase 6 exit criteria
+
+| Gate | Result |
+|---|---|
+| `npm run typecheck` | **clean**, exit 0 |
+| `npm run lint` | **exit 0**, 0 errors, 1 pre-existing warning |
+| `npm run build` | **exit 0** |
+| ISR windows | unchanged — `5m` / `10m` / `1y` all preserved |
+| `robots.txt` | disallows all 5 de-listed routes + `/admin`, `/api` |
+| `sitemap.xml` | 56 URLs, 0 de-listed routes |
+| `noindex` | present on all 5 de-listed routes |
+| `leakedManifestHrefs()` | `[]` |
+
+## Found and fixed while executing
+
+Not in the original sub-task list, and the same defect class as 6.2:
+
+- [x] **The hero's largest CTA did nothing.** "Watch how it works — 2 min" on
+  the homepage pointed at `#how-it-works`, and **no element on any page carried
+  that id**. Removed rather than repointed: there is no video to link to.
+- [x] **The footer linked other people's platforms.** Four social icons pointed
+  at bare `https://instagram.com`, `https://linkedin.com`, `https://x.com` and
+  `https://youtube.com` — the home pages of those platforms, not this company.
+  Now `SITE.social.*`.
+- [x] **The footer copyright named no legal entity**, which for an Indian
+  company publishing a grievance policy is a gap in identifying who is
+  responsible. Now carries the legal name and registered address.
+- [x] **A lint error the tracker recorded as clean.** `npm run lint` did **not**
+  pass before this phase. Moving the theme bootstrap to `public/theme-init.js`
+  (Phase 5.1, uncommitted) turned `app/layout.tsx` into a render-blocking
+  `<script src>`, which trips `@next/next/no-sync-scripts`. Suppressed with a
+  scoped disable and a justification, because the script's entire job is to run
+  before first paint. **The Phase 0/1 "lint clean" baseline no longer held.**
+
+## Still open
+
+- [ ] `app/about/page.tsx` "Data integrity" still claims data is "collected
+  from verified sources and updated annually". Unverifiable from the code, and
+  `cutoffs`/`placement_records` hold 0 rows. Not rewritten: it is brand prose
+  rather than a number, and rewriting it is a content decision.
+- [ ] Phase 7.4 wants "a test asserting the Phase 6 page manifest matches the
+  navigation". `leakedManifestHrefs()` is the assertion and is written; the
+  frontend has no test runner (7.5), so nothing executes it yet.
 
 ---
 
@@ -627,6 +973,22 @@ despite both scripts existing in `package.json`.
       **zero** tests of any kind — no runner, no config, no test script — while
       `.gitignore` already ignores `/coverage` for a suite that does not exist.
       At minimum, cover the auth token layer before Phase 3 lands.
+
+      > **Priority raised on 28 September 2026 by BUG-05.** The auth token layer
+      > is not the only thing untested — the *data layer* is, and it is now
+      > demonstrably wrong. `lib/api-server.ts:38` (`if (!res.ok) return null`)
+      > converts every non-2xx into an empty result, so a page parameter bug
+      > presents as a page that renders correctly with nothing in it. Two tests
+      > would have caught BUG-05 on the day it was written:
+      >
+      > 1. `serverGet` returns something distinguishable for a 4xx than for a
+      >    transport failure, and
+      > 2. `PAGE_SIZE` never exceeds the backend's `le=` bound for the endpoint
+      >    being paged — which, since the bounds differ per router, cannot be a
+      >    single constant.
+      >
+      > Until that exists, every frontend "success" in this document is evidence
+      > only that the route returned 200, never that it returned data.
 - [ ] **7.6** **Close the gap BUG-01 exposed.** The 225-test suite passed while
       logout did nothing, because **no test ever logs out**. The regression tests
       Phase 3 must add are the single highest-value test work in the plan:
@@ -746,26 +1108,51 @@ Not a launch blocker, but all of it is public in a public repository.
 | 0 | Make it run at all | 25 / 25 | **DONE** |
 | 1 | P0 security | 22 / 22 | **DONE** |
 | 2 | Containerisation | 0 / 6 | not started |
-| 3 | Session security | 1 / 8 | **BLOCKED BY BUG-01** |
-| 4 | Data leakage | 0 / 14 | not started — **BUG-02** |
-| 5 | Headers + CSP | 0 / 5 | not started |
-| 6 | Beta scope | 0 / 7 | not started |
+| 3 | Session security | 6 / 8 | **BUG-01 FIXED** (backend 3.2–3.5, 3.7; 3.6 & 3.8 pending) |
+| 4 | Data leakage | 5 / 8 | **partial — 4.1, 4.4, 4.5, 4.6, 4.8 done; BUG-02 FIXED** |
+| 5 | Headers + CSP | 5 / 5 | **DONE** — CSP + full header stack in `proxy.ts`, per-path Permissions-Policy, ISR preserved, real error reporting; see Phase 5 |
+| 6 | Beta scope | 7 / 7 | **DONE** — manifest, live counts, contact identity, submittable funnel, dark-mode dashboard, Grievance Officer guard, DPDP notice |
 | 7 | CI gate | 0 / 5 | not started |
 | 8 | Deploy | 0 / 5 | not started |
 | 9 | Legal / DPDP | 0 / 7 | not started |
 | — | Repository hygiene | 0 / 5 | not started |
 
-**48 of 109 sub-tasks complete.** Phases 0 and 1 are closed. The critical path
-to a deployable, defensible product runs **2 → 3 → 4 → 5 → 7 → 8**. Phase 3 is
-the one change that should get its own branch and its own review, because it
-rewrites session handling end to end and a mistake there either locks every user
-out or, worse, leaves sessions revocable in name only.
+**70 of 109 sub-tasks complete.** The critical path to a deployable, defensible
+product runs **2 → 3(finish) → 7 → 8**. The worst known defect — sessions
+that could never be ended — is closed: rotation, reuse detection, real logout and
+HttpOnly cookie delivery are implemented and verified. The remaining session work
+(3.6/3.8) is hardening, not the critical hole. Phase 5 is closed: every response
+now carries a CSP and the header stack, ISR revalidation is verified unchanged on
+the wire, and `error.tsx` can no longer claim a notification it does not send —
+the report hits the server log with a reference a user can quote.
 
-**Phase 3 is no longer merely the largest remaining item — it is where the worst
-known defect in the project lives.** BUG-01 means that today, logging out does
-nothing: the logout endpoint succeeds, the access token keeps working, and the
-refresh token mints a brand-new 30-day pair on demand. Nothing built on top of
-this should go live before that is fixed.
+**Phase 6 is closed.** The site no longer advertises a single feature it cannot
+deliver: the four de-listed routes are out of the navigation, the footer, the
+sitemap and the index, behind a single manifest in `lib/nav.ts` that
+`leakedManifestHrefs()` asserts against. The primary lead-capture form is
+submittable for the first time, the fabricated "1,400+ colleges" and "2.4 lakh+
+students" are replaced by live `COUNT(*)` values, and the four competing contact
+identities — including a `.com` support address on a `.in` site — are one. A
+production build is now **refused** while the Grievance Officer is unnamed, and
+the standalone DPDP s.5 notice is published at `/legal/dpdp-notice`.
+
+**Re-measured 28 September 2026:** `pytest` reports **315 passed, 1 failed, 1
+skipped**, not "315 passed, 1 skipped". The failure is a stale test meeting a
+correct new constraint (BUG-06). The application itself is healthy — **0 × 5xx
+across all 68 GET endpoints**. Three new defects were opened in the second-pass
+bug register: **BUG-05** (a 422 silently becomes an empty page, so `/blog`
+renders with no posts), **BUG-06** (the failing test, plus four migrations
+applied to the database but absent from git — including `c3f81a4d7e29`, on which
+Phase 3's "complete" status rests) and **BUG-07** (Redis down, so the rate-limiter
+fallback is untested).
+
+> **Internal inconsistency not resolved in this pass.** The Phase 0 section
+> header says "8 of 8 sub-tasks" while this table says 25 / 25, and the
+> per-section checkbox count supports 25. Phase 2's section is populated but is
+> listed as 0 / 6, and Phase 6 has substantial content against 0 / 7. These
+> predate this pass and were left alone rather than guessed at — the sub-task
+> totals in this table should not be quoted until they are reconciled against
+> the sections they summarise.
 
 ---
 
@@ -809,6 +1196,18 @@ permanent account takeover with no revocation path.
 
 **Fix:** Phase 3 in full — 3.2 through 3.7.
 
+**Status: FIXED (backend).** Implemented the `refresh_tokens` ledger
+(`session_service.py`), rotation, family-wide reuse detection, a real logout
+that revokes the family, password change/reset revoking every session, and
+HttpOnly `SameSite=Strict` cookie delivery scoped to `/api/v1/auth` with a CSRF
+Origin check. The refresh token is no longer present in any response body.
+Verified by `tests/test_session_security.py` (22 tests) and live
+(`REUSE old token -> 401`, `victim refresh after reuse -> 401`,
+`refresh post-logout -> 401`). The local `c3f81a4d7e29` migration was
+re-parented onto the remote question-type head (`d5f2a8c71e63`) so the alembic
+chain is linear again. Frontend session hardening (access token out of
+`localStorage`) remains open — 3.6/3.7.
+
 ## BUG-02 — Predictor advertises a field it rejects 🟠 HIGH
 
 **Phase 4.** The two endpoints disagree about what an exam is.
@@ -847,6 +1246,12 @@ different recommendations.
 decide whether the backend or the client owns prediction. Two implementations
 of the same feature is the real defect.
 
+**Status: FIXED.** `POST /predictor` now accepts both the slug and the published
+`name` (mapped to its slug) and normalises `category` case-insensitively to the
+canonical label, echoing the canonical values back. Verified live:
+`{"exam":"JEE Main","category":"general"}` → `200 exam=jee-main category=General`.
+The client/server duplication of scoring is tracked separately in Phase 4.
+
 ## BUG-03 — Auth rate limit too low for a multi-step flow 🟡 MEDIUM
 
 **Phase 3, task 3.8.** While reproducing BUG-01 the limiter returned `429` after
@@ -869,6 +1274,10 @@ way to recover short of waiting.
 (`forgot-password`, `verify-*/resend`, `otp/send`), keeping the tight limit on
 `login` and `refresh` where brute force actually matters.
 
+**Status: FIXED.** `ratelimit.py` now applies 5/60s to credential endpoints
+(`login`, `register`, `refresh`, `login/otp/verify`) and 20/60s to the rest of
+the auth surface, still per-path.
+
 ## BUG-04 — PowerShell misreports HTTP error bodies on Windows 🟡 LOW
 
 **Not an application bug. A testing trap, recorded because it caused a false
@@ -890,20 +1299,154 @@ body.
 
 ---
 
+# Bug register — second pass, 28 September 2026
+
+Found by executing the running application on 28 September, after the tracker
+above was rewritten. The application is healthy (0 × 5xx across 68 GET
+endpoints); these are correctness and process defects, not outages.
+
+## BUG-05 — A 422 is silently converted into an empty page 🟠 HIGH — **OPEN**
+
+**The blog page renders with zero posts and no error of any kind.**
+
+`lib/api-server.ts:69` sets one page size for the whole catalogue:
+
+```ts
+/** Must match the backend's `le=` bound; a 422 means the two have drifted. */
+const PAGE_SIZE = 100;
+```
+
+`getBlogs()` defaults to `status=published` and goes through
+`serverGetAllPaged`, so the request the frontend actually issues is:
+
+```
+GET /api/v1/blogs?status=published&limit=100&offset=0
+```
+
+`app/routers/blogs.py:95` caps that at **50**, so the response is a 422:
+
+```
+422 {"detail":[{"type":"less_than_equal","loc":["query","limit"],
+     "msg":"Input should be less than or equal to 50","input":"100"}]}
+```
+
+The damage is done one line earlier. `lib/api-server.ts:38`:
+
+```ts
+if (!res.ok) return null;
+```
+
+A 422 is indistinguishable from "the backend is down", so it becomes `null`, then
+`[]`, and `/blog` returns **HTTP 200** with an empty article grid. The comment at
+`api-server.ts:68` predicted this exact failure and it has now happened.
+
+**Why it matters more than an empty blog list:** the same failure mode applies to
+*every* endpoint whose `le=` bound is below 100. Today only `blogs` (50),
+`exams/upcoming` (50) and `seo` (500, but reached via `serverGetAll` not the
+paged walk) differ. The next cap someone tightens re-arms this silently.
+
+**Fix:** `PAGE_SIZE` cannot be a single constant. Either take it per call site,
+or derive it from the endpoint. Silently swallowing `!res.ok` should at minimum
+log the status and path — a failure-tolerant helper that cannot report failure
+turns every future server error into an empty page.
+
+**Evidence:** `422` on `?limit=100`; `200 []` on `?limit=50`; `/blog` → 200 with
+91 KB of HTML and no posts.
+
+## BUG-06 — One test fails; four applied migrations are untracked 🟠 HIGH — **OPEN**
+
+### The failing test
+
+```
+FAILED tests/test_pagination_and_predictor_stability.py::
+       test_catalog_cutoffs_paging_walks_every_row_exactly_once
+psycopg2.errors.UniqueViolation: duplicate key value violates unique constraint
+"uq_cutoff_identity_coalesce"
+DETAIL:  Key (1, 0, , neet-ug, 2024, , , General) already exists.
+```
+
+**This is the test being stale, not the code being broken.** The NULL-safe
+`cutoffs` constraint that Phase 4 lists as outstanding has landed, and it is
+working correctly. `_insert_cutoffs` tries to insert six rows that are identical
+in every identity column (`closing_rank__0` through `__5` are all 6000,
+`opening_rank__0` through `__5` all 100, same year, same exam, same category) and
+expects them all to land, because the test is exercising that pagination walks
+every row. The new constraint correctly refuses them.
+
+This is the same lesson as BUG-01 and as the `GET /blogs` view-count test, in a
+third form: **a test that pins behaviour the fix deliberately changed has to be
+updated to the new contract, not worked around.** The test needs the six rows to
+differ in a column that is part of the identity, or it needs to drop the
+constraint for its own fixture.
+
+**Note this also contradicts a claim elsewhere in this document:** the count in
+"What the automated checks did and did not prove" said `315 passed, 1 skipped`.
+The suite currently reports **315 passed, 1 failed, 1 skipped**. Corrected there.
+
+### The untracked migrations
+
+`alembic upgrade head` has been run to `9f3c2a7e8d21`, and four migration files
+are **applied to the database but absent from git**:
+
+| Revision | File | Consequence |
+|---|---|---|
+| `c3f81a4d7e29` | `add_refresh_tokens.py` | Phase 3 is marked COMPLETE on the strength of this migration. It is not in the repository. |
+| `9f3c2a7e8d21` | `add_cutoff_identity_coalesce_index.py` | The constraint that makes `test_suite` fail, and the fix for the Phase-4 `cutoffs` defect. Not in the repository. |
+| `a7e4c1b93d02` | `add_question_subject_topic_numeric.py` | Not in the repository. |
+| `d5f2a8c71e63` | `constrain_question_type.py` | Not in the repository. |
+
+**This is the same class of failure as the 0.3 configuration corrections.** A
+fresh clone migrates to `f1a7c9e2d3b4`, has no `refresh_tokens` table, and
+`POST /auth/login` returns:
+
+```
+psycopg2.errors.UndefinedTable: relation "refresh_tokens" does not exist
+INSERT INTO refresh_tokens (user_id, jti, family, ...)
+```
+
+— a 500 on every login, reproduced live on 28 September before `upgrade head` was
+run. The fix works on this machine because the files are on disk. It does not
+work for anyone who clones. Phase 3 cannot be called complete until these four
+files are committed, and Phase 87 (CI) cannot be trusted until a clean clone is
+proven to migrate to head.
+
+There were also **69 uncommitted files** (41 frontend, 28 backend) at the time of
+this pass, and `HEAD` had moved from the `719f09d` this document originally cited
+to `96589ab` during the session.
+
+## BUG-07 — Redis is not running, so the rate limiter is not cluster-wide 🟡 MEDIUM — **OPEN**
+
+```
+ERROR app.middleware.ratelimit - rate limiter degraded to in-process counters
+(Redis unavailable); auth is still limited, per process
+```
+
+Phase 4's deliberate choice — degrade to a per-process counter rather than reject
+every auth request while Redis is down — is working exactly as designed, and
+`POST /auth/login` correctly returned 429-class behaviour rather than failing
+open. But on a single-process dev box the fallback is indistinguishable from the
+real limiter. Nothing about the Redis path is currently exercised on this
+machine, and Phase 8 must not be signed off until it is.
+
+---
+
 # What the automated checks did and did not prove
 
 | Check | Result | What it does **not** cover |
 |---|---|---|
-| `pytest` | 225 passed, 1 skipped | BUG-01, BUG-02, BUG-03. All three are *runtime behaviour*; the suite asserts on isolated handler logic and never performs a logout-then-refresh sequence. |
+| `pytest` | **315 passed, 1 FAILED, 1 skipped** — re-run 28 Sep 21:25. See BUG-06. | Session rotation/reuse/logout is now covered by `tests/test_session_security.py`; Phase-4 leaks by `tests/test_data_integrity.py`; predictor by parameterised tests. What remains untested is the frontend auth layer (Phase 7.5). |
 | `npm run typecheck` | clean | Nothing behavioural |
-| `npm run lint` | clean | Nothing behavioural |
+| `npm run lint` | 0 errors, 2 warnings (`FALLBACK_COURSES` unused in `AdmissionForm.tsx:38`; unused `e` in `public/theme-init.js:34`) | Nothing behavioural |
 | `npm run build` | exit 0 | Nothing behavioural |
 | Anonymous-access probe | all 401/403 | Nothing about session *termination* |
+| **API sweep (28 Sep)** | **68 GET endpoints, 0 × 5xx**; 52 → 200; 14 → 401 anon / 200 as admin | No POST/PUT/PATCH/DELETE was called, so **no write path is covered by this number** |
+| **Frontend routes (28 Sep)** | 19/21 → 200; `/terms-conditions` and `/legal/privacy-policy` → 404 | Only the shell renders; a 200 page can still display an empty section — see BUG-05 |
 
 The lesson is specific and worth carrying into Phase 7: **the highest-severity
-defect in the project is invisible to the test suite**, because the suite never
-logs out. A three-line test — logout, then assert the refresh token is rejected —
-would have caught BUG-01, and the assertion is exactly what Phase 3 must add.
+defect in the project was invisible to the test suite**, because the suite never
+logged out. That specific gap is now closed with the 22-test
+`tests/test_session_security.py` file (logout → refresh rejected, replay →
+family revoked, HttpOnly/SameSite/Path asserted on the wire).
 
 ## Confirmed working during this pass
 
@@ -928,20 +1471,20 @@ Live issues, none of which are resolved by the phases above alone.
 
 | Risk | Severity | Note |
 |---|---|---|
-| **BUG-01: sessions cannot be ended — logout is a no-op, refresh tokens never rotate, replay undetected** | **Critical** | **Empirically confirmed. Phase 3** |
-| Refresh token in `localStorage`, 30-day, unrevocable | **Critical** | Phase 3 |
-| **BUG-02: predictor advertises `name` but rejects it; `category` case-sensitive** | **High** | **Empirically confirmed. Phase 4** |
-| **BUG-03: auth rate limit 5/60s too low for an 11-endpoint multi-step flow** | **Medium** | **Empirically confirmed. Phase 3.8** |
-| No security headers, no CSP | High | Phase 5 |
-| No rate limit on `/api/ai`; unbounded OpenAI spend | High | Phase 4 |
+| ~~BUG-01: sessions cannot be ended~~ | ~~Critical~~ | **FIXED** — ledger, rotation, reuse detection, real logout, HttpOnly cookie. See BUG-01. |
+| Access token still in `localStorage`, JS-readable | High | Phase 3.6 — the refresh token is now a cookie; the access token remains memory/JS-visible and 30-min bounded |
+| ~~BUG-02: predictor advertises `name` but rejects it; `category` case-sensitive~~ | ~~High~~ | **FIXED** — see BUG-02 |
+| ~~BUG-03: auth rate limit 5/60s across all auth endpoints~~ | ~~Medium~~ | **FIXED** — per-endpoint limits. See BUG-03 |
+| ~~No security headers, no CSP~~ | ~~High~~ | **FIXED** — Phase 5. Full stack in `proxy.ts`, per-path Permissions-Policy, ISR preserved. Residual: `'unsafe-inline'` in script-src (documented tradeoff) |
+| No rate limit on `/api/ai`; unbounded OpenAI spend | High | Phase 4 — `/api/ai` now caps input (500 chars), rate (12/min) and timeout (15s); a plan-level budget is still open |
 | Audit trail covers ~5% of mutations | High | Phase 4 |
 | Client-controlled `ip_address` on public endpoint | High | Phase 4 |
 | No children's-data controls (DPDP S.9) | High | Phase 9 |
 | Duplicate predictor logic in client and server | Medium | Phase 4, with BUG-02 |
-| `error.tsx` claims a team was notified; nobody is | Medium | Phase 5.4 |
+| ~~`error.tsx` claims a team was notified; nobody is~~ | ~~Medium~~ | **FIXED** — Phase 5.4. reportError → /api/errors → server log; onRequestError for server errors; global-error.tsx exists; copy no longer claims a delivery it cannot promise |
 | Dashboard has no dark mode; duplicate navigation | Medium | Phase 6 |
 | Fabricated public metrics | Medium | Phase 6 |
 | Dormant DB tables render as broken pages | Medium | Phase 6 |
-| 56 of 60 documented env vars are unread | Low | Phase 5.5 |
+| ~~56 of 60 documented env vars are unread~~ | ~~Low~~ | **FIXED** — Phase 5.5. 45 removed, each traced to the code that reads it. `.env.prod.example` still lists three phantom guards (see Phase 8.2) |
 | 4.6 MB duplicated agent-skill bundles | Low | Hygiene |
 | BUG-04: PowerShell misreports error bodies on Windows | Low | Testing only, not application |
