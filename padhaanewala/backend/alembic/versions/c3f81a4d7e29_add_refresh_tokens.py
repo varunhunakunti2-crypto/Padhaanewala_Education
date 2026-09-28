@@ -1,7 +1,7 @@
 """add_refresh_tokens
 
 Revision ID: c3f81a4d7e29
-Revises: b4e91d7a2c58
+Revises: b7c3d91e5a20
 Create Date: 2026-09-28 14:22:07.418822
 
 Phase 3 (session security). Adds the `refresh_tokens` table that makes refresh
@@ -22,10 +22,13 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = 'c3f81a4d7e29'
-# Re-parented onto the question-type migrations (a7e4c1b93d02 -> d5f2a8c71e63)
-# that the remote advanced past b4e91d7a2c58, so the chain is linear again:
-# b4e91d7a2c58 -> a7e4c1b93d02 -> d5f2a8c71e63 -> c3f81a4d7e29
-down_revision: Union[str, Sequence[str], None] = 'd5f2a8c71e63'
+# Re-parented twice. First onto the question-type migrations (a7e4c1b93d02 ->
+# d5f2a8c71e63) that the remote advanced past b4e91d7a2c58; then onto
+# b7c3d91e5a20, added by the remote while this file was uncommitted, so the
+# chain is linear again:
+# b4e91d7a2c58 -> a7e4c1b93d02 -> d5f2a8c71e63 -> b7c3d91e5a20 ->
+# c3f81a4d7e29 -> 9f3c2a7e8d21
+down_revision: Union[str, Sequence[str], None] = 'b7c3d91e5a20'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
