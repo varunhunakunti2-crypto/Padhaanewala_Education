@@ -298,10 +298,28 @@ def test_admin_list_users_missing_token():
 def test_admin_list_users(admin, registered):
     _assign_roles(registered["email"], ["student"])
     headers = {"Authorization": f"Bearer {admin['access_token']}"}
-    response = client.get("/api/v1/users", headers=headers)
-    assert response.status_code == 200
-    emails = [u["email"] for u in response.json()]
-    assert registered["email"] in emails
+
+    # The listing is capped at 50 per page and ordered by id, so a brand new user
+    # is on the *last* page once the suite has created more than 50 of them.
+    # Walking the pages keeps this asserting what it means to assert -- that an
+    # admin's listing includes every user -- rather than depending on how many
+    # users happen to exist by the time this runs.
+    seen: list[str] = []
+    offset = 0
+    while True:
+        response = client.get(
+            "/api/v1/users",
+            params={"limit": 50, "offset": offset},
+            headers=headers,
+        )
+        assert response.status_code == 200, response.text
+        page = response.json()
+        seen.extend(user["email"] for user in page)
+        if len(page) < 50:
+            break
+        offset += 50
+
+    assert registered["email"] in seen
 
 
 def test_admin_list_users_search(admin, registered):
