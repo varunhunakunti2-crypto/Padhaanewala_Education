@@ -149,7 +149,21 @@ class TestAttempt(Base):
     )
     correct_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     incorrect_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Questions the student left blank. Deliberately narrower than "not correct":
+    # a blank submission is an omission, so it must not pick up negative marking.
     unanswered_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Answers that exist but that the autograder cannot decide: `essay`, an MCQ
+    # published without a key, a `numeric` published without a numeric_answer.
+    # These were previously folded into `unanswered_count`, which reported a
+    # written essay as a question the student never attempted. Kept as its own
+    # tally so that
+    #   correct + incorrect + unanswered + pending_review == len(questions)
+    # holds with every bucket meaning what its name says.
+    #
+    # NULL, not 0, for attempts graded before this column existed: their
+    # `unanswered_count` mixed the two meanings and cannot be split after the
+    # fact, so backfilling either bucket would be a guess.
+    pending_review_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     percentage: Mapped[Decimal | None] = mapped_column(
         Numeric(5, 2), nullable=True
     )

@@ -401,7 +401,10 @@ def test_essay_is_routed_to_manual_review():
         assert result["questions"][0]["marks_awarded"] is None
         assert result["attempt"]["correct_count"] == 0
         assert result["attempt"]["incorrect_count"] == 0
-        assert result["attempt"]["unanswered_count"] == 1
+        # The student answered it, so it is not unattempted. It is awaiting manual
+        # marking, which is its own tally.
+        assert result["attempt"]["unanswered_count"] == 0
+        assert result["attempt"]["pending_review_count"] == 1
         assert float(result["attempt"]["score"]) == 0.0
     finally:
         with SessionLocal() as db:

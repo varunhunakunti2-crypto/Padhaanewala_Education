@@ -35,7 +35,34 @@ from app.roles import CONTENT_ROLES
 def _slugify(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.strip().lower()).strip("-")
 
-def _to_response(mock_test: MockTest, question_count: int) -> MockTestResponse:
+# A paper's real worth is the sum of its ACTIVE questions' marks -- the same
+# figure `_grade_attempt` divides by, via `_active_questions`.
+#
+# `mock_tests.total_marks` is not that number. The column is written when the
+# paper is created (before any question exists) and, unlike `question_count`, is
+# never recomputed afterwards; it is also freely settable through
+# `MockTestUpdate`, so a PUT can make it disagree with the paper outright.
+# Nothing read it for grading, but the API reported it, so clients were told a
+# total that could differ from what a student could actually earn -- e.g. after
+# deactivating one 4-mark question the API still advertised 300 while grading
+# divided by 296. These two aggregates are the single source of truth.
+_ACTIVE_QUESTION_COUNT = func.count(TestQuestion.id).filter(TestQuestion.is_active)
+_ACTIVE_TOTAL_MARKS = func.coalesce(
+    func.sum(TestQuestion.marks).filter(TestQuestion.is_active), 0
+)
+
+def _derived_totals(db: Session, mock_test_id: int) -> tuple[int, Decimal]:
+    """(active question count, active total marks) for one paper."""
+    row = db.execute(
+        select(_ACTIVE_QUESTION_COUNT, _ACTIVE_TOTAL_MARKS).where(
+            TestQuestion.mock_test_id == mock_test_id
+        )
+    ).one()
+    return int(row[0] or 0), Decimal(row[1] or 0)
+
+def _to_response(
+    mock_test: MockTest, question_count: int, total_marks: Decimal
+) -> MockTestResponse:
     return MockTestResponse(
         id=mock_test.id,
         name=mock_test.name,
@@ -48,7 +75,8 @@ def _to_response(mock_test: MockTest, question_count: int) -> MockTestResponse:
         difficulty=mock_test.difficulty,
         question_type=mock_test.question_type,
         duration_minutes=mock_test.duration_minutes,
-        total_marks=mock_test.total_marks,
+        # Derived, not the column: see _ACTIVE_TOTAL_MARKS.
+        total_marks=total_marks,
         negative_marking=mock_test.negative_marking,
         negative_marks_value=mock_test.negative_marks_value,
         attempts_allowed=mock_test.attempts_allowed,
@@ -118,52 +146,83 @@ def _grade_attempt(db: Session, attempt: TestAttempt) -> None:
     db.flush()
     questions = _active_questions(db, attempt.mock_test_id)
     answers = {a.question_id: a for a in attempt.answers}
-    score = 0
+    score = Decimal(0)
     correct = 0
     incorrect = 0
+    pending = 0
+    unanswered = 0
     for q in questions:
         answer = answers.get(q.id)
-        if answer is None or answer.selected_answer is None:
+        if answer is None or _is_blank(answer.selected_answer):
+            # Never answered. A blank submission is an omission rather than a
+            # wrong answer, so it must not pick up negative marking.
+            unanswered += 1
+            if answer is not None:
+                answer.is_correct = None
+                answer.marks_awarded = None
+                answer.answered_at = None
             continue
         if answer.is_correct is None:
             answer.is_correct = _is_answer_correct(attempt, q, answer)
         if answer.is_correct is None:
-            # Not auto-gradable: subjective types (essay/descriptive), a `numeric`
-            # question published without a numeric_answer, a blank numeric
-            # submission, and MCQs published without an answer key. Previously these
-            # fell through to the `else` branch, so every one of them was tallied as incorrect
-            # (inflating incorrect_count) while still scoring 0 marks, and it was
-            # excluded from unanswered_count because it had a selected_answer.
-            # They are left for manual review instead: no marks, no verdict. They
-            # still land in unanswered_count below, which keeps the partition
-            # correct + incorrect + unanswered == len(questions).
+            # Not auto-gradable: an `essay`, an MCQ published without an answer
+            # key, a `numeric` published without a numeric_answer. The student
+            # did answer, so this is its own tally -- no marks, no verdict, and
+            # no negative marking, but also not an unattempted question.
             answer.marks_awarded = None
+            pending += 1
             continue
         answer.marks_awarded = _marks_for(attempt, q, answer.is_correct)
         if answer.is_correct:
             correct += 1
         else:
             incorrect += 1
-        score += answer.marks_awarded or 0
+        score += answer.marks_awarded or Decimal(0)
 
     total_marks = sum(q.marks for q in questions)
     attempt.score = score
     attempt.total_marks = total_marks
     attempt.correct_count = correct
     attempt.incorrect_count = incorrect
-    attempt.unanswered_count = len(questions) - correct - incorrect
-    attempt.percentage = (
-        round(score * 100 / total_marks, 2) if total_marks else 0
-    )
+    attempt.pending_review_count = pending
+    attempt.unanswered_count = unanswered
+    # A percentage is a share of the paper, so it cannot fall below 0. Negative
+    # marking does drive the raw score below zero -- and it should: a wrong answer
+    # has to cost something, which is what `test_wrong_mcq_still_gets_negative_marks`
+    # pins down. But `score * 100 / total_marks` was stored unclamped, so an
+    # all-wrong attempt on a +4/-1 paper persisted a percentage of -25.00.
+    #
+    # The score itself is left negative on purpose. The result screen floors it at
+    # zero for display (`Math.max(0, result.score)` in TestResultScreen and
+    # ProctoredMockTest), so the UI already treats zero as the floor; the API
+    # reports the honest figure and each penalty stays visible per-answer in
+    # `marks_awarded`. Clamping the stored score as well would make the penalty
+    # disappear from the aggregate and contradict that test.
+    if total_marks:
+        attempt.percentage = min(
+            max(round(score * 100 / total_marks, 2), Decimal(0)), Decimal(100)
+        )
+    else:
+        attempt.percentage = Decimal(0)
     attempt.status = "submitted"
     attempt.submitted_at = datetime.now(timezone.utc)
+
+def _is_blank(value: str | None) -> bool:
+    """True when a submission carries no answer at all.
+
+    An empty string is an omission, not a wrong answer. Without this, a blank
+    MCQ took negative marking while a blank numeric did not, because the numeric
+    branch returns None for an unparseable/empty value but the MCQ branch simply
+    compared "" against the key and called it wrong.
+    """
+    return value is None or not value.strip()
 
 def _is_answer_correct(
     attempt: TestAttempt,
     question: TestQuestion,
     answer: TestAnswer,
 ) -> bool | None:
-    if answer.selected_answer is None:
+    if _is_blank(answer.selected_answer):
         return None
     if question.question_type == QuestionType.NUMERIC:
         return _is_numeric_correct(question, answer.selected_answer)
@@ -185,9 +244,19 @@ def _is_numeric_correct(question: TestQuestion, selected: str) -> bool | None:
       - the question has no numeric key;
       - the submission is blank, which is an omission rather than a wrong number.
     Anything else that fails to parse is a genuine wrong answer and returns False.
+
+    Normalisation rules, so the answer is the number rather than the spelling:
+      - surrounding whitespace is ignored, so " 20 " == "20";
+      - thousands separators are stripped, so "1,000" == "1000";
+      - an explicit sign is fine, "+20" == "20";
+      - trailing zeros are irrelevant, "20.0" == "20" == "20.00";
+      - scientific notation is a legitimate spelling, "2e1" == "20";
+      - negatives compare exactly, so "-5" matches a key of -5;
+      - comparison is against an absolute tolerance, not a relative one.
     """
     if question.numeric_answer is None:
         return None
+    key = question.numeric_answer
     raw = selected.strip().replace(",", "")
     if not raw:
         return None
@@ -195,21 +264,40 @@ def _is_numeric_correct(question: TestQuestion, selected: str) -> bool | None:
         value = Decimal(raw)
     except (InvalidOperation, ArithmeticError):
         return False
+    # `Decimal("NaN")`, `Decimal("sNaN")` and `Decimal("Infinity")` all *parse*
+    # successfully, so the except above never sees them -- and ordering a NaN
+    # against a number raises InvalidOperation, which escaped this function and
+    # turned "nan" in the answer box into a 500 that failed the whole
+    # submission. They are not numbers, so they are wrong answers.
+    if not value.is_finite() or not key.is_finite():
+        return False
     tolerance = (
         question.tolerance if question.tolerance is not None else Decimal(0)
     )
-    return abs(value - question.numeric_answer) <= tolerance
+    return abs(value - key) <= tolerance
 
-def _marks_for(attempt: TestAttempt, question: TestQuestion, is_correct: bool) -> int:
+def _marks_for(attempt: TestAttempt, question: TestQuestion, is_correct: bool) -> Decimal:
+    """Marks awarded for one answer.
+
+    Returned as ``Decimal``, not ``int``: ``marks`` and ``negative_marks`` are
+    ``Numeric(6, 2)`` and ``TestAnswer.marks_awarded`` is too, so fractions are
+    representable end to end. The ``int()`` casts this replaced truncated them
+    towards zero, which was quietly wrong in both directions -- a 2.5-mark
+    question paid 2, a 0.5-mark question paid nothing at all, and a 0.5 penalty
+    was rounded away to no penalty. Because the score is a sum of these while
+    ``total_marks`` is an untruncated sum of ``marks``, a paper of fractional
+    questions reported a perfect run as a lower percentage than it scored.
+    """
     if is_correct:
-        return int(question.marks or 0)
+        return question.marks if question.marks is not None else Decimal(0)
     if attempt.mock_test.negative_marking:
-        return -int(
+        penalty = (
             question.negative_marks
             if question.negative_marks is not None and question.negative_marks > 0
-            else attempt.mock_test.negative_marks_value or 0
+            else attempt.mock_test.negative_marks_value
         )
-    return 0
+        return -penalty if penalty is not None else Decimal(0)
+    return Decimal(0)
 
 def _save_answer(
     db: Session,
@@ -231,8 +319,10 @@ def _save_answer(
         db.add(answer)
 
     answer.selected_answer = selected_answer
+    # A blank submission clears `answered_at` as well as the verdict, so an
+    # abandoned question is not left looking answered.
     answer.answered_at = (
-        datetime.now(timezone.utc) if selected_answer is not None else None
+        datetime.now(timezone.utc) if not _is_blank(selected_answer) else None
     )
     is_correct = _is_answer_correct(attempt, question, answer)
     answer.is_correct = is_correct
@@ -259,7 +349,11 @@ def list_mock_tests(
     db: Session = Depends(get_db),
 ):
     query = (
-        select(MockTest, func.count(TestQuestion.id).label("question_count"))
+        select(
+            MockTest,
+            _ACTIVE_QUESTION_COUNT.label("question_count"),
+            _ACTIVE_TOTAL_MARKS.label("total_marks"),
+        )
         .outerjoin(TestQuestion, TestQuestion.mock_test_id == MockTest.id)
         .options(selectinload(MockTest.exam), selectinload(MockTest.course))
         .where(MockTest.is_active)
@@ -281,7 +375,7 @@ def list_mock_tests(
     rows = db.execute(
         query.group_by(MockTest.id).order_by(MockTest.name).limit(limit).offset(offset)
     ).all()
-    return [_to_response(m, count) for m, count in rows]
+    return [_to_response(m, count, marks) for m, count, marks in rows]
 
 @router.post(
     "",
@@ -299,7 +393,9 @@ def create_mock_test(payload: MockTestCreate, db: Session = Depends(get_db)):
     db.add(mock_test)
     db.commit()
     db.refresh(mock_test)
-    return _to_response(mock_test, 0)
+    # This endpoint only creates the paper; questions are attached separately,
+    # so there is nothing to derive yet.
+    return _to_response(mock_test, 0, Decimal(0))
 
 @router.put(
     "/{mock_test_ref}",
@@ -330,12 +426,8 @@ def update_mock_test(
     db.commit()
     db.refresh(mock_test)
 
-    question_count = db.scalar(
-        select(func.count(TestQuestion.id)).where(
-            TestQuestion.mock_test_id == mock_test.id
-        )
-    )
-    return _to_response(mock_test, question_count or 0)
+    question_count, total_marks = _derived_totals(db, mock_test.id)
+    return _to_response(mock_test, question_count, total_marks)
 
 @router.delete(
     "/{mock_test_ref}",
@@ -758,7 +850,11 @@ def admin_list_mock_tests(
     db: Session = Depends(get_db),
 ):
     query = (
-        select(MockTest, func.count(TestQuestion.id).label("question_count"))
+        select(
+            MockTest,
+            _ACTIVE_QUESTION_COUNT.label("question_count"),
+            _ACTIVE_TOTAL_MARKS.label("total_marks"),
+        )
         .outerjoin(TestQuestion, TestQuestion.mock_test_id == MockTest.id)
         .options(selectinload(MockTest.exam), selectinload(MockTest.course))
     )
@@ -781,7 +877,7 @@ def admin_list_mock_tests(
     rows = db.execute(
         query.group_by(MockTest.id).order_by(MockTest.name).limit(limit).offset(offset)
     ).all()
-    return [_to_response(m, count) for m, count in rows]
+    return [_to_response(m, count, marks) for m, count, marks in rows]
 
 @router.get(
     "/admin/all/{mock_test_ref}",
@@ -817,7 +913,12 @@ def admin_get_mock_test(mock_test_ref: str, db: Session = Depends(get_db)):
         difficulty=mock_test.difficulty,
         question_type=mock_test.question_type,
         duration_minutes=mock_test.duration_minutes,
-        total_marks=mock_test.total_marks,
+        # The active sum, not the column: an editor comparing this against the
+        # public API (or against a graded attempt) must see the same number, or
+        # they would try to hand-correct the column and change nothing.
+        total_marks=sum(
+            (q.marks for q in questions if q.is_active), Decimal(0)
+        ),
         negative_marking=mock_test.negative_marking,
         negative_marks_value=mock_test.negative_marks_value,
         attempts_allowed=mock_test.attempts_allowed,
@@ -826,6 +927,9 @@ def admin_get_mock_test(mock_test_ref: str, db: Session = Depends(get_db)):
         instructions=mock_test.instructions,
         result_visibility=mock_test.result_visibility,
         test_type=mock_test.test_type,
+        # Deliberately the full inventory, not the active count: this is the
+        # editor's view and it returns the inactive questions too, so
+        # deactivating one must not make the list look short.
         question_count=len(questions),
         is_active=mock_test.is_active,
         attempt_count=attempt_count,
@@ -859,7 +963,11 @@ def get_mock_test(mock_test_ref: str, db: Session = Depends(get_db)):
         else MockTest.slug == mock_test_ref
     )
     row = db.execute(
-        select(MockTest, func.count(TestQuestion.id).label("question_count"))
+        select(
+            MockTest,
+            _ACTIVE_QUESTION_COUNT.label("question_count"),
+            _ACTIVE_TOTAL_MARKS.label("total_marks"),
+        )
         .outerjoin(TestQuestion, TestQuestion.mock_test_id == MockTest.id)
         .options(selectinload(MockTest.exam), selectinload(MockTest.course))
         .where(cond, MockTest.is_active)
@@ -867,4 +975,4 @@ def get_mock_test(mock_test_ref: str, db: Session = Depends(get_db)):
     ).one_or_none()
     if row is None:
         raise HTTPException(status_code=404, detail="Mock test not found")
-    return _to_response(row[0], row[1])
+    return _to_response(row[0], row[1], Decimal(row[2] or 0))

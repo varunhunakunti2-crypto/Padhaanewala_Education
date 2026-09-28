@@ -314,7 +314,12 @@ class TestAttemptResponse(BaseModel):
     total_marks: Decimal | None = None
     correct_count: int | None = None
     incorrect_count: int | None = None
+    # Questions left blank. Does not include answers awaiting manual marking --
+    # see pending_review_count.
     unanswered_count: int | None = None
+    # Answers submitted but not auto-gradable (essay, keyless MCQ, keyless
+    # numeric). NULL for attempts graded before this field existed.
+    pending_review_count: int | None = None
     percentage: Decimal | None = None
     time_remaining_seconds: int = 0
 
@@ -335,6 +340,7 @@ class TestAttemptResponse(BaseModel):
             correct_count=attempt.correct_count,
             incorrect_count=attempt.incorrect_count,
             unanswered_count=attempt.unanswered_count,
+            pending_review_count=attempt.pending_review_count,
             percentage=attempt.percentage,
             time_remaining_seconds=attempt.time_remaining_seconds,
         )

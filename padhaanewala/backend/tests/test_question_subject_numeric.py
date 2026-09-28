@@ -457,6 +457,36 @@ def test_numeric_garbage_is_wrong_not_ungradable():
         _cleanup(paper.id)
 
 
+def test_numeric_non_finite_input_is_wrong_and_does_not_500():
+    """"nan" and "Infinity" parse as Decimal but cannot be compared.
+
+    `Decimal("NaN")`, `Decimal("sNaN")` and `Decimal("Infinity")` all construct
+    successfully, so the parser's `except InvalidOperation` never sees them and
+    they slipped past `test_numeric_garbage_is_wrong_not_ungradable`. The failure
+    came one line later, at `abs(value - key) <= tolerance`: ordering a NaN
+    against a number raises InvalidOperation, which escaped the grader and turned
+    a wrong answer into a 500 that failed the student's entire submission. This
+    is driven through the HTTP endpoint so the status code itself is asserted.
+    """
+    paper = _create_paper(
+        [_numeric("Numerically, what is the value?", 1, Decimal("9.8"))],
+        negative_marking=True,
+    )
+    try:
+        for submission in ("nan", "NaN", "sNaN", "-NaN", "Infinity", "-Infinity", "inf"):
+            result = _submit_one(
+                paper, "Numerically, what is the value?", submission
+            )
+            question = result["questions"][0]
+            # A wrong answer, exactly like "about ten" -- not a crash, and not
+            # held for manual marking.
+            assert question["is_correct"] is False, submission
+            assert float(question["marks_awarded"]) == -2, submission
+            assert result["attempt"]["incorrect_count"] == 1, submission
+    finally:
+        _cleanup(paper.id)
+
+
 def test_numeric_without_a_key_is_left_for_manual_marking():
     paper = _create_paper([_numeric("Published with no key yet.", 1, None)])
     try:
@@ -464,7 +494,9 @@ def test_numeric_without_a_key_is_left_for_manual_marking():
         question = result["questions"][0]
         assert question["is_correct"] is None
         assert question["marks_awarded"] is None
-        assert result["attempt"]["unanswered_count"] == 1
+        # "42" is a real submission, so it is pending review rather than blank.
+        assert result["attempt"]["unanswered_count"] == 0
+        assert result["attempt"]["pending_review_count"] == 1
     finally:
         _cleanup(paper.id)
 
