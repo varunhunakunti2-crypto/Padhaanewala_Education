@@ -69,8 +69,13 @@ psql -U postgres -h 127.0.0.1 -p 5432 -c "CREATE DATABASE padhaanewala_dev OWNER
 Connection string (see `.env.development`):
 
 ```
-postgresql+asyncpg://padhaanewala:dev_password_123@localhost:5432/padhaanewala_dev
+postgresql+psycopg2://padhaanewala:dev_password_123@localhost:5432/padhaanewala_dev
 ```
+
+The driver must match `requirements.txt`, which pins `psycopg2-binary`. An
+`asyncpg` URL will fail at startup with a `ModuleNotFoundError` on a machine
+that installed only the declared dependencies, even though asyncpg may happen
+to be importable on a dev box that pulled it in transitively.
 
 Alternatively, run PostgreSQL via Docker:
 
@@ -84,6 +89,11 @@ docker compose -f docker-compose.dev.yml up -d db
 docker compose -f docker-compose.dev.yml up -d redis
 docker exec padhaanewala-redis-1 redis-cli ping   # → PONG
 ```
+
+> `docker-compose.dev.yml` runs **dependencies only** — the database and Redis.
+> The API and the frontend always run natively: `uvicorn` in step 4, and
+> `npm run dev` for the frontend. There is no containerised backend, so
+> `docker compose up` will never serve the API on :8000.
 
 ### 4. Backend (FastAPI)
 
