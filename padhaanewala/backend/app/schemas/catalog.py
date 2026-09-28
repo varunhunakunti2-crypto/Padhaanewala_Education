@@ -4,6 +4,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.question_types import QuestionType
+
 
 class StateResponse(BaseModel):
     id: int
@@ -277,6 +279,10 @@ class TestQuestionResponse(BaseModel):
     negative_marks: Decimal
     difficulty: str
     sort_order: int
+    # Safe to expose to a test-taker: a real paper labels its sections, and the
+    # student is told which subject/topic they are being examined on.
+    subject: str | None = None
+    topic: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -290,6 +296,10 @@ class ResultQuestionResponse(AttemptQuestionResponse):
     marks_awarded: Decimal | None = None
     correct_answer: str | None = None
     explanation: str | None = None
+    # The numeric half of the answer key. Gated by result_visibility at the router,
+    # exactly like correct_answer -- publishing it unconditionally would hand the
+    # key to anyone mid-attempt.
+    numeric_answer: Decimal | None = None
 
 
 class TestAttemptResponse(BaseModel):
@@ -370,6 +380,10 @@ class AdminQuestionResponse(BaseModel):
     explanation: str | None = None
     sort_order: int
     is_active: bool
+    subject: str | None = None
+    topic: str | None = None
+    numeric_answer: Decimal | None = None
+    tolerance: Decimal = Decimal(0)
 
     model_config = {"from_attributes": True}
 
@@ -479,7 +493,7 @@ class MockTestCreate(BaseModel):
     course_id: int | None = None
     subject: str | None = Field(default=None, max_length=100)
     difficulty: str = Field(default="medium", max_length=20)
-    question_type: str = Field(default="mcq", max_length=20)
+    question_type: QuestionType = QuestionType.MCQ
     duration_minutes: int = Field(default=60, ge=1)
     total_marks: Decimal = Field(default=Decimal("0"))
     negative_marking: bool = False
@@ -499,7 +513,7 @@ class MockTestUpdate(BaseModel):
     course_id: int | None = None
     subject: str | None = Field(default=None, max_length=100)
     difficulty: str | None = Field(default=None, max_length=20)
-    question_type: str | None = Field(default=None, max_length=20)
+    question_type: QuestionType | None = None
     duration_minutes: int | None = Field(default=None, ge=1)
     total_marks: Decimal | None = None
     negative_marking: bool | None = None

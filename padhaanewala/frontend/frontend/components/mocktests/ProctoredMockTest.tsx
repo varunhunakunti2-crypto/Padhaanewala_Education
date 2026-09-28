@@ -17,7 +17,7 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { cn } from "@/lib/utils";
-import { getTestQuestions } from "@/lib/data/mockTests";
+import { getTestQuestions, isNumericQuestion, resolveMarks } from "@/lib/data/mockTests";
 import type { MockTest, MockTestQuestion } from "@/lib/types";
 import { useApp } from "@/lib/context/AppContext";
 import { TestSetupScreen } from "@/components/mocktests/TestSetupScreen";
@@ -40,6 +40,27 @@ function isWholeScreen(stream: MediaStream): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Parses a numeric answer. Returns null for anything that is not a finite
+ * number, so a blank or half-typed field counts as unattempted rather than
+ * silently grading as 0. Fractions like "1/2" are not accepted — every
+ * numerical question in this project has an integer key.
+ */
+function parseNumeric(raw: string | undefined): number | null {
+  if (raw == null) return null;
+  const trimmed = raw.trim();
+  if (trimmed === "") return null;
+  const n = Number(trimmed);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** True when a question has been given an answer, of either kind. */
+function isAnswered(q: MockTestQuestion, a: AnswerState | undefined): boolean {
+  if (!a) return false;
+  if (isNumericQuestion(q)) return parseNumeric(a.numeric) !== null;
+  return a.selected !== undefined && a.selected !== null;
 }
 
 /**
@@ -283,15 +304,22 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
     qs.forEach((q) => {
       topicPerf[q.topic] ??= { correct: 0, total: 0 };
       topicPerf[q.topic].total += 1;
-      const a = ans[q.id]?.selected;
-      if (a === undefined || a === null) unattempted++;
-      else if (a === q.correctIndex) {
+      const a = ans[q.id];
+      if (!isAnswered(q, a)) {
+        unattempted++;
+        return;
+      }
+      const ok = isNumericQuestion(q)
+        ? parseNumeric(a?.numeric) === q.numericAnswer
+        : a?.selected === q.correctIndex;
+      if (ok) {
         correct++;
         topicPerf[q.topic].correct += 1;
       } else incorrect++;
     });
-    const score = correct * 3 - incorrect;
-    const maxScore = qs.length * 3;
+    const marks = resolveMarks(t);
+    const score = correct * marks.correct - incorrect * marks.wrong;
+    const maxScore = qs.length * marks.correct;
     const timeTakenSec = t.durationMins * 60 - seconds;
     return { correct, incorrect, unattempted, score, maxScore, timeTakenSec, topicPerf };
   }
@@ -374,15 +402,27 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
     });
   };
 
+  const setNumericAnswer = (qi: number, raw: string) => {
+    const q = questions[qi];
+    setAnswers((prev) => ({
+      ...prev,
+      [q.id]: {
+        ...(prev[q.id] ?? { selected: null, marked: false }),
+        numeric: raw,
+      },
+    }));
+  };
+
   const answerStatus = (qi: number): "answered" | "marked" | "unanswered" | "not-visited" => {
-    const a = answers[questions[qi]?.id];
+    const q = questions[qi];
+    const a = answers[q?.id];
     if (a?.marked) return "marked";
-    if (a?.selected !== undefined && a?.selected !== null) return "answered";
+    if (isAnswered(q, a)) return "answered";
     return "not-visited";
   };
 
   const answeredCount = useMemo(
-    () => questions.filter((q) => answers[q.id]?.selected !== undefined && answers[q.id]?.selected !== null).length,
+    () => questions.filter((q) => isAnswered(q, answers[q.id])).length,
     [answers, questions],
   );
   const markedCount = useMemo(() => questions.filter((q) => answers[q.id]?.marked).length, [answers, questions]);
@@ -473,7 +513,10 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
           {/* Question */}
           <div className="overflow-y-auto rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 sm:p-6">
             <div className="flex items-start justify-between gap-3">
-              <Badge variant="purple">Q{current + 1} · {q.topic}</Badge>
+              <Badge variant="purple">
+                Q{current + 1} · {q.topic}
+                {isNumericQuestion(q) ? " · Numerical" : ""}
+              </Badge>
               <button
                 type="button"
                 onClick={() => toggleMark(current)}
@@ -489,34 +532,58 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
             </div>
             <p className="mt-4 text-base font-bold leading-relaxed text-gray-900 dark:text-white sm:text-lg">{q.text}</p>
             <div className="mt-5 space-y-2.5">
-              {q.options.map((opt, i) => {
-                const selected = answers[q.id]?.selected === i;
-                return (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => selectAnswer(current, i)}
-                    className={cn(
-                      "flex w-full items-center gap-3 rounded-xl border px-4 py-3 text-left text-sm transition",
-                      selected
-                        ? "border-purple-500 bg-purple-50 dark:bg-purple-950/60 text-purple-800 dark:text-purple-200 font-semibold"
-                        : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:border-purple-300 dark:hover:border-purple-700",
-                    )}
+              {isNumericQuestion(q) ? (
+                <div>
+                  <label
+                    htmlFor={`numeric-${q.id}`}
+                    className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
                   >
-                    <span
+                    Numerical answer
+                  </label>
+                  <input
+                    id={`numeric-${q.id}`}
+                    type="text"
+                    inputMode="decimal"
+                    autoComplete="off"
+                    value={answers[q.id]?.numeric ?? ""}
+                    onChange={(e) => setNumericAnswer(current, e.target.value)}
+                    placeholder="Enter a number"
+                    className="mt-2 w-full max-w-xs rounded-xl border border-slate-200 bg-white px-4 py-3 text-base font-semibold tabular-nums text-gray-900 outline-none transition focus:border-purple-500 focus:ring-2 focus:ring-purple-500/30 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
+                  />
+                  <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
+                    Enter the nearest integer. Leave blank to skip this question.
+                  </p>
+                </div>
+              ) : (
+                q.options.map((opt, i) => {
+                  const selected = answers[q.id]?.selected === i;
+                  return (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => selectAnswer(current, i)}
                       className={cn(
-                        "grid h-6 w-6 shrink-0 place-items-center rounded-full border text-xs font-bold",
+                        "flex w-full items-center gap-3 rounded-xl border px-4 py-3 text-left text-sm transition",
                         selected
-                          ? "border-purple-600 bg-purple-600 text-white"
-                          : "border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400",
+                          ? "border-purple-500 bg-purple-50 dark:bg-purple-950/60 text-purple-800 dark:text-purple-200 font-semibold"
+                          : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:border-purple-300 dark:hover:border-purple-700",
                       )}
                     >
-                      {String.fromCharCode(65 + i)}
-                    </span>
-                    <span>{opt}</span>
-                  </button>
-                );
-              })}
+                      <span
+                        className={cn(
+                          "grid h-6 w-6 shrink-0 place-items-center rounded-full border text-xs font-bold",
+                          selected
+                            ? "border-purple-600 bg-purple-600 text-white"
+                            : "border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400",
+                        )}
+                      >
+                        {String.fromCharCode(65 + i)}
+                      </span>
+                      <span>{opt}</span>
+                    </button>
+                  );
+                })
+              )}
             </div>
             <div className="mt-6 flex items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-4">
               <Button variant="ghost" disabled={current === 0} onClick={() => setCurrent((c) => Math.max(0, c - 1))} className="dark:text-slate-300 dark:hover:bg-slate-800">

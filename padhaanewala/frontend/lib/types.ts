@@ -206,15 +206,38 @@ export interface MockTest {
   description: string;
   topics: string[];
   attempts: number;
+  /**
+   * Marks added per correct answer. Defaults to 3 when absent. Papers that
+   * declare their own scheme (JEE Main is +4/−1 for 300 marks) set it here
+   * rather than having the score hardcoded in the runner.
+   */
+  marksPerCorrect?: number;
+  /** Marks deducted per incorrect answer. Defaults to 1 when absent. */
+  marksPerWrong?: number;
+  /**
+   * Explicit, ordered question ids. A curated paper must be served verbatim,
+   * so a test that lists these ignores `questionCount` for sampling purposes.
+   */
+  questionIds?: string[];
 }
+
+export type MockTestQuestionType = "mcq" | "numeric";
 
 export interface MockTestQuestion {
   id: string;
   text: string;
+  /** Defaults to "mcq" when absent. */
+  type?: MockTestQuestionType;
+  /** Empty for numeric questions. */
   options: string[];
+  /** Index of the correct option; -1 for numeric questions. */
   correctIndex: number;
+  /** Accepted value for a numeric question. Absent for MCQs. */
+  numericAnswer?: number;
   explanation: string;
   topic: string;
+  /** Subject this question belongs to, used to build per-subject pools. */
+  subject?: string;
 }
 
 export interface TopicPerformance {

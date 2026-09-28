@@ -14,10 +14,20 @@
  * resolvers therefore return whatever the API actually holds: an empty list when
  * the table is empty, `undefined` when a record does not exist. Rendering an
  * honest empty state is the correct behaviour when there is no data.
+ *
+ * EXCEPTION — mock tests. The proctored runner grades entirely in the browser
+ * and reads its questions from `lib/data/mockTests.ts`; it never calls the
+ * attempt/grading endpoints. So a mock test listed only in that local file
+ * would render a card (MockTestEngine already prefers the API and falls back
+ * locally) whose detail page then 404'd, because the catalogue came from the
+ * API. The mock-test resolvers therefore fall back to the local catalogue when
+ * the API has nothing. This is scoped to mock tests on purpose: the wider
+ * "don't hide an empty database" rule above is still in force everywhere else.
  */
 
 import type { BlogPost, College, Exam, MockTest, Scholarship } from "@/lib/types";
 import type { CourseMeta } from "@/lib/data/courses";
+import { MOCK_TESTS, getMockTest } from "@/lib/data/mockTests";
 import {
   getBlogBySlug,
   getBlogs,
@@ -42,10 +52,11 @@ import {
 } from "@/lib/mappers";
 
 /**
- * `api`  — the backend answered.
- * `empty` — the backend answered with nothing (no rows, or record not found).
+ * `api`   — the backend answered.
+ * `local` — the backend had nothing and the local mock-test catalogue was used.
+ * `empty` — nothing to show (no rows, or record not found).
  */
-export type DataSource = "api" | "empty";
+export type DataSource = "api" | "local" | "empty";
 
 export interface Resolved<T> {
   data: T;
@@ -134,13 +145,17 @@ export async function resolveBlogPost(slug: string): Promise<Resolved<BlogPost |
 
 export async function resolveMockTests(): Promise<Resolved<MockTest[]>> {
   const rows = await getMockTests();
-  return list(rows, rows.map(mapMockTest));
+  const mapped = rows.map(mapMockTest);
+  if (mapped.length) return list(rows, mapped);
+  return { data: MOCK_TESTS, source: MOCK_TESTS.length ? "local" : "empty" };
 }
 
 export async function resolveMockTest(slug: string): Promise<Resolved<MockTest | undefined>> {
   const row = await getMockTestBySlug(slug);
   const mapped = row ? mapMockTest(row) : undefined;
-  return { data: mapped, source: mapped ? "api" : "empty" };
+  if (mapped) return { data: mapped, source: "api" };
+  const local = getMockTest(slug);
+  return { data: local, source: local ? "local" : "empty" };
 }
 
 /* ------------------------------- slugs -------------------------------- */
@@ -182,7 +197,8 @@ export async function resolveSlugs(
     }
     case "mock-tests": {
       const rows = await getMockTests();
-      return cap(rows.map((r) => r.slug));
+      if (rows.length) return cap(rows.map((r) => r.slug));
+      return MOCK_TESTS.map((t) => t.slug);
     }
   }
 }

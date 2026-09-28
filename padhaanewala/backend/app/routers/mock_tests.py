@@ -1,6 +1,7 @@
 ﻿import random
 import re
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, or_, select
@@ -9,6 +10,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.database import get_db
 from app.dependencies import get_current_user, require_role
 from app.models import MockTest, TestAnswer, TestAttempt, TestQuestion, User
+from app.question_types import QuestionType
 from app.schemas.catalog import (
     AdminQuestionResponse,
     AttemptDetailResponse,
@@ -126,9 +128,10 @@ def _grade_attempt(db: Session, attempt: TestAttempt) -> None:
         if answer.is_correct is None:
             answer.is_correct = _is_answer_correct(attempt, q, answer)
         if answer.is_correct is None:
-            # Not auto-gradable: subjective types (essay/numeric/descriptive) and
-            # MCQs published without an answer key. Previously these fell through to
-            # the `else` branch, so every one of them was tallied as incorrect
+            # Not auto-gradable: subjective types (essay/descriptive), a `numeric`
+            # question published without a numeric_answer, a blank numeric
+            # submission, and MCQs published without an answer key. Previously these
+            # fell through to the `else` branch, so every one of them was tallied as incorrect
             # (inflating incorrect_count) while still scoring 0 marks, and it was
             # excluded from unanswered_count because it had a selected_answer.
             # They are left for manual review instead: no marks, no verdict. They
@@ -160,11 +163,42 @@ def _is_answer_correct(
     question: TestQuestion,
     answer: TestAnswer,
 ) -> bool | None:
-    if question.question_type != "mcq" or not question.correct_answer:
-        return None
     if answer.selected_answer is None:
         return None
+    if question.question_type == QuestionType.NUMERIC:
+        return _is_numeric_correct(question, answer.selected_answer)
+    if question.question_type != QuestionType.MCQ or not question.correct_answer:
+        return None
     return answer.selected_answer.strip() == question.correct_answer.strip()
+
+def _is_numeric_correct(question: TestQuestion, selected: str) -> bool | None:
+    """Grade a `numeric` submission against `numeric_answer` within `tolerance`.
+
+    Both sides are parsed as `Decimal`, which is what makes "20.0" and "20" the
+    same answer -- string comparison of `correct_answer` would call that wrong.
+    Tolerance is an absolute margin, so a question keying 1.4142 with tolerance
+    0.005 accepts 1.41 and 1.415 but not 1.40.
+
+    None (ungradable, no verdict) rather than False in two cases, because
+    `_grade_attempt` treats None as "left for manual review" and skips negative
+    marking:
+      - the question has no numeric key;
+      - the submission is blank, which is an omission rather than a wrong number.
+    Anything else that fails to parse is a genuine wrong answer and returns False.
+    """
+    if question.numeric_answer is None:
+        return None
+    raw = selected.strip().replace(",", "")
+    if not raw:
+        return None
+    try:
+        value = Decimal(raw)
+    except (InvalidOperation, ArithmeticError):
+        return False
+    tolerance = (
+        question.tolerance if question.tolerance is not None else Decimal(0)
+    )
+    return abs(value - question.numeric_answer) <= tolerance
 
 def _marks_for(attempt: TestAttempt, question: TestQuestion, is_correct: bool) -> int:
     if is_correct:
@@ -331,6 +365,8 @@ def get_mock_test_questions(mock_test_ref: str, db: Session = Depends(get_db)):
             negative_marks=q.negative_marks,
             difficulty=q.difficulty,
             sort_order=q.sort_order,
+            subject=q.subject,
+            topic=q.topic,
         )
         for q in questions
     ]
@@ -408,6 +444,8 @@ def start_mock_test(
                 negative_marks=q.negative_marks,
                 difficulty=q.difficulty,
                 sort_order=q.sort_order,
+                subject=q.subject,
+                topic=q.topic,
             )
             for q in questions
         ],
@@ -547,6 +585,8 @@ def get_attempt(
                 selected_answer=answers[q.id].selected_answer
                 if q.id in answers
                 else None,
+                subject=q.subject,
+                topic=q.topic,
             )
             for q in questions
         ],
@@ -607,6 +647,8 @@ def save_answer(
         difficulty=question.difficulty,
         sort_order=question.sort_order,
         selected_answer=answer.selected_answer,
+        subject=question.subject,
+        topic=question.topic,
     )
 
 @router.post(
@@ -686,9 +728,12 @@ def _build_result(attempt: TestAttempt, db: Session) -> TestResultResponse:
                 selected_answer=answers[q.id].selected_answer
                 if q.id in answers
                 else None,
+                subject=q.subject,
+                topic=q.topic,
                 is_correct=grade_by_question.get(q.id, (None, None))[0],
                 marks_awarded=grade_by_question.get(q.id, (None, None))[1],
                 correct_answer=q.correct_answer if show_key else None,
+                numeric_answer=q.numeric_answer if show_key else None,
                 explanation=q.explanation if show_key else None,
             )
             for q in questions
@@ -797,6 +842,10 @@ def admin_get_mock_test(mock_test_ref: str, db: Session = Depends(get_db)):
                 explanation=q.explanation,
                 sort_order=q.sort_order,
                 is_active=q.is_active,
+                subject=q.subject,
+                topic=q.topic,
+                numeric_answer=q.numeric_answer,
+                tolerance=q.tolerance,
             )
             for q in questions
         ],

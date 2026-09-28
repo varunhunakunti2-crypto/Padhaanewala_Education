@@ -20,8 +20,11 @@ export interface Violation {
 }
 
 export interface AnswerState {
+  /** Index of the chosen MCQ option. Stays null for numeric questions. */
   selected: number | null;
   marked: boolean;
+  /** Raw text typed into a numeric-answer field. */
+  numeric?: string;
 }
 
 export interface BuildResult {

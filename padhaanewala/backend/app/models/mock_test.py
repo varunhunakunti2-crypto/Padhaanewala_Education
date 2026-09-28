@@ -4,6 +4,7 @@ from decimal import Decimal
 from sqlalchemy import (
     JSON,
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Integer,
@@ -15,10 +16,22 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+from app.question_types import ALL_QUESTION_TYPES
+
+#: Shared by both tables. `test_questions` is the one that matters: it has no
+#: create endpoint and no seed script, so rows arrive by hand or ad-hoc script
+#: and this constraint is the only guard on the value. A typo would otherwise
+#: land unnoticed and silently withhold marks at grading time.
+_QUESTION_TYPE_CHECK = "question_type IN ({})".format(
+    ", ".join(f"'{value}'" for value in ALL_QUESTION_TYPES)
+)
 
 
 class MockTest(Base):
     __tablename__ = "mock_tests"
+    __table_args__ = (
+        CheckConstraint(_QUESTION_TYPE_CHECK, name="ck_mock_tests_question_type"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(255), index=True)
@@ -66,6 +79,9 @@ class MockTest(Base):
 class TestQuestion(Base):
     __test__ = False
     __tablename__ = "test_questions"
+    __table_args__ = (
+        CheckConstraint(_QUESTION_TYPE_CHECK, name="ck_test_questions_question_type"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     mock_test_id: Mapped[int] = mapped_column(
@@ -75,6 +91,19 @@ class TestQuestion(Base):
     question_type: Mapped[str] = mapped_column(String(20), default="mcq")
     options: Mapped[list | None] = mapped_column(JSON, nullable=True)
     correct_answer: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Subject lives here, not only on MockTest, because a single paper routinely
+    # mixes sections (JEE Main/NEET are Physics + Chemistry + Maths/Biology). A
+    # per-test subject cannot express that; NULL means "same as the paper's".
+    subject: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    topic: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    # The answer key for `question_type = "numeric"`. Kept separate from
+    # correct_answer so an exact-match key and a numeric key cannot disagree, and
+    # so tolerance-based comparison is never applied to an option letter.
+    numeric_answer: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
+    # Absolute margin: a submission is correct when |given - numeric_answer| <=
+    # tolerance. 0 means exact, which also makes "20.0" and "20" compare equal
+    # because both sides are parsed as Decimal rather than as raw strings.
+    tolerance: Mapped[Decimal] = mapped_column(Numeric(8, 4), default=0)
     marks: Mapped[Decimal] = mapped_column(Numeric(6, 2), default=1)
     negative_marks: Mapped[Decimal] = mapped_column(Numeric(6, 2), default=0)
     difficulty: Mapped[str] = mapped_column(String(20), default="medium")

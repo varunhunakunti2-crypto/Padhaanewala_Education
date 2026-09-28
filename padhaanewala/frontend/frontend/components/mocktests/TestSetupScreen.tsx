@@ -15,6 +15,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { resolveMarks } from "@/lib/data/mockTests";
 import type { MockTest } from "@/lib/types";
 
 export const MAX_VIOLATIONS = 3;
@@ -53,6 +54,7 @@ export function TestSetupScreen({
   onBegin: () => void;
 }) {
   const allGranted = Object.values(perms).every((p) => p === "granted");
+  const marks = resolveMarks(test);
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-slate-950 p-4">
@@ -79,6 +81,31 @@ export function TestSetupScreen({
           <p className="mt-2 text-xs leading-relaxed text-slate-500">
             Violations are enforced by this browser session only. They are not uploaded or reviewed
             by an administrator, so treat this as a focus tool rather than a proctored exam.
+          </p>
+
+          <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {[
+              { label: "Questions", value: String(test.questionCount) },
+              { label: "Duration", value: `${test.durationMins} mins` },
+              { label: "Total marks", value: String(test.questionCount * marks.correct) },
+              {
+                label: "Marking",
+                value: `+${marks.correct} / −${marks.wrong}`,
+              },
+            ].map((s) => (
+              <div
+                key={s.label}
+                className="rounded-xl border border-white/10 bg-white/5 p-3 text-center"
+              >
+                <p className="text-lg font-extrabold tabular-nums text-white">{s.value}</p>
+                <p className="text-[11px] uppercase tracking-wide text-slate-400">{s.label}</p>
+              </div>
+            ))}
+          </div>
+
+          <p className="mt-2 text-xs leading-relaxed text-slate-500">
+            Marking is +{marks.correct} per correct answer, −{marks.wrong} per incorrect answer, and
+            0 for anything left unattempted.
           </p>
 
           <ul className="mt-6 space-y-3">

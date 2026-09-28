@@ -15,8 +15,18 @@ import {
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
+import { isNumericQuestion, resolveMarks } from "@/lib/data/mockTests";
 import type { MockTest, MockTestQuestion } from "@/lib/types";
 import type { Violation } from "@/components/mocktests/types";
+
+/** Parses a typed numeric answer; blank or non-numeric counts as unattempted. */
+function parseNumeric(raw: string | undefined): number | null {
+  if (raw == null) return null;
+  const trimmed = raw.trim();
+  if (trimmed === "") return null;
+  const n = Number(trimmed);
+  return Number.isFinite(n) ? n : null;
+}
 
 export interface ResultSummary {
   score: number;
@@ -42,13 +52,14 @@ export function TestResultScreen({
   test: MockTest;
   result: ResultSummary;
   questions: MockTestQuestion[];
-  answers: Record<string, { selected?: number | null; marked?: boolean }>;
+  answers: Record<string, { selected?: number | null; marked?: boolean; numeric?: string }>;
   violations: Violation[];
   showSolutions: boolean;
   onToggleSolutions: () => void;
   onRestart: () => void;
 }) {
   const router = useRouter();
+  const marks = resolveMarks(test);
 
   const pct = questions.length ? Math.round((result.correct / questions.length) * 100) : 0;
   const timeStr = `${Math.floor(result.timeTakenSec / 60)}m ${result.timeTakenSec % 60}s`;
@@ -96,6 +107,9 @@ export function TestResultScreen({
           <Trophy className="mx-auto h-10 w-10 text-amber-300" />
           <h2 className="mt-3 font-display text-2xl font-extrabold sm:text-3xl">Test completed!</h2>
           <p className="mt-1 text-sm text-white/75">{test.title}</p>
+          <p className="mt-1 text-xs text-white/55">
+            Marking: +{marks.correct} correct, −{marks.wrong} incorrect, 0 unattempted
+          </p>
           <div className="mx-auto mt-5 grid max-w-xl grid-cols-3 gap-3">
             <div className="rounded-2xl bg-white/10 p-3 backdrop-blur">
               <p className="text-[11px] uppercase tracking-wide text-white/60">Score</p>
@@ -216,8 +230,11 @@ export function TestResultScreen({
         {showSolutions && (
           <div className="mt-6 space-y-4">
             {questions.map((q, i) => {
+              const numeric = isNumericQuestion(q);
               const chosen = answers[q.id]?.selected;
-              const isCorrect = chosen === q.correctIndex;
+              const given = parseNumeric(answers[q.id]?.numeric);
+              const attempted = numeric ? given !== null : chosen !== undefined && chosen !== null;
+              const isCorrect = numeric ? given === q.numericAnswer : chosen === q.correctIndex;
               return (
                 <div
                   key={q.id}
@@ -227,7 +244,7 @@ export function TestResultScreen({
                     <p className="font-medium text-gray-900 dark:text-white">
                       Q{i + 1}. {q.text}
                     </p>
-                    {chosen === undefined || chosen === null ? (
+                    {!attempted ? (
                       <Badge variant="amber">Unattempted</Badge>
                     ) : isCorrect ? (
                       <Badge variant="green">Correct</Badge>
@@ -235,32 +252,56 @@ export function TestResultScreen({
                       <Badge variant="red">Incorrect</Badge>
                     )}
                   </div>
-                  <div className="mt-3 space-y-1.5">
-                    {q.options.map((opt, oi) => (
+                  {numeric ? (
+                    <div className="mt-3 space-y-1.5">
                       <p
-                        key={oi}
                         className={cn(
                           "flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition",
-                          oi === q.correctIndex &&
-                            "border-green-200 bg-green-50 font-medium text-green-800 dark:border-emerald-800/60 dark:bg-emerald-950/50 dark:text-emerald-300",
-                          oi === chosen &&
-                            oi !== q.correctIndex &&
-                            "border-red-200 bg-red-50 text-red-700 dark:border-rose-800/60 dark:bg-rose-950/50 dark:text-rose-300",
-                          oi !== q.correctIndex &&
-                            oi !== chosen &&
-                            "border-transparent text-slate-700 dark:text-slate-300",
+                          isCorrect
+                            ? "border-green-200 bg-green-50 font-medium text-green-800 dark:border-emerald-800/60 dark:bg-emerald-950/50 dark:text-emerald-300"
+                            : "border-red-200 bg-red-50 text-red-700 dark:border-rose-800/60 dark:bg-rose-950/50 dark:text-rose-300",
                         )}
                       >
-                        {String.fromCharCode(65 + oi)}. {opt}
-                        {oi === q.correctIndex && (
+                        Your answer: {given ?? "—"}
+                        {isCorrect ? (
                           <CheckCircle2 className="ml-auto h-4 w-4 shrink-0 text-green-600 dark:text-emerald-400" />
-                        )}
-                        {oi === chosen && oi !== q.correctIndex && (
+                        ) : (
                           <XCircle className="ml-auto h-4 w-4 shrink-0 text-red-500 dark:text-rose-400" />
                         )}
                       </p>
-                    ))}
-                  </div>
+                      <p className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm font-medium text-green-800 dark:border-emerald-800/60 dark:bg-emerald-950/50 dark:text-emerald-300">
+                        Correct answer: {q.numericAnswer}
+                        <CheckCircle2 className="ml-auto h-4 w-4 shrink-0 text-green-600 dark:text-emerald-400" />
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="mt-3 space-y-1.5">
+                      {q.options.map((opt, oi) => (
+                        <p
+                          key={oi}
+                          className={cn(
+                            "flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition",
+                            oi === q.correctIndex &&
+                              "border-green-200 bg-green-50 font-medium text-green-800 dark:border-emerald-800/60 dark:bg-emerald-950/50 dark:text-emerald-300",
+                            oi === chosen &&
+                              oi !== q.correctIndex &&
+                              "border-red-200 bg-red-50 text-red-700 dark:border-rose-800/60 dark:bg-rose-950/50 dark:text-rose-300",
+                            oi !== q.correctIndex &&
+                              oi !== chosen &&
+                              "border-transparent text-slate-700 dark:text-slate-300",
+                          )}
+                        >
+                          {String.fromCharCode(65 + oi)}. {opt}
+                          {oi === q.correctIndex && (
+                            <CheckCircle2 className="ml-auto h-4 w-4 shrink-0 text-green-600 dark:text-emerald-400" />
+                          )}
+                          {oi === chosen && oi !== q.correctIndex && (
+                            <XCircle className="ml-auto h-4 w-4 shrink-0 text-red-500 dark:text-rose-400" />
+                          )}
+                        </p>
+                      ))}
+                    </div>
+                  )}
                   {q.explanation && (
                     <p className="mt-3 rounded-xl border border-purple-100 bg-purple-50 p-3 text-sm text-purple-900 dark:border-purple-900/50 dark:bg-purple-950/40 dark:text-purple-200">
                       <b className="text-purple-900 dark:text-purple-300">Explanation:</b>{" "}
