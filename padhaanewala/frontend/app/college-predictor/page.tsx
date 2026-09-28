@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { PredictorForm } from "@/components/predictor/PredictorForm";
 import { resolveColleges } from "@/lib/content";
+import { BETA_NOINDEX } from "@/lib/nav";
 import { SITE } from "@/lib/site";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -12,6 +13,7 @@ export async function generateMetadata(): Promise<Metadata> {
       description:
         "Find colleges matching your rank, course and location preferences with data-driven prediction.",
     },
+    ...BETA_NOINDEX,
   };
 }
 

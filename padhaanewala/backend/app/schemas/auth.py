@@ -36,11 +36,14 @@ class LoginRequest(BaseModel):
 
 
 class RefreshRequest(BaseModel):
-    refresh_token: str = Field(..., min_length=20)
+    # Optional since Phase 3: the refresh token normally rides in an HttpOnly
+    # cookie, in which case the body is `{}`. The body field covers native
+    # clients and an explicit token winning over an ambient cookie.
+    refresh_token: str | None = Field(default=None, min_length=20)
 
 
 class LogoutRequest(BaseModel):
-    refresh_token: str = Field(..., min_length=20)
+    refresh_token: str | None = Field(default=None, min_length=20)
 
 
 # --------------------------------------------------------------- Phase 3: OTP

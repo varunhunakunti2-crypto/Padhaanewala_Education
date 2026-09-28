@@ -3,6 +3,7 @@ import { MockTestEngine } from "@/components/mocktests/MockTestEngine";
 import { AdmissionHelpBanner } from "@/components/admission/AdmissionHelpBanner";
 import { resolveMockTests } from "@/lib/content";
 import { SITE } from "@/lib/site";
+import { BETA_NOINDEX } from "@/lib/nav";
 
 export async function generateMetadata(): Promise<Metadata> {
   return {
@@ -14,6 +15,7 @@ export async function generateMetadata(): Promise<Metadata> {
       description:
         "Practice with realistic mock tests and improve your entrance exam scores with detailed analytics.",
     },
+    ...BETA_NOINDEX,
   };
 }
 

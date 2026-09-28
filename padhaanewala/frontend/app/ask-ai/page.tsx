@@ -1,5 +1,6 @@
 import { Metadata } from "next";
 import { AIChat } from "@/components/ai/AIChat";
+import { BETA_NOINDEX } from "@/lib/nav";
 
 export const metadata: Metadata = {
   title: "Ask Padhaanewala AI",
@@ -10,6 +11,7 @@ export const metadata: Metadata = {
     description:
       "Get instant answers about courses, colleges, scholarships and entrance exams from Padhaanewala AI.",
   },
+  ...BETA_NOINDEX,
 };
 
 export default function AskAiPage() {

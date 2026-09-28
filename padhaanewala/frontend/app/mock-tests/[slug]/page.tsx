@@ -2,6 +2,7 @@ import { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { resolveMockTest, resolveSlugs } from "@/lib/content";
 import { ProctoredMockTest } from "@/components/mocktests/ProctoredMockTest";
+import { BETA_NOINDEX } from "@/lib/nav";
 
 interface PageProps {
   params: Promise<{ slug: string }>;
@@ -19,7 +20,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   return {
     title: `${test.title} — Mock Test`,
     description: `${test.title}: ${test.questionCount} questions in ${test.durationMins} minutes, with a full-screen timed interface and instant scoring.`,
-    robots: { index: false, follow: true },
+    ...BETA_NOINDEX,
   };
 }
 

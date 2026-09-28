@@ -1,14 +1,14 @@
 import re
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, or_, select
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
 from app.dependencies import get_current_user, get_current_user_roles, get_optional_current_user, require_role
 from app.roles import ADMIN_ROLES, BLOG_ROLES as CONTENT_ROLES
-from app.models import AuditLog, Blog, BlogCategory, User
+from app.models import Blog, BlogCategory, User
 from app.schemas.content import (
     BlogCategoryCreate,
     BlogCategoryResponse,
@@ -16,6 +16,7 @@ from app.schemas.content import (
     BlogResponse,
     BlogUpdate,
 )
+from app.utils import audit
 
 router = APIRouter(prefix="/api/v1", tags=["blogs"])
 
@@ -117,15 +118,39 @@ def list_blogs(
 
 @router.get("/blogs/{blog_ref}", response_model=BlogResponse)
 def get_blog(blog_ref: str, db: Session = Depends(get_db)):
+    # 4.6 — a GET must not mutate. `view_count` was incremented and committed
+    # here, which was neither safe nor idempotent and let a loop inflate the
+    # counter. The explicit `POST /blogs/{ref}/view` endpoint owns it now.
     cond = (
         Blog.id == int(blog_ref) if blog_ref.isdigit() else Blog.slug == blog_ref
     )
     blog = db.scalar(select(Blog).where(cond, Blog.status == "published"))
     if blog is None:
         raise HTTPException(status_code=404, detail="Blog not found")
-    blog.view_count += 1
-    db.commit()
     return _to_blog_response(db, blog)
+
+
+@router.post("/blogs/{blog_ref}/view", status_code=204)
+def record_blog_view(blog_ref: str, db: Session = Depends(get_db)):
+    """Count one view atomically, in isolation from the read path.
+
+    Answers 204 whether or not the blog (or an unpublished one) exists, so the
+    endpoint is not a blog-existence oracle for someone enumerating slugs.
+    `view_count = Blog.view_count + 1` is a single UPDATE, so two concurrent
+    views can never overwrite each other.
+    """
+    cond = (
+        Blog.id == int(blog_ref) if blog_ref.isdigit() else Blog.slug == blog_ref
+    )
+    blog = db.scalar(select(Blog).where(cond, Blog.status == "published"))
+    if blog is not None:
+        db.execute(
+            update(Blog)
+            .where(Blog.id == blog.id)
+            .values(view_count=Blog.view_count + 1)
+        )
+        db.commit()
+    return Response(status_code=204)
 
 @router.post(
     "/blogs",
@@ -169,6 +194,7 @@ def create_blog(
 def update_blog(
     blog_ref: str,
     payload: BlogUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -177,15 +203,15 @@ def update_blog(
     if blog is None:
         raise HTTPException(status_code=404, detail="Blog not found")
 
-    db.add(
-        AuditLog(
-            user_id=user.id,
-            action="update_blog",
-            entity_type="blog",
-            entity_id=blog.id,
-            old_value={"title": blog.title, "status": blog.status},
-            new_value=payload.model_dump(exclude_unset=True),
-        )
+    audit.record(
+        db,
+        request=request,
+        action="update_blog",
+        entity_type="blog",
+        entity_id=blog.id,
+        actor=user,
+        old_value={"title": blog.title, "status": blog.status},
+        new_value=payload.model_dump(exclude_unset=True),
     )
 
     data = payload.model_dump(exclude_unset=True)
@@ -209,6 +235,7 @@ def update_blog(
 )
 def delete_blog(
     blog_ref: str,
+    request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -216,14 +243,20 @@ def delete_blog(
     blog = db.scalar(select(Blog).where(cond))
     if blog is None:
         raise HTTPException(status_code=404, detail="Blog not found")
-    db.add(
-        AuditLog(
-            user_id=user.id,
-            action="delete_blog",
-            entity_type="blog",
-            entity_id=blog.id,
-            old_value={"title": blog.title},
-        )
+    # 4.4/4.5 — enough to reconstruct what existed after the row is gone, plus
+    # the caller's IP. The row is written before the delete.
+    audit.record(
+        db,
+        request=request,
+        action="delete_blog",
+        entity_type="blog",
+        entity_id=blog.id,
+        actor=user,
+        old_value={
+            "title": blog.title,
+            "slug": blog.slug,
+            "content_length": len(blog.content) if blog.content else 0,
+        },
     )
     db.delete(blog)
     db.commit()

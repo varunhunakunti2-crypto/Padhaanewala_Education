@@ -13,9 +13,12 @@
  * it is a written representation to users. The notable current-state facts the
  * copy depends on:
  *
- *  - No cookies are set. Neither by the browser nor by the server. Session state
- *    lives in `localStorage` (the keys are listed verbatim in the cookie
- *    policy). See lib/api.ts:5-7 and lib/context/AppContext.tsx:182-195.
+ *  - No cookies are set *by the application itself*. The server issues no
+ *    `Set-Cookie` for analytics or advertising because no such SDK is installed.
+ *    Session state is an HttpOnly, Secure, SameSite=Strict cookie scoped to
+ *    `/api/v1/auth`, added in the Phase 3 session-security work; the access
+ *    token is held in memory. The cookie policy lists the remaining
+ *    `localStorage` keys verbatim. See lib/api.ts and lib/context/AppContext.tsx.
  *  - No analytics, advertising or error-tracking SDK is installed. Not Google
  *    Analytics, not Meta Pixel, not Sentry, not Vercel Analytics.
  *  - No payment gateway is integrated. Every service is currently free.
@@ -25,9 +28,10 @@
  *    in the `otp_records` table, never in plaintext. A reset link is a bearer
  *    credential for the account, so it expires (60 min) and is single-use.
  *  - The AI assistant forwards the user's raw message to OpenAI
- *    (app/api/ai/route.ts:25-45) and falls back to canned replies when
- *    OPENAI_API_KEY is unset.
- *  - There is no age gate and no parental-consent mechanism.
+ *    (app/api/ai/route.ts) and falls back to canned replies when
+ *    OPENAI_API_KEY is unset. The route is unlisted in the page manifest
+ *    (lib/nav.ts) pending the rate limit and input cap in Phase 4.
+ *  - There is no age gate and no parental-consent mechanism. Phase 9.
  *  - There is no in-product data export or account-deletion flow, so the rights
  *    section describes a manual process rather than claiming a button exists.
  */
@@ -38,19 +42,42 @@ import { SITE } from "@/lib/site";
 export const LEGAL_LAST_UPDATED = "2026-09-27";
 
 /**
- * Named contact for the Grievance Redressal document.
+ * The Grievance Officer's name and direct line, supplied at build time.
  *
- * The name is deliberately left unfilled. The Information Technology
- * (Intermediary Guidelines and Digital Media Ethics Code) Rules, 2021 require a
- * grievance officer to be named alongside the address to serve notice on, and a
- * plausible-looking placeholder name on a legal notice could misdirect a real
- * complaint or a regulator's order. Fill this in before the site goes live.
+ * The Information Technology (Intermediary Guidelines and Digital Media Ethics
+ * Code) Rules, 2021 (r.3(2)(g)) require a grievance officer to be *named*,
+ * together with the address to serve notice on. The Consumer Protection Act 2019
+ * and the rules made under it carry the same duty. A grievance notice served on
+ * the wrong individual can be treated as not served, and a regulator's order
+ * directed at a placeholder is not compliance.
+ *
+ * A name cannot be derived from code, so it is supplied as configuration. Until
+ * `NEXT_PUBLIC_GRIEVANCE_OFFICER_NAME` is set the registry keeps the honest
+ * "To be designated" wording rather than inventing a plausible person, and
+ * `GRIEVANCE_OFFICER_CONFIGURED` is false so the page can say so out loud.
+ *
+ * `NEXT_PUBLIC_` is required rather than a server-only variable: `/legal/grievance`
+ * is statically prerendered, and its content is public by definition, so a
+ * server-only variable would produce a build-time `undefined` baked into HTML.
+ *
+ * `next.config.ts` refuses to build with `APP_ENV=production` while this is
+ * unset, so the placeholder cannot reach a production deployment.
  */
+const CONFIGURED_NAME = (
+  process.env.NEXT_PUBLIC_GRIEVANCE_OFFICER_NAME ?? ""
+).trim();
+const CONFIGURED_PHONE = (
+  process.env.NEXT_PUBLIC_GRIEVANCE_OFFICER_PHONE ?? ""
+).trim();
+
+export const GRIEVANCE_OFFICER_CONFIGURED = CONFIGURED_NAME.length > 0;
+
 export const GRIEVANCE_OFFICER = {
-  name: "To be designated",
+  name: GRIEVANCE_OFFICER_CONFIGURED ? CONFIGURED_NAME : "To be designated",
   designation: "Grievance Officer",
   email: SITE.email,
-  phone: SITE.phone,
+  /** Falls back to the published switchboard when no direct line is configured. */
+  phone: CONFIGURED_PHONE || SITE.phone,
   postalAddress: `${SITE.legalName}, ${SITE.address.locality}, ${SITE.address.region} ${SITE.address.postalCode}, India`,
   /** Statutory response window, in days. */
   responseWindowDays: 30,
@@ -64,14 +91,23 @@ export const GRIEVANCE_OFFICER = {
  * happened to be a duplicate: the same mistake with two `bullets` keys, or
  * between a `note` and a `paragraphs`, would have compiled silently and dropped
  * copy from a legal notice. An ordered union makes the sequence explicit.
+ *
+ * `dl` is a term/definition pair, used by the DPDP notice where the Act requires
+ * each category of personal data to be set out against its purpose, lawful basis
+ * and retention rather than listed as prose.
  */
 export type LegalBlock =
   | { readonly kind: "p"; readonly text: string }
   | { readonly kind: "ul"; readonly items: readonly string[] }
+  | { readonly kind: "dl"; readonly items: readonly { readonly term: string; readonly detail: string }[] }
   | { readonly kind: "note"; readonly text: string };
 
 const p = (text: string): LegalBlock => ({ kind: "p", text });
 const ul = (...items: string[]): LegalBlock => ({ kind: "ul", items });
+const dl = (...items: readonly { readonly term: string; readonly detail: string }[]): LegalBlock => ({
+  kind: "dl",
+  items,
+});
 const note = (text: string): LegalBlock => ({ kind: "note", text });
 
 export interface LegalSection {
@@ -91,7 +127,7 @@ export interface LegalDoc {
   shortTitle: string;
   /** <meta name="description"> and the intro paragraph under the title. */
   description: string;
-  icon: "shield" | "scroll" | "cookie" | "alert" | "gavel" | "wallet";
+  icon: "shield" | "scroll" | "cookie" | "alert" | "gavel" | "wallet" | "file";
   sections: readonly LegalSection[];
 }
 
@@ -292,8 +328,183 @@ export const LEGAL_DOCS: readonly LegalDoc[] = [
           p(`Questions, complaints or requests about this policy or your data: ${SITE.email}.`),
           p(`Our postal address: ${ADDRESS_LINE}`),
           p(
+            "Section 5 of the DPDP Act also requires us to give you a separate, itemised notice of the personal data we process, setting out each category against its purpose, lawful basis and retention period. That is the Notice on Personal Data page, linked at the top of this site.",
+          ),
+          p(
             "If you are not satisfied with our response, our Grievance Redressal page explains how to escalate, including to the National Consumer Helpline on 1915.",
           ),
+        ],
+      },
+    ],
+  },
+
+  // ------------------------------------------------------------- dpdp notice
+  //
+  // A standalone notice, not a section of the privacy policy. Section 5(1) of
+  // the DPDP Act, 2023 requires the notice to set out, for *each* item of
+  // personal data, its purpose, the lawful basis, and how long it is retained —
+  // and Section 5(2) requires the notice to be given "in a clear and plain
+  // language" and to be "easily accessible". A policy that also explains cookies,
+  // refunds and liability does not satisfy either requirement on its own terms;
+  // a reader looking for the itemised list has to know it is in there.
+  //
+  // Every entry below is checkable against the code. The header comment of this
+  // file records the current-state facts the copy depends on, and those are the
+  // same facts this notice has to state honestly — including the two that are
+  // not yet true of the product (no age gate, no self-service export).
+  {
+    slug: "dpdp-notice",
+    title: "Notice on Personal Data",
+    shortTitle: "DPDP Notice",
+    icon: "file",
+    description: `The itemised notice required by section 5 of India's Digital Personal Data Protection Act, 2023: what personal data ${SITE.legalName} processes, why, on what basis, for how long, and how to withdraw consent.`,
+    sections: [
+      {
+        id: "what-this-is",
+        heading: "What this notice is",
+        blocks: [
+          p(
+            `This is the itemised notice required by section 5 of the Digital Personal Data Protection Act, 2023 (the "DPDP Act"). ${SITE.legalName} ("we", "us") is the Data Fiduciary for the personal data it describes.`,
+          ),
+          p(
+            "It lists each category of personal data we process, why we process it, the basis on which we do so, how long we keep it, and the address at which you can withdraw consent or complain. It is a companion to, not a substitute for, our Privacy Policy, which explains the reasoning in more detail.",
+          ),
+          note(
+            "Where this notice and our Privacy Policy differ, the more recent one governs. If you spot a difference, please tell us — a notice that is quietly out of date is worse than no notice at all.",
+          ),
+        ],
+      },
+      {
+        id: "the-items",
+        heading: "The personal data we process, item by item",
+        blocks: [
+          p(
+            "This is the itemised list the Act requires. Each entry states what the data is, what we use it for, the basis on which we are permitted to use it, and how long we retain it.",
+          ),
+          dl(
+            {
+              term: "Name",
+              detail:
+                "Purpose: to create and operate your account, to address you correctly, and to display reviews you have chosen to publish. Lawful basis: performance of a contract with you. Retention: for as long as your account is open, then deleted or anonymised within 30 days of closure.",
+            },
+            {
+              term: "Email address",
+              detail:
+                "Purpose: to sign you in, to send the verification link, a password-reset link and security alerts, and to answer your queries. Lawful basis: performance of a contract, and compliance with a legal obligation for transactional records. Retention: for the life of the account. We do not send marketing email unless you ask us to.",
+            },
+            {
+              term: "Mobile number",
+              detail:
+                "Purpose: to sign you in with a one-time code, to confirm the number is yours, and to send transactional security messages. Lawful basis: performance of a contract, and legitimate use in securing the account. Retention: for the life of the account. Sends are capped per number, so the limit cannot be sidestepped by reformatting the number.",
+            },
+            {
+              term: "Hashed password",
+              detail:
+                "Purpose: to authenticate you. Lawful basis: performance of a contract. Retention: for the life of the account. We store a bcrypt digest, never the password itself, and never send it to you by email.",
+            },
+            {
+              term: "Verification records",
+              detail:
+                "Purpose: to confirm your email address and mobile number, and to prevent someone else from using your number to take over your account. Lawful basis: legitimate use in securing the account. Retention: the hashed one-time token or code, its expiry, its use status and the count of failed attempts, kept while the account is open and for 90 days afterwards, then deleted.",
+            },
+            {
+              term: "Admission-enquiry details",
+              detail:
+                "Purpose: to answer your enquiry and provide the counselling you asked for. Lawful basis: your consent, given by submitting the form, and steps taken at your request before entering a contract. Retention: while the enquiry is open and for 24 months afterwards, unless a longer period is needed to resolve a dispute.",
+            },
+            {
+              term: "Saved items, comparison lists and preferences",
+              detail:
+                "Purpose: to show the colleges, courses and scholarships you have shortlisted, and to remember choices such as your theme. Lawful basis: performance of a contract with you. Retention: for the life of the account. Some of this is also cached in your browser's local storage, where you can clear it at any time — see our Cookie Policy for the exact keys.",
+            },
+            {
+              term: "Reviews, ratings and comments you publish",
+              detail:
+                "Purpose: to publish what you wrote, under your display name, so other students can read it. Lawful basis: your consent to publication. Retention: while published, and until you ask us to remove it. We may keep a copy afterwards only where a law requires it.",
+            },
+            {
+              term: "Messages you send to the AI assistant",
+              detail:
+                "Purpose: to generate a reply for you. Lawful basis: your consent, given by typing the message. Retention: not retained by us beyond what is needed to answer you; the text is forwarded to our AI processor, OpenAI, which processes it under its own terms. We do not use your conversations to train our own models.",
+            },
+            {
+              term: "In-app notifications",
+              detail:
+                "Purpose: to tell you about changes to the colleges, courses and exams you follow. Lawful basis: performance of a contract. Retention: until you dismiss them or close your account.",
+            },
+            {
+              term: "IP address, browser, device, requested URL and timestamp",
+              detail:
+                "Purpose: ordinary web-server logging, to serve your request, to keep the service running, to apply rate limits, to detect abuse and fraud, and to investigate abuse reports. Lawful basis: legitimate use in providing the service and protecting it. Retention: retained in server logs for 90 days.",
+            },
+          ),
+        ],
+      },
+      {
+        id: "what-we-do-not-collect",
+        heading: "What we do not collect",
+        blocks: [
+          p(
+            "We consider the list above to be the complete list. In particular, we do not collect, and have no way to receive:",
+          ),
+          ul(
+            "Your date of birth, caste, religion, marks, certificates, Aadhaar number, PAN, bank details or card information.",
+            "Any photograph, marksheet or identity document. There is no file-upload feature anywhere on this site.",
+            "Any behavioural profile built by an advertising or analytics network. We run no third-party tracking scripts of any kind.",
+            "Location data from your device. We use the city and state you type into a form, never your GPS.",
+          ),
+        ],
+      },
+      {
+        id: "sharing",
+        heading: "Who this data is shared with",
+        blocks: [
+          p(
+            "We do not sell, rent or trade your personal data. It reaches four categories of recipient, each acting on our instructions and under a duty of confidentiality:",
+          ),
+          ul(
+            "Our hosting, database and Redis providers, which store and serve the data described above.",
+            "OpenAI, as a sub-processor for AI assistant messages.",
+            "MSG91, as the processor for transactional SMS, and our email delivery provider (SendGrid or an SMTP relay you configure). Both receive the recipient address, the message, and a single-use link where one applies.",
+            "Professional advisers, auditors or insurers, and a court, regulator or law-enforcement agency, but only where we are legally required to disclose.",
+          ),
+          p(
+            `If we sell or merge the business, personal data may transfer to the new owner. We will give you notice and let you object before it moves.`,
+          ),
+        ],
+      },
+      {
+        id: "withdraw-consent",
+        heading: "How to withdraw consent, and how to complain",
+        blocks: [
+          p(
+            "Where we rely on your consent, you may withdraw it at any time. Withdrawing consent does not affect processing that was lawful before you withdrew it.",
+          ),
+          ul(
+            `To withdraw consent, or to ask us to stop processing, delete your data, or exercise any other right under the DPDP Act, email ${SITE.email} with the subject line “Data rights request”. We aim to acknowledge within 7 days and to complete the request within 30 days. We may ask you to confirm you are the account holder before we act.`,
+            `To complain, email ${SITE.email} with the subject line “Grievance”. Our Grievance Redressal page explains the full process, the response window, and how to escalate to the National Consumer Helpline on 1915 if you are not satisfied.`,
+            `If you are not satisfied with our response, you are not required to approach us first. The Data Protection Board of India and the appropriate consumer forum are both available to you.`,
+          ),
+          note(
+            "To be straight with you about the current state of the product: there is no in-app button to download or delete your account, so requests are handled by our team manually, and there is no age-verification step. We would rather state that plainly than describe a self-service process that does not exist. We intend to add both.",
+          ),
+        ],
+      },
+      {
+        id: "changes",
+        heading: "Changes to this notice",
+        blocks: [
+          p(
+            "If we change what we collect, why we collect it, or how long we keep it, we will update this page and change the “Last updated” date. If a change materially reduces your rights, we will tell you directly by email and on the site before it takes effect.",
+          ),
+        ],
+      },
+      {
+        id: "contact",
+        heading: "Contact",
+        blocks: [
+          p(`Questions about this notice: ${SITE.email}.`),
+          p(ADDRESS_LINE),
         ],
       },
     ],
@@ -736,7 +947,9 @@ export const LEGAL_DOCS: readonly LegalDoc[] = [
             `Postal address: ${GRIEVANCE_OFFICER.postalAddress}`,
           ),
           note(
-            "The officer's name is deliberately left unfilled rather than populated with a placeholder name. A grievance notice sent to the wrong individual can delay resolution and may be treated as not served. This must be completed before the site goes live.",
+            GRIEVANCE_OFFICER_CONFIGURED
+              ? "This officer is reachable at the email address and postal address above. If you do not receive an acknowledgement within 7 days, treat the complaint as not received and escalate as described below."
+              : "This page is published but the officer's name has not yet been designated, which does not meet the requirement to name an officer. The site cannot be taken live in this state — a production build is refused while the name is unset.",
           ),
         ],
       },

@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { LEGAL_NAV } from "@/lib/legal";
+import { FOOTER_COLS as NAV_FOOTER_COLS } from "@/lib/nav";
+import { SITE } from "@/lib/site";
 import { Logo } from "@/components/layout/Header";
 function InstagramIcon({ className }: { className?: string }) {
   return (
@@ -38,38 +40,7 @@ function XIcon({ className }: { className?: string }) {
   );
 }
 
-const FOOTER_COLS = [
-  {
-    title: "Explore",
-    links: [
-      { label: "Colleges", href: "/colleges" },
-      { label: "Courses", href: "/courses" },
-      { label: "Compare Colleges", href: "/compare" },
-      { label: "College Predictor", href: "/college-predictor" },
-      { label: "Scholarships", href: "/scholarships" },
-    ],
-  },
-  {
-    title: "Students",
-    links: [
-      { label: "Mock Tests", href: "/mock-tests" },
-      { label: "Exams", href: "/exams" },
-      { label: "AI Assistant", href: "/ask-ai" },
-      { label: "Reviews", href: "/reviews" },
-      { label: "Get Admission Help", href: "/admission" },
-    ],
-  },
-  {
-    title: "Company",
-    links: [
-      { label: "About Us", href: "/about" },
-      { label: "Blog", href: "/blog" },
-      { label: "Resources", href: "/resources" },
-      { label: "Contact Us", href: "/contact" },
-      { label: "Help Center", href: "/contact" },
-    ],
-  },
-];
+const FOOTER_COLS = NAV_FOOTER_COLS;
 
 export function Footer() {
   return (
@@ -83,10 +54,13 @@ export function Footer() {
               Your trusted partner in finding the right college, course and career path.
             </p>
 
-            {/* Social Icons */}
+            {/* Social Icons. Read from SITE.social so the handles are declared
+                once; they used to be bare `https://instagram.com` et al, which
+                linked every visitor to the social home page of the platform
+                rather than to this company. */}
             <div className="mt-6 flex items-center gap-3 text-gray-700 dark:text-slate-300">
               <a
-                href="https://instagram.com"
+                href={SITE.social.instagram}
                 target="_blank"
                 rel="noreferrer"
                 aria-label="Instagram"
@@ -95,7 +69,7 @@ export function Footer() {
                 <InstagramIcon className="h-4 w-4" />
               </a>
               <a
-                href="https://linkedin.com"
+                href={SITE.social.linkedin}
                 target="_blank"
                 rel="noreferrer"
                 aria-label="LinkedIn"
@@ -104,7 +78,7 @@ export function Footer() {
                 <LinkedinIcon className="h-4 w-4" />
               </a>
               <a
-                href="https://youtube.com"
+                href={SITE.social.youtube}
                 target="_blank"
                 rel="noreferrer"
                 aria-label="YouTube"
@@ -113,7 +87,7 @@ export function Footer() {
                 <YoutubeIcon className="h-4 w-4" />
               </a>
               <a
-                href="https://x.com"
+                href={SITE.social.x}
                 target="_blank"
                 rel="noreferrer"
                 aria-label="X (Twitter)"
@@ -195,7 +169,8 @@ export function Footer() {
             </ul>
           </nav>
           <p className="mt-4 text-center text-xs text-gray-400 sm:text-left dark:text-slate-500">
-            © 2026 padhaanewala. All rights reserved.
+            © {SITE.foundedYear}–2026 {SITE.name}. {SITE.legalName}, {SITE.address.locality},{" "}
+            {SITE.address.region} {SITE.address.postalCode}. All rights reserved.
           </p>
         </div>
       </div>

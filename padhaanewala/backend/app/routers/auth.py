@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -26,11 +26,9 @@ from app.schemas.auth import (
     VerifyEmailRequest,
 )
 from app.schemas.common import StandardResponse, TokenResponse
-from app.services import email_service, otp_service, sms_service
+from app.services import email_service, otp_service, session_service, sms_service
 from app.utils.client_ip import client_ip
 from app.utils.security import (
-    create_access_token,
-    create_refresh_token,
     decode_token,
     hash_password,
     verify_password,
@@ -39,6 +37,51 @@ from app.utils.security import (
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
 logger = logging.getLogger(__name__)
+
+
+def _set_refresh_cookie(response: Response, token: str) -> None:
+    """Issue the session's refresh token as an HttpOnly cookie.
+
+    The 30-day credential never appears in a response body, so no script in the
+    origin — including an XSS payload — can read it. `Secure` is derived from
+    APP_ENV rather than a separate flag so a production deployment cannot
+    report development and silently ship a cookie that travels in cleartext.
+    """
+    response.set_cookie(
+        key=settings.REFRESH_COOKIE_NAME,
+        value=token,
+        max_age=settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS * 86400,
+        httponly=True,
+        secure=settings.APP_ENV == "production",
+        samesite="strict",
+        path=settings.REFRESH_COOKIE_PATH,
+    )
+
+
+def _clear_refresh_cookie(response: Response) -> None:
+    response.delete_cookie(
+        key=settings.REFRESH_COOKIE_NAME, path=settings.REFRESH_COOKIE_PATH
+    )
+
+
+def _issue_session(
+    db: Session,
+    user: User,
+    request: Request | None,
+    response: Response,
+    family: str | None = None,
+) -> TokenResponse:
+    """Mint a refresh-ledger row, set its cookie, return the body token.
+
+    The access token is the only credential in the response body; the refresh
+    token travels as an HttpOnly cookie. The caller commits.
+    """
+    role_names = ",".join(role.name for role in user.roles) or RoleName.STUDENT.value
+    tokens = session_service.issue(db, user, role_names, request=request, family=family)
+    _set_refresh_cookie(response, tokens["refresh"].token)
+    return TokenResponse(
+        access_token=tokens["access"], refresh_token=None, token_type="bearer"
+    )
 
 #: One opaque message for every way a mobile OTP or email link can fail. The
 #: underlying reason is logged server-side, but a caller must not be able to
@@ -122,28 +165,12 @@ def _dispatch_mobile_verification(
 
 
 
-def _build_token_response(user: User, tokens: dict) -> TokenResponse:
-    return TokenResponse(
-        access_token=tokens["access"],
-        refresh_token=tokens["refresh"],
-        token_type="bearer",
-    )
-
-
-def _issue_tokens(user: User) -> dict:
-    # The `role` claim is informational only. Authorization always re-reads roles
-    # from the DB via `get_current_user_roles`, so a forged or stale claim can
-    # never widen access (R3.1, pinned by R7.2).
-    role_names = ",".join(role.name for role in user.roles) or RoleName.STUDENT.value
-    return {
-        "access": create_access_token(user.id, role_names),
-        "refresh": create_refresh_token(user.id, role_names),
-    }
-
-
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 def register(
-    payload: RegisterRequest, request: Request, db: Session = Depends(get_db)
+    payload: RegisterRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
 ):
     existing = db.scalar(
         select(User).where((User.email == payload.email) | (User.mobile == payload.mobile))
@@ -201,7 +228,9 @@ def register(
     # `login`. If the intent is that unverified accounts hold no usable session
     # at all, `register` must also withhold tokens — that is a breaking change
     # and a deliberate decision, not something to slip in here.
-    return _build_token_response(user, _issue_tokens(user))
+    body = _issue_session(db, user, request=None, response=response)
+    db.commit()
+    return body
 
 
 
@@ -228,7 +257,12 @@ def _email_not_verified(user: User) -> HTTPException:
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)):
+def login(
+    payload: LoginRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
     user = db.scalar(select(User).where(User.email == payload.email))
     if user is None or not verify_password(payload.password, user.password_hash):
         raise HTTPException(
@@ -248,16 +282,45 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
         raise _email_not_verified(user)
 
     user.last_login_at = datetime.now(timezone.utc)
+    body = _issue_session(db, user, request, response)
     db.commit()
 
-    return _build_token_response(user, _issue_tokens(user))
+    return body
 
 
 
 @router.post("/refresh", response_model=TokenResponse)
-def refresh(payload: RefreshRequest, db: Session = Depends(get_db)):
+def refresh(
+    payload: RefreshRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    # R3.7 — SameSite=strict is the primary CSRF defence on the cookie path;
+    # refusing a cross-origin `Origin` outright is the independent backup, so
+    # relaxing the cookie flag later cannot silently re-open the session to a
+    # forced cross-site POST.
+    origin = request.headers.get("origin")
+    if origin and origin not in settings.cors_origin_list:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cross-origin refresh is not allowed",
+        )
+
+    # The body token wins over the ambient cookie: a client presenting token A
+    # while a stale cookie for token B is attached has asked for A and must get
+    # A rotated, not B.
+    presented = payload.refresh_token or request.cookies.get(
+        settings.REFRESH_COOKIE_NAME
+    )
+    if not presented:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token",
+        )
+
     try:
-        claims = decode_token(payload.refresh_token, settings.JWT_REFRESH_SECRET_KEY)
+        claims = decode_token(presented, settings.JWT_REFRESH_SECRET_KEY)
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -285,15 +348,83 @@ def refresh(payload: RefreshRequest, db: Session = Depends(get_db)):
             detail="User not found or inactive",
         )
 
-    return _build_token_response(user, _issue_tokens(user))
+    record = session_service.find_by_jti(db, claims.get("jti"))
+    # A token with a valid signature but no ledger row is evidence of a token
+    # minted before the ledger existed, or a forgery under a leaked key. Both
+    # get the same opaque 401.
+    if record is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token",
+        )
+
+    # Reuse detection first. A rotation-consumed token presented again means it
+    # was copied, so the whole family dies before the 401 — the attacker keeps
+    # nothing usable and the victim is forced to re-authenticate.
+    if record.used_at is not None:
+        session_service.revoke_family(
+            db, record.user_id, record.family, "detected reuse"
+        )
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token",
+        )
+
+    if not session_service.is_live(record):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token",
+        )
+
+    role_names = ",".join(role.name for role in user.roles) or RoleName.STUDENT.value
+    tokens = session_service.rotate(db, record, user, role_names, request)
+    _set_refresh_cookie(response, tokens["refresh"].token)
+    db.commit()
+    return TokenResponse(
+        access_token=tokens["access"], refresh_token=None, token_type="bearer"
+    )
 
 
 @router.post("/logout", response_model=StandardResponse)
-def logout(payload: LogoutRequest):
+def logout(
+    payload: LogoutRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    """End the presented session: revoke its whole rotation family.
+
+    Always 200 with a uniform body, whether the token did not exist, was already
+    revoked, or had a whole live family to kill — an endpoint that answers
+    differently for "real token" and "garbage token" hands out a session oracle
+    to anyone probing with stolen strings.
+    """
+    presented = payload.refresh_token or request.cookies.get(
+        settings.REFRESH_COOKIE_NAME
+    )
+    revoked = 0
+    if presented:
+        try:
+            claims = decode_token(presented, settings.JWT_REFRESH_SECRET_KEY)
+        except Exception:
+            claims = {}
+        if claims.get("type") == "refresh":
+            record = session_service.find_by_jti(db, claims.get("jti"))
+            if record is not None:
+                revoked = session_service.revoke_family(
+                    db, record.user_id, record.family, "logout"
+                )
+                db.commit()
+
+    _clear_refresh_cookie(response)
     return StandardResponse(
         success=True,
         message="Logged out successfully",
-        data={"received_refresh_token": bool(payload.refresh_token)},
+        data={
+            "revoked_tokens": revoked,
+            "received_refresh_token": bool(presented),
+        },
     )
 
 
@@ -429,7 +560,10 @@ def send_login_otp(
 
 @router.post("/login/otp/verify", response_model=TokenResponse)
 def verify_login_otp(
-    payload: MobileOtpVerifyRequest, db: Session = Depends(get_db)
+    payload: MobileOtpVerifyRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
 ):
     user = db.scalar(select(User).where(User.mobile == payload.mobile))
     # Same 401 whether the number is unknown or the code is wrong: the caller
@@ -462,6 +596,7 @@ def verify_login_otp(
     if not user.is_mobile_verified:
         user.is_mobile_verified = True
     user.last_login_at = datetime.now(timezone.utc)
+    body = _issue_session(db, user, request, response)
     db.commit()
 
     # The email gate belongs here, not on `send`. Reaching this line requires a
@@ -473,7 +608,7 @@ def verify_login_otp(
     if settings.EMAIL_VERIFICATION_REQUIRED and not user.is_email_verified:
         raise _email_not_verified(user)
 
-    return _build_token_response(user, _issue_tokens(user))
+    return body
 
 
 @router.post("/verify-mobile/send", response_model=OtpChallengeResponse)
@@ -612,6 +747,9 @@ def reset_password(
         )
 
     user.password_hash = hash_password(payload.new_password)
+    # A password reset happens because the owner believes somebody else has
+    # access; every existing session dies with it (R3.6).
+    session_service.revoke_all_sessions(db, user.id, reason="password_reset")
     db.commit()
 
     return StandardResponse(

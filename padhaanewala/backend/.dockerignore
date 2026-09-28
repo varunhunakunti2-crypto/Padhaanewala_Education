@@ -1,0 +1,86 @@
+# Backend build context exclusions.
+#
+# Everything here is either a build artefact, a local secret, or a file that must
+# never reach an image layer. The context is `backend/`, so the duplicate
+# `padhaanewala/bot_robot.glb` at the repository root is outside it entirely and
+# cannot be sent to the daemon by this build.
+
+# --- Secrets. The single most important entry in this file. -------------
+# `.env.development` holds real generated SECRET_KEY / JWT_SECRET_KEY values and
+# is gitignored, but `.dockerignore` is what stops it being sent to the daemon and
+# baked into a layer where `docker history` would reveal it. Both patterns are
+# listed because a file called `.env.production` is exactly what someone creates
+# when they go to deploy.
+.env
+.env.*
+*.env
+!.env.example
+secrets/
+*.pem
+*.key
+
+# --- Captured process output -------------------------------------------
+# A SQLAlchemy error message embeds the connection string, credentials
+# included. `.gitignore` gained `*.err` and `*.out` in Phase 1.10 for exactly
+# this reason; `*.log` does not match a uvicorn stderr capture. This directory
+# currently holds `uvi.err` and `uvi.log` from a previous local run, and they
+# must not be copied into a published image.
+*.log
+*.err
+*.out
+
+# --- Virtualenv. Created inside backend/ by the documented setup step. ---
+# 49 packages, ~400 MB, rebuilt identically in the image. Copying it in would
+# also bake a Windows-path interpreter into a Linux image.
+venv/
+.venv/
+env/
+ENV/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Tests and tooling. Not needed at runtime. --------------------------
+# `test_session_security.py` and friends are Phase 3 regression coverage that
+# belongs in CI, not in a production image where it cannot be executed anyway
+# (no pytest, no test schema).
+tests/
+pytest.ini
+.coverage
+htmlcov/
+coverage.xml
+
+# --- scripts/ is NOT excluded. ------------------------------------------
+# A fresh database needs `seed_roles.py` before *any* registration can succeed
+# (register is fail-closed on a missing student role and returns 503), and
+# Phase 8.3 bootstraps the first admin with `seed_admin.py`. Keeping them out of
+# the image would mean the only way to seed is a host checkout, which is one more
+# thing to get wrong on a first deploy.
+#
+# `purge_demo_data.py` is the exception: it deletes rows, and a data-destroying
+# script has no business being present in a production image where a mistyped
+# command is unrecoverable.
+scripts/!purge_demo_data.py
+scripts/purge_demo_data.py
+
+# bootstrap_test_db.py points at PADHAANEWALA_SCHEMA and creates a scratch
+# schema. Harmless, but it belongs to the test workflow, not to a deployed app.
+scripts/bootstrap_test_db.py
+
+# --- Migrations ARE required at runtime (alembic upgrade head runs on
+# deploy), so alembic/ and alembic.ini are deliberately NOT excluded.
+
+# --- Caches / editors / OS ---------------------------------------------
+.git/
+.gitignore
+.github/
+.vscode/
+.idea/
+*.swp
+*~
+Thumbs.db
+desktop.ini
+.DS_Store

@@ -82,7 +82,9 @@ def test_health():
 def test_register_success(registered):
     assert registered["token_type"] == "bearer"
     assert registered["access_token"]
-    assert registered["refresh_token"]
+    # Phase 3: the refresh credential travels as an HttpOnly cookie, never in a
+    # body any script in the origin can read.
+    assert registered["refresh_token"] is None
 
 
 def test_register_duplicate_email(registered):
@@ -194,10 +196,9 @@ def test_change_password_wrong_current(registered):
 
 
 def test_refresh(registered):
-    response = client.post(
-        "/api/v1/auth/refresh",
-        json={"refresh_token": registered["refresh_token"]},
-    )
+    # Phase 3: the shared TestClient carries the HttpOnly cookie set at
+    # registration, so refresh reads it and rotates it.
+    response = client.post("/api/v1/auth/refresh", json={})
     assert response.status_code == 200
     assert response.json()["access_token"]
 
@@ -211,10 +212,7 @@ def test_refresh_invalid_token():
 
 
 def test_logout(registered):
-    response = client.post(
-        "/api/v1/auth/logout",
-        json={"refresh_token": registered["refresh_token"]},
-    )
+    response = client.post("/api/v1/auth/logout", json={})
     assert response.status_code == 200
     assert response.json()["success"] is True
 

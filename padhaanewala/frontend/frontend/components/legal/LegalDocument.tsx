@@ -4,6 +4,7 @@ import {
   ArrowRight,
   ChevronRight,
   Cookie,
+  FileText,
   Gavel,
   Home,
   ScrollText,
@@ -27,6 +28,7 @@ const ICONS: Record<LegalDoc["icon"], LucideIcon> = {
   alert: AlertTriangle,
   gavel: Gavel,
   wallet: Wallet,
+  file: FileText,
 };
 
 /**
@@ -114,31 +116,54 @@ export function LegalDocument({ doc }: { doc: LegalDoc }) {
 
         <div className="mt-12 min-w-0 lg:mt-0">
           <article className="legal-prose max-w-3xl">
-            {doc.sections.map((section) => (
-              <section key={section.id} id={section.id}>
-                <h2>{section.heading}</h2>
-                {section.blocks.map((block, index) => {
-                  switch (block.kind) {
-                    case "p":
-                      return <p key={index}>{block.text}</p>;
-                    case "ul":
-                      return (
-                        <ul key={index}>
-                          {block.items.map((item) => (
-                            <li key={item}>{item}</li>
-                          ))}
-                        </ul>
-                      );
-                    case "note":
-                      return (
-                        <p key={index} className="legal-note">
-                          {block.text}
-                        </p>
-                      );
-                  }
-                })}
-              </section>
-            ))}
+                {doc.sections.map((section) => (
+                  <section key={section.id} id={section.id}>
+                    <h2>{section.heading}</h2>
+                    {section.blocks.map((block, index) => {
+                      switch (block.kind) {
+                        case "p":
+                          return <p key={index}>{block.text}</p>;
+                        case "ul":
+                          return (
+                            <ul key={index}>
+                              {block.items.map((item) => (
+                                <li key={item}>{item}</li>
+                              ))}
+                            </ul>
+                          );
+                        // The DPDP notice's itemised table (DPDP Act s.5(1)
+                        // requires a purpose, basis and retention period per
+                        // category). A definition list rather than a table so it
+                        // reflows to one column on a phone without horizontal
+                        // scrolling, and so screen readers announce the term
+                        // before its detail.
+                        case "dl":
+                          return (
+                            <dl key={index} className="my-6 space-y-4">
+                              {block.items.map((item) => (
+                                <div
+                                  key={item.term}
+                                  className="rounded-2xl bg-white/60 p-5 ring-1 ring-purple-100/60 dark:bg-slate-900/60 dark:ring-slate-800"
+                                >
+                                  <dt className="font-semibold text-purple-950 dark:text-white">
+                                    {item.term}
+                                  </dt>
+                                  <dd className="mt-1.5">{item.detail}</dd>
+                                </div>
+                              ))}
+                            </dl>
+                          );
+                        case "note":
+                          return (
+                            <p key={index} className="legal-note">
+                              {block.text}
+                            </p>
+                          );
+                      }
+                    })}
+                  </section>
+                ))}
+
           </article>
 
           <nav aria-label="Other legal documents" className="mt-16 border-t border-purple-100 pt-8 dark:border-slate-800/80">

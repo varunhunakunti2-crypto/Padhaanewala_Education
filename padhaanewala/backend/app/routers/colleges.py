@@ -1,12 +1,23 @@
 ﻿import re
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
 from app.dependencies import get_optional_current_user, require_role
-from app.models import College, CollegeCourse, Course, District, User
+from app.models import (
+    College,
+    CollegeCourse,
+    Course,
+    Cutoff,
+    District,
+    NIRFRanking,
+    OtherRanking,
+    PlacementRecord,
+    SeatMatrix,
+    User,
+)
 from app.roles import ADMIN_ROLES, CONTENT_ROLES, SUPER_ADMIN_ROLES
 from app.schemas.catalog import (
     CollegeCourseResponse,
@@ -17,6 +28,7 @@ from app.schemas.catalog import (
     CourseResponse,
     SearchResult,
 )
+from app.utils import audit
 
 router = APIRouter(prefix="/api/v1/colleges", tags=["colleges"])
 
@@ -336,14 +348,55 @@ def update_college(
 @router.delete(
     "/{college_ref}",
     status_code=204,
-    dependencies=[Depends(require_role(*SUPER_ADMIN_ROLES))],
 )
-def delete_college(college_ref: str, db: Session = Depends(get_db)):
+def delete_college(
+    college_ref: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(*SUPER_ADMIN_ROLES)),
+):
     college = _find_college(db, college_ref)
     if college is None:
         raise HTTPException(status_code=404, detail="College not found")
+
+    # 4.4/4.5 — the most destructive endpoint in the app. Record who did it,
+    # from where, and exactly how many dependent rows the cascade is about to
+    # destroy — after the commit that number is unrecoverable.
+    cascading = {
+        "cutoffs": _count_for(db, Cutoff, college.id),
+        "placements": _count_for(db, PlacementRecord, college.id),
+        "nirf_rankings": _count_for(db, NIRFRanking, college.id),
+        "other_rankings": _count_for(db, OtherRanking, college.id),
+        "seat_matrix": _count_for(db, SeatMatrix, college.id),
+        "college_courses": _count_for(db, CollegeCourse, college.id),
+    }
+    audit.record(
+        db,
+        request=request,
+        action="delete_college",
+        entity_type="college",
+        entity_id=college.id,
+        actor=user,
+        old_value={
+            "slug": college.slug,
+            "name": college.name,
+            "cascading_rows": cascading,
+        },
+    )
     db.delete(college)
     db.commit()
+
+
+def _count_for(db: Session, model, college_id: int) -> int:
+    """How many rows of `model` reference this college and would cascade away."""
+    return (
+        db.scalar(
+            select(func.count())
+            .select_from(model)
+            .where(model.college_id == college_id)
+        )
+        or 0
+    )
 
 
 def _find_college(db: Session, ref: str) -> College | None:

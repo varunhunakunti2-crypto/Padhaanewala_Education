@@ -12,6 +12,7 @@ import {
 } from "react";
 import type { AdmissionEnquiry, MockTestResult, NotificationItem, Review, StudentProfile } from "@/lib/types";
 import {
+  authApi,
   clearAuth,
   fetchMyRoles,
   getAccessToken,
@@ -559,6 +560,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
 
   const logout = useCallback(() => {
+    // Revoke the server-side session (HttpOnly refresh cookie) before wiping
+    // local credentials. Best-effort: a network failure must not block sign-out.
+    void authApi.logout().catch(() => undefined);
     clearAuth();
     setIsAuthenticated(false);
     setRoles([]);

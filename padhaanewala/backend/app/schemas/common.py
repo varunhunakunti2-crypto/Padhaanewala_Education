@@ -5,7 +5,9 @@ from pydantic import BaseModel
 
 class TokenResponse(BaseModel):
     access_token: str
-    refresh_token: str
+    #: None since Phase 3: the refresh token is delivered as an HttpOnly cookie,
+    #: never in a body that any script in the origin can read.
+    refresh_token: str | None = None
     token_type: str = "bearer"
 
 

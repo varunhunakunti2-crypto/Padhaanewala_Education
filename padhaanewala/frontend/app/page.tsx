@@ -6,7 +6,6 @@ import { PopularCollegeSearches } from "@/components/home/PopularCollegeSearches
 import {
   HomeScholarships,
   UpcomingExams,
-  HomeMockTests,
   HomeArticles,
   FinalCta,
 } from "@/components/home/HomeSections";
@@ -17,22 +16,20 @@ import {
   resolveColleges,
   resolveCourses,
   resolveExams,
-  resolveMockTests,
   resolveScholarships,
 } from "@/lib/content";
 
 export const revalidate = 300;
 
 export default async function HomePage() {
-  // These six requests are independent, so they are issued concurrently. Each
+  // These five requests are independent, so they are issued concurrently. Each
   // resolver returns only what the backend actually holds — an empty list when
   // the table is empty, and the sections below render their own empty states.
-  const [colleges, courses, exams, scholarships, mockTests, posts] = await Promise.all([
+  const [colleges, courses, exams, scholarships, posts] = await Promise.all([
     resolveColleges(),
     resolveCourses(),
     resolveExams(),
     resolveScholarships(),
-    resolveMockTests(),
     resolveBlogPosts(),
   ]);
 
@@ -48,7 +45,6 @@ export default async function HomePage() {
       <PopularCollegeSearches />
       <HomeScholarships scholarships={scholarships.data} />
       <UpcomingExams exams={exams.data} />
-      <HomeMockTests tests={mockTests.data} />
       <WhyChooseSection />
       <StudentTestimonials />
       <HomeArticles posts={posts.data} />

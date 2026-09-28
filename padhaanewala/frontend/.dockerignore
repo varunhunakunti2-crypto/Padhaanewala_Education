@@ -1,0 +1,59 @@
+# Frontend build context exclusions.
+#
+# The context is `frontend/`. The duplicate `padhaanewala/bot_robot.glb`
+# (1,001,448 bytes, byte-identical to `frontend/public/bot_robot.glb`) lives
+# one directory *above* this context, so it is never sent to the daemon by this
+# build. The duplicate is still worth deleting from the repository — see
+# "Repository hygiene" in docs/Pending-phases.md — but it cannot bloat an image
+# from here.
+
+# --- The build output. Rebuilt inside the image. -----------------------
+# Sending the host's `.next` is not merely wasteful: it was produced by a
+# possibly different Next version on a different platform, and a stale
+# `.next/cache` can make the in-image build reuse artefacts it should re-derive.
+.next/
+out/
+build/
+dist/
+
+# --- Dependencies. 373 packages, ~500 MB, reinstalled in the image. ----
+# Copying these in would install Windows-platform binaries into a Linux image
+# (next-swc, lightningcss, sharp), producing a runtime that fails on the first
+# request.
+node_modules/
+npm-debug.log*
+yarn-error.log*
+.pnpm-store/
+
+# --- Secrets ------------------------------------------------------------
+.env
+.env.*
+*.env
+!.env.example
+secrets/
+
+# --- Source that the runtime image does not need -------------------------
+# `.agents/`, `.claude/` and `agent/` sit at the repository root, outside this
+# context, so the duplicated agent-skill bundles (4.6 MB) are excluded by
+# construction. `frontend/frontend/` is NOT excluded: it is the doubled path
+# that tsconfig.json's `"@/*": ["./frontend/*", "./*"]` resolves ~200 component
+# imports through. Removing it from the context would break the build.
+
+# --- Tests / coverage --------------------------------------------------
+coverage/
+*.lcov
+
+# --- Docs, editors, OS --------------------------------------------------
+README.md
+*.md
+!AGENTS.md
+.git/
+.gitignore
+.github/
+.vscode/
+.idea/
+*.swp
+*~
+Thumbs.db
+desktop.ini
+.DS_Store

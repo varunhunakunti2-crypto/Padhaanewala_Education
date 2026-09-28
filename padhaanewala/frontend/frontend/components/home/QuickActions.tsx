@@ -4,15 +4,21 @@ import Link from "next/link";
 import {
   Building2,
   Scale,
-  Sparkles,
   Award,
-  FileQuestion,
+  CalendarDays,
+  Newspaper,
   Headset,
   ArrowRight,
 } from "lucide-react";
 import { Reveal } from "@/components/ui/Reveal";
 import { SectionHeading } from "@/components/ui/SectionHeading";
 
+/**
+ * The college predictor and mock tests used to sit in this grid, next to four
+ * tiles that work. Both are de-listed in `lib/nav.ts`; the two kept entries are
+ * the catalogue search and the comparison tool, and `/admission` and `/blog`
+ * take their place.
+ */
 const ACTIONS = [
   {
     title: "Find Colleges",
@@ -31,14 +37,6 @@ const ACTIONS = [
     shadow: "shadow-blue-600/25",
   },
   {
-    title: "College Predictor",
-    desc: "AI-based prediction from your entrance rank.",
-    href: "/college-predictor",
-    icon: Sparkles,
-    grad: "from-orange-500 to-amber-500",
-    shadow: "shadow-orange-500/25",
-  },
-  {
     title: "Scholarships",
     desc: "Discover scholarships and track deadlines.",
     href: "/scholarships",
@@ -47,20 +45,28 @@ const ACTIONS = [
     shadow: "shadow-amber-500/25",
   },
   {
-    title: "Mock Tests",
-    desc: "Practice exams with instant score analysis.",
-    href: "/mock-tests",
-    icon: FileQuestion,
-    grad: "from-emerald-500 to-teal-500",
-    shadow: "shadow-emerald-500/25",
-  },
-  {
     title: "Admission Assistance",
     desc: "Free counselling to plan your admission.",
     href: "/admission",
     icon: Headset,
     grad: "from-rose-500 to-pink-500",
     shadow: "shadow-rose-500/25",
+  },
+  {
+    title: "Entrance Exams",
+    desc: "Dates, patterns and official links for every major exam.",
+    href: "/exams",
+    icon: CalendarDays,
+    grad: "from-cyan-600 to-sky-600",
+    shadow: "shadow-cyan-600/25",
+  },
+  {
+    title: "Guides & Articles",
+    desc: "Admissions, exams and careers, written for Indian students.",
+    href: "/blog",
+    icon: Newspaper,
+    grad: "from-violet-600 to-purple-600",
+    shadow: "shadow-violet-600/25",
   },
 ];
 

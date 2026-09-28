@@ -11,8 +11,24 @@ from app.utils.client_ip import client_ip
 
 logger = logging.getLogger("padhaanewala.ratelimit")
 
-AUTH_RATE_LIMIT = 5
-AUTH_RATE_WINDOW_SECONDS = 60
+# Credential endpoints are the brute-force surface, so they stay tight. The
+# remaining auth endpoints (OTP send, verification resend, password reset
+# start) are part of a multi-step flow a legitimate user can hit several times
+# in a minute (BUG-03), and a five-per-minute cap on them reliably locks people
+# out of their own account while doing nothing to stop password guessing.
+AUTH_TIGHT_LIMIT = 5
+AUTH_TIGHT_WINDOW_SECONDS = 60
+AUTH_GENEROUS_LIMIT = 20
+AUTH_GENEROUS_WINDOW_SECONDS = 60
+
+AUTH_TIGHT_PATHS = frozenset(
+    {
+        "/api/v1/auth/login",
+        "/api/v1/auth/register",
+        "/api/v1/auth/refresh",
+        "/api/v1/auth/login/otp/verify",
+    }
+)
 
 # `POST /api/v1/enquiries` is unauthenticated public lead capture. Without a limit
 # an anonymous caller can flood the CRM at request speed, poisoning the lead table
@@ -20,6 +36,8 @@ AUTH_RATE_WINDOW_SECONDS = 60
 PUBLIC_WRITE_LIMITS: dict[str, tuple[int, int]] = {
     "/api/v1/enquiries": (5, 3600),
     "/api/v1/predictor": (60, 60),
+    # 4.8 — six COUNT(*) per request, unauthenticated.
+    "/api/v1/stats/catalog": (60, 60),
 }
 
 #: Namespace whose limiter fails *closed*. Brute-forcing credentials is the one
@@ -59,7 +77,9 @@ return {count, redis.call('TTL', KEYS[1])}
 def _limit_for(path: str) -> tuple[str, int, int] | None:
     """Return (key namespace, max requests, window seconds) for a throttled path."""
     if path.startswith("/api/v1/auth"):
-        return ("auth", AUTH_RATE_LIMIT, AUTH_RATE_WINDOW_SECONDS)
+        if path in AUTH_TIGHT_PATHS:
+            return ("auth", AUTH_TIGHT_LIMIT, AUTH_TIGHT_WINDOW_SECONDS)
+        return ("auth", AUTH_GENEROUS_LIMIT, AUTH_GENEROUS_WINDOW_SECONDS)
     for prefix, (max_requests, window) in PUBLIC_WRITE_LIMITS.items():
         if path == prefix or path.startswith(prefix + "/"):
             return (prefix, max_requests, window)

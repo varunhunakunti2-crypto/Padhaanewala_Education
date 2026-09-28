@@ -268,8 +268,8 @@ export default async function CourseDetailPage({ params }: PageProps) {
         <ButtonLink href="/courses" variant="ghost" size="sm">
           <ArrowLeft className="h-4 w-4" /> Back to all courses
         </ButtonLink>
-        <ButtonLink href="/college-predictor" variant="accent" size="md">
-          Predict my college <CalendarDays className="h-4 w-4" />
+        <ButtonLink href="/admission" variant="accent" size="md">
+          Get admission help <CalendarDays className="h-4 w-4" />
         </ButtonLink>
       </div>
 

@@ -1,0 +1,299 @@
+# Padhaanewala — production topology.
+#
+#   Internet ──:443──> caddy ──> frontend:3000 ──> backend:8000
+#                                       └──────────> db, redis (internal only)
+#
+# The security property this file exists to enforce: **only Caddy publishes a
+# port.** `backend`, `db`, `redis` and `frontend` have no `ports:` at all, so
+# they are reachable only from inside this Compose network. Consequences:
+#
+#   * The FastAPI app is not exposed to the internet, so an unauthenticated
+#     caller cannot reach it directly and CORS is irrelevant to external
+#     traffic.
+#   * `db` is not on the host's network, so the port that was published on 5433
+#     in docker-compose.dev.yml is gone.
+#   * The browser only ever talks to this origin, which is what allows the
+#     refresh cookie to be `HttpOnly` + `SameSite=strict`.
+#
+# No `version:` key: it has been deprecated since Compose v2 and emits a warning.
+#
+# Multi-arch builds: the Dockerfiles pin base images by linux/amd64 digest. To
+# build for arm64, retag with that platform's digest, or build per-arch and push
+# to a registry the deploy references by digest.
+
+name: padhaanewala-prod
+#
+# The project name is what namespaces volumes, so it must differ from the dev
+# stack's. Compose defaults a project's name to the directory name — which for
+# both files here is `padhaanewala` — and that made the production stack declare
+# `padhaanewala_pgdata`, the *same volume the dev stack uses*. Both containers
+# then attached to one database, and the dev suite failed with
+#   FATAL: password authentication failed for user "padhaanewala"
+# because the dev stack was reading the production data directory with the
+# development password. Data loss is the obvious end state: a `down -v` on
+# either stack destroys the other's database.
+#
+# On a production host only this file runs, so the collision is a developer-
+# machine hazard rather than a launch one. It is still worth a line of config,
+# because "run the dev stack to test something" is exactly what somebody does on
+# the machine that also holds the production volume.
+
+services:
+  # ------------------------------------------------------------------------- #
+  # db — PostgreSQL, internal only
+  # ------------------------------------------------------------------------- #
+  db:
+    build:
+      context: ./docker/db
+    image: padhaanewala-db:prod
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:?DB_NAME is required}
+      POSTGRES_USER: ${DB_USER:?DB_USER is required}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      # Deterministic collation. An index built under one locale and queried
+      # under another silently misses, which is the classic "it is slow only in
+      # production" bug. postgres:15 is already initdb'd for this image.
+      POSTGRES_INITDB_ARGS: "--data-checksums --encoding=UTF8 --locale=C"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # No `ports:`. The dev compose file publishes 5433; that must not exist here.
+    healthcheck:
+      # `pg_isready` alone returns 0 while the postmaster is still in recovery
+      # and rejecting connections, so `-d` forces an actual connection.
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    # Not a public service; reachable only from backend.
+    networks:
+      - internal
+
+  # ------------------------------------------------------------------------- #
+  # redis — internal only
+  # ------------------------------------------------------------------------- #
+  redis:
+    image: redis@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
+    restart: unless-stopped
+    # Persistence is off deliberately. Redis holds only rate-limit counters,
+    # which are worthless a second later; an AOF or RDB would add a disk write
+    # per authenticated write request and a recovery step that restores nothing
+    # useful. Note the consequence: a restart resets every rate-limit bucket.
+    command:
+      - redis-server
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    networks:
+      - internal
+
+  # ------------------------------------------------------------------------- #
+  # backend — FastAPI, internal only
+  # ------------------------------------------------------------------------- #
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: padhaanewala-backend:prod
+    restart: unless-stopped
+    # No `ports:`. This is the single most important line in the file.
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      APP_ENV: production
+      APP_URL: ${APP_URL:?APP_URL is required}
+      API_URL: ${API_URL:?API_URL is required}
+
+      # Must be the *public* domain, because `next.config.ts` proxies to this
+      # service by name and Caddy is what makes the domain public. TrustedHost-
+      # Middleware rejects a request whose Host is not in this list.
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:?ALLOWED_HOSTS is required}
+
+      # Exactly one proxy (Caddy) sits in front of the app, so the client IP is
+      # the last entry in X-Forwarded-For. At 0 every caller would share the
+      # socket peer — Caddy's address — and one user could exhaust the rate limit
+      # for everyone.
+      TRUSTED_PROXY_HOPS: "1"
+
+      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS is required}
+
+      # Production config.py refuses to boot without a real value for each of
+      # these, and refuses REFRESH_TOKEN_IN_COOKIE=false. That is deliberate: the
+      # guard is what makes this file's omission of a placeholder fatal rather
+      # than silently insecure.
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY is required}
+      JWT_REFRESH_SECRET_KEY: ${JWT_REFRESH_SECRET_KEY:?JWT_REFRESH_SECRET_KEY is required}
+
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: ${DB_NAME:?DB_NAME is required}
+      DB_USER: ${DB_USER:?DB_USER is required}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+
+      # `DATABASE_URL` is built here, and this is not redundant with the DB_*
+      # values above — it is the only one of the two that the application reads.
+      # `Settings.DATABASE_URL` is a single string whose *default* is assembled
+      # from DB_HOST/DB_PORT/DB_USER/DB_PASSWORD; the individual DB_* settings
+      # are never consulted again once a DATABASE_URL exists. Both
+      # `app/database.py` and `alembic/env.py` read DATABASE_URL directly.
+      #
+      # So setting DB_PASSWORD without this line would leave the app connecting
+      # to the dev default — and the production guard then correctly refuses to
+      # boot with "production must not use default dev database credentials",
+      # which is how this was found. The guard did its job; the compose file was
+      # the thing that was wrong.
+      #
+      # The password is interpolated raw, so it must be URL-safe: no `@`, `/`,
+      # `:` or `?`. `openssl rand -hex 24` is hex and always safe, which is why
+      # the example file recommends exactly that.
+      DATABASE_URL: "postgresql+psycopg2://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}"
+
+      REDIS_URL: redis://redis:6379/0
+      RATE_LIMIT_ENABLED: "true"
+
+      # Both providers must be real in production. config.py refuses to boot with
+      # `console`, because a console provider silently discards every
+      # verification and reset link while EMAIL_VERIFICATION_REQUIRED still
+      # blocks login — a site nobody can sign in to.
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:?EMAIL_PROVIDER is required}
+      EMAIL_API_KEY: ${EMAIL_API_KEY:-}
+      EMAIL_SMTP_HOST: ${EMAIL_SMTP_HOST:-}
+      # Must have a numeric default, not an empty one: an unset variable
+      # interpolates to "", and pydantic refuses to parse "" as an int, so the
+      # container would fail to boot on a sendgrid deployment that legitimately
+      # has no SMTP configuration at all.
+      EMAIL_SMTP_PORT: ${EMAIL_SMTP_PORT:-587}
+      EMAIL_SMTP_USER: ${EMAIL_SMTP_USER:-}
+      EMAIL_SMTP_PASSWORD: ${EMAIL_SMTP_PASSWORD:-}
+      EMAIL_FROM_EMAIL: ${EMAIL_FROM_EMAIL:?EMAIL_FROM_EMAIL is required}
+      EMAIL_FROM_NAME: ${EMAIL_FROM_NAME:-Padhaanewala}
+      EMAIL_VERIFICATION_REQUIRED: ${EMAIL_VERIFICATION_REQUIRED:-true}
+
+      SMS_PROVIDER: ${SMS_PROVIDER:?SMS_PROVIDER is required}
+      SMS_API_KEY: ${SMS_API_KEY:?SMS_API_KEY is required}
+      SMS_SENDER_ID: ${SMS_SENDER_ID:?SMS_SENDER_ID is required}
+      SMS_DLT_TEMPLATE_ID: ${SMS_DLT_TEMPLATE_ID:?SMS_DLT_TEMPLATE_ID is required}
+
+      # Consumed by the entrypoint to run `alembic upgrade head` before the
+      # server starts. Concurrent replicas would race, which is why this is one
+      # container's job rather than something done by hand on the VPS.
+      RUN_MIGRATIONS: ${RUN_MIGRATIONS:-true}
+
+      # Reference data. `alembic upgrade head` creates the schema but not the
+      # rows, and without them the app is up and `/health` is 200 while
+      # registration 503s and every authenticated request 403s. Set true for the
+      # first deploy on a host, then set it back to false.
+      RUN_SEEDS: ${RUN_SEEDS:-false}
+    healthcheck:
+      # The image already declares one; Compose honours whichever is set here,
+      # and the image default is repeated so this file is readable on its own.
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      # `read_only: true` leaves nowhere to write. Python writes bytecode and
+      # temp files, so give it a small tmpfs rather than turning the root
+      # filesystem writable again.
+      - /tmp:rw,noexec,nosuid,size=64m
+    networks:
+      - internal
+
+  # ------------------------------------------------------------------------- #
+  # frontend — Next.js standalone, internal only
+  # ------------------------------------------------------------------------- #
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: padhaanewala-frontend:prod
+    restart: unless-stopped
+    # No `ports:`. Caddy is the only ingress.
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      # Server-side only. Read by the /api/v1 rewrite in next.config.ts, so the
+      # browser never sees it and it is the internal Compose service name, not a
+      # public URL. Setting it to the public address here would create a routing
+      # loop: frontend -> (public Caddy) -> frontend.
+      BACKEND_URL: http://backend:8000
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      # Next writes its image-optimizer cache under .next/cache. The directory
+      # itself is root-owned, so it is mounted over rather than the whole
+      # filesystem being made writable.
+      - /tmp:rw,noexec,nosuid,size=64m
+      - /app/.next/cache:rw,noexec,nosuid,size=256m
+    networks:
+      - internal
+
+  # ------------------------------------------------------------------------- #
+  # caddy — the only service with a published port
+  # ------------------------------------------------------------------------- #
+  caddy:
+    image: caddy@sha256:040e9f7480b80b6d4a7e5013a21159b950a63dcbdb956e38abe2387fb28d9ec0
+    restart: unless-stopped
+    depends_on:
+      frontend:
+        condition: service_healthy
+    ports:
+      # 80 is required and not optional: Caddy answers the ACME HTTP-01
+      # challenge on it before the 443 listener exists.
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?SITE_ADDRESS is required}
+      ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL is required}
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    # Caddy refuses to start on an invalid Caddyfile, and this is what stops a
+    # typo from taking the site down after a restart rather than at build time.
+    command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+    healthcheck:
+      # Caddy's own admin endpoint is disabled in the Caddyfile, so this asks the
+      # public listener for the edge health route instead.
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - internal
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

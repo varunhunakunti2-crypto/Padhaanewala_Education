@@ -18,6 +18,7 @@ from app.models.notification import Notification
 from app.models.otp_record import OtpRecord
 from app.models.placement import PlacementRecord
 from app.models.ranking import NIRFRanking, OtherRanking
+from app.models.refresh_token import RefreshToken
 from app.models.review import Review
 from app.models.saved_college import SavedCollege
 from app.models.scholarship import Scholarship
@@ -61,6 +62,7 @@ __all__ = [
     "OtherRanking",
     "OtpRecord",
     "PlacementRecord",
+    "RefreshToken",
     "Review",
     "Role",
     "SavedCollege",

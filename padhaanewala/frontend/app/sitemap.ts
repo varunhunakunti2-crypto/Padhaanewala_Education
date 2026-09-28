@@ -2,56 +2,58 @@ import type { MetadataRoute } from "next";
 import { SITE_URL } from "@/lib/site";
 import { resolveSlugs } from "@/lib/content";
 import { LEGAL_NAV } from "@/lib/legal";
+import { SITEMAP_PAGES, SITEMAP_SLUG_SECTIONS, isBetaHidden, type ChangeFrequency } from "@/lib/nav";
 
 export const revalidate = 3600;
 
 /**
- * Sitemap is generated from live catalogue slugs (API first, bundled fallback)
- * so newly published colleges/exams/posts appear without a code change.
+ * Sitemap is generated from the page manifest plus live catalogue slugs (API
+ * first, bundled fallback), so newly published colleges/exams/posts appear
+ * without a code change, and de-listing a route is a one-line change in
+ * `lib/nav.ts` rather than an edit here.
+ *
+ * Both sources are filtered through `isBetaHidden`. The filter is applied at read
+ * time rather than trusted to the manifest being kept in sync, because a route
+ * left in the sitemap while absent from every menu is exactly the drift this
+ * module exists to prevent.
  */
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const now = new Date().toISOString();
 
-  const [collegeSlugs, courseSlugs, examSlugs, blogSlugs, mockTestSlugs] = await Promise.all([
-    resolveSlugs("colleges"),
-    resolveSlugs("courses"),
-    resolveSlugs("exams"),
-    resolveSlugs("blogs"),
-    resolveSlugs("mock-tests").catch(() => [] as string[]),
-  ]);
+  const slugsBySection = new Map<string, string[]>();
+  await Promise.all(
+    SITEMAP_SLUG_SECTIONS.map(async ({ section }) => {
+      slugsBySection.set(section, await resolveSlugs(section));
+    }),
+  );
 
-  const page = (
-    path: string,
-    changeFrequency: "always" | "hourly" | "daily" | "weekly" | "monthly" | "yearly" | "never",
-    priority: number,
-  ) => ({ url: `${SITE_URL}${path}`, lastModified: now, changeFrequency, priority });
+  const page = (path: string, changeFrequency: ChangeFrequency, priority: number) => ({
+    url: `${SITE_URL}${path}`,
+    lastModified: now,
+    changeFrequency,
+    priority,
+  });
+
+  const staticPages = SITEMAP_PAGES.filter((p) => !isBetaHidden(p.path)).map((p) =>
+    page(p.path, p.changeFrequency, p.priority),
+  );
+
+  const detailPages = SITEMAP_SLUG_SECTIONS.flatMap(({ section, pathPrefix, changeFrequency, priority }) =>
+    (slugsBySection.get(section) ?? [])
+      .map((slug) => `${pathPrefix}/${slug}`)
+      .filter((path) => !isBetaHidden(path))
+      .map((path) => page(path, changeFrequency, priority)),
+  );
 
   return [
-    page("/", "weekly", 1),
-    page("/colleges", "weekly", 0.9),
-    ...collegeSlugs.map((slug) => page(`/colleges/${slug}`, "monthly", 0.8)),
-    page("/courses", "weekly", 0.7),
-    ...courseSlugs.map((slug) => page(`/courses/${slug}`, "monthly", 0.7)),
-    page("/college-predictor", "monthly", 0.8),
-    page("/compare", "monthly", 0.6),
-    page("/scholarships", "monthly", 0.7),
-    page("/exams", "weekly", 0.7),
-    ...examSlugs.map((slug) => page(`/exams/${slug}`, "weekly", 0.7)),
-    page("/mock-tests", "weekly", 0.6),
-    ...mockTestSlugs.map((slug) => page(`/mock-tests/${slug}`, "weekly", 0.5)),
-    page("/reviews", "monthly", 0.5),
-    page("/blog", "weekly", 0.6),
-    ...blogSlugs.map((slug) => page(`/blog/${slug}`, "monthly", 0.6)),
-    page("/ask-ai", "monthly", 0.6),
-    page("/admission", "monthly", 0.6),
-    page("/resources", "monthly", 0.5),
-    page("/contact", "yearly", 0.3),
-    page("/about", "yearly", 0.3),
-    page("/plan", "yearly", 0.3),
-    page("/login", "yearly", 0.3),
+    ...staticPages,
+    ...detailPages,
     // Legal documents are driven by the same registry as /legal/[slug], so a
     // new document appears here without a second edit.
-    ...LEGAL_NAV.map((entry) => page(entry.href, "yearly", 0.2)),
-    // /dashboard and /admin are intentionally absent — both are noindex.
+    ...LEGAL_NAV.filter((entry) => !isBetaHidden(entry.href)).map((entry) =>
+      page(entry.href, "yearly", 0.2),
+    ),
+    // /dashboard and /admin are intentionally absent — both are noindex, and
+    // both are in ROBOTS_DISALLOW.
   ];
 }

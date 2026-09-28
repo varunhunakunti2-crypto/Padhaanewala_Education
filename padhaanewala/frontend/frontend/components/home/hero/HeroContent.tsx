@@ -1,7 +1,7 @@
 "use client";
 
 import { motion, useReducedMotion } from "motion/react";
-import { Play, Flame, Sparkles } from "lucide-react";
+import { Flame, Scale } from "lucide-react";
 import Link from "next/link";
 import { HeroSearch } from "@/components/home/hero/HeroSearch";
 import { HeroStats } from "@/components/home/hero/HeroStats";
@@ -62,14 +62,16 @@ export function HeroContent({
         className="relative z-30 mt-7 max-w-2xl"
       >
         <HeroSearch />
-        {/* Popup predictor CTA */}
+        {/* Secondary CTA. This was the AI College Predictor, which is de-listed:
+            the predictor's ranking data (`cutoffs`, `seat_matrix`) is empty, so
+            the button led to a page that could only ever say "no results". */}
         <div className="mt-3">
           <Link
-            href="/college-predictor"
+            href="/compare"
             className="btn-uiverse-arrow text-sm font-bold"
           >
-            <Sparkles className="h-4 w-4" />
-            <span>AI College Predictor</span>
+            <Scale className="h-4 w-4" />
+            <span>Compare Colleges</span>
             <div className="arrow-wrapper">
               <div className="arrow" />
             </div>
@@ -95,27 +97,10 @@ export function HeroContent({
       {/* stats */}
       <HeroStats colleges={collegeCount} courses={courseCount} />
 
-      {/* watch how it works */}
-      <motion.div
-        initial={{ opacity: 0, y: reduce ? 0 : 14 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, delay: 0.95, ease: "easeOut" }}
-        className="mt-8"
-      >
-        <a
-          href="#how-it-works"
-          className="group inline-flex items-center gap-3.5"
-          aria-label="Watch how it works, 2 minute video explainer"
-        >
-          <span className="grid h-10 w-10 place-items-center rounded-full border border-white/40 bg-white/[0.08] text-white backdrop-blur transition-all duration-300 group-hover:border-purple-400 group-hover:shadow-[0_0_20px_rgba(168,85,247,0.5)]">
-            <Play className="h-4 w-4 fill-current ml-0.5" />
-          </span>
-          <span className="text-left">
-            <span className="block text-sm font-semibold text-white">Watch how it works</span>
-            <span className="block text-xs text-white/50">2 min</span>
-          </span>
-        </a>
-      </motion.div>
+      {/* The "Watch how it works — 2 min" video CTA used to live here, anchored
+          to `#how-it-works`. No element on any page carried that id, so the
+          site's largest call to action did nothing but claim a video exists.
+          Removed rather than repointed: there is no video to link to. */}
     </div>
   );
 }

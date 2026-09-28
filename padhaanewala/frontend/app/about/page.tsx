@@ -10,6 +10,8 @@ import {
   Globe,
   BadgeCheck,
 } from "lucide-react";
+import { AboutFacts } from "@/components/home/AboutFacts";
+import { SITE } from "@/lib/site";
 
 export const metadata: Metadata = {
   title: "About",
@@ -54,7 +56,7 @@ export default function AboutPage() {
           <div className="absolute -right-10 top-10 h-64 w-64 rounded-full bg-orange-300/15 dark:bg-orange-500/10 blur-3xl animate-float-slower" />
         </div>
         <span className="inline-flex items-center gap-2 rounded-full bg-purple-100 dark:bg-purple-900/50 px-4 py-1.5 text-xs font-bold text-purple-700 dark:text-purple-300">
-          <BadgeCheck className="h-3.5 w-3.5" /> Since 2024
+          <BadgeCheck className="h-3.5 w-3.5" /> Since {SITE.foundedYear}
         </span>
         <h1 className="font-display mx-auto mt-5 max-w-2xl text-3xl font-extrabold leading-tight tracking-tight text-purple-950 dark:text-white sm:text-4xl lg:text-[2.6rem]">
           Helping Indian students make smarter college decisions
@@ -116,35 +118,37 @@ export default function AboutPage() {
           </p>
           <ul className="mt-6 space-y-3 text-sm text-purple-100">
             <li className="flex items-center gap-3">
-              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/15">
-                <Mail className="h-4 w-4" />
-              </span>
-              hello@padhaanewala.in
+              <a
+                href={`mailto:${SITE.email}`}
+                className="flex items-center gap-3 transition hover:text-white hover:underline"
+              >
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/15">
+                  <Mail className="h-4 w-4" />
+                </span>
+                {SITE.email}
+              </a>
             </li>
             <li className="flex items-center gap-3">
-              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/15">
-                <Phone className="h-4 w-4" />
-              </span>
-              +91 90000 00000
+              <a
+                href={`tel:${SITE.phoneRaw}`}
+                className="flex items-center gap-3 transition hover:text-white hover:underline"
+              >
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/15">
+                  <Phone className="h-4 w-4" />
+                </span>
+                {SITE.phone}
+              </a>
             </li>
             <li className="flex items-center gap-3">
               <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/15">
                 <MapPin className="h-4 w-4" />
               </span>
-              Bengaluru, Karnataka, India
+              {SITE.address.locality}, {SITE.address.region}, India
             </li>
           </ul>
         </div>
         <div className="mt-8 lg:mt-0 lg:w-80">
-          <div className="rounded-2xl bg-white/10 p-6 backdrop-blur">
-            <h3 className="text-sm font-bold text-white">Quick facts</h3>
-            <dl className="mt-3 space-y-3 text-sm">
-              <div className="flex justify-between"><dt className="text-purple-200">Founded</dt><dd className="font-bold text-white">2024</dd></div>
-              <div className="flex justify-between"><dt className="text-purple-200">Colleges listed</dt><dd className="font-bold text-white">1,400+</dd></div>
-              <div className="flex justify-between"><dt className="text-purple-200">Students/month</dt><dd className="font-bold text-white">2.4 lakh+</dd></div>
-              <div className="flex justify-between"><dt className="text-purple-200">Headquarters</dt><dd className="font-bold text-white">Bengaluru, India</dd></div>
-            </dl>
-          </div>
+          <AboutFacts />
         </div>
       </div>
 

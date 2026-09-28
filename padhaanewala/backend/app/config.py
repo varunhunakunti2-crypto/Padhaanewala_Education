@@ -109,6 +109,17 @@ class Settings(BaseSettings):
     MAX_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
     # ---------------------------------------------------------------- Phase 3
+    # Session ledger. The refresh token is delivered as an HttpOnly cookie scoped
+    # to the auth path, never in a response body that any script in the origin
+    # can read. `MAX_ACTIVE_REFRESH_TOKENS` bounds *concurrent sessions*
+    # (rotation families), not token rows — one device refreshing every 25
+    # minutes writes ~1,700 rows over its 30-day life and must never be treated
+    # as 1,700 sessions.
+    REFRESH_COOKIE_NAME: str = "pdw_refresh"
+    REFRESH_COOKIE_PATH: str = "/api/v1/auth"
+    MAX_ACTIVE_REFRESH_TOKENS: int = 8
+
+    # ---------------------------------------------------------------- Phase 3
     # Email delivery. `console` renders the message to the log instead of
     # sending it, which is the only mode that can work before the (paid) provider
     # accounts exist. The provider value is deliberately *not* the switch that

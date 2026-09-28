@@ -30,7 +30,9 @@ export class ApiError extends Error {
 
 export interface AuthTokens {
   access_token: string;
-  refresh_token: string;
+  // Phase 3: the refresh token no longer travels in the body — it is an
+  // HttpOnly cookie the browser carries for us (see refreshAccessToken).
+  refresh_token: string | null;
   token_type?: string;
 }
 
@@ -180,6 +182,51 @@ export function clearAuth(): void {
 }
 
 export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+  return apiFetchImpl<T>(path, init, 1);
+}
+
+/** Single-flight refresh of the access token via the HttpOnly refresh cookie.
+ *
+ * Concurrent 401s share one in-flight request instead of hammering the backend
+ * with a refresh per caller. On failure every waiter gets `null` and the caller
+ * surfaces the original 401.
+ */
+let refreshPromise: Promise<string | null> | null = null;
+
+export async function refreshAccessToken(): Promise<string | null> {
+  if (refreshPromise) return refreshPromise;
+  refreshPromise = (async () => {
+    try {
+      const res = await fetch(`${API_BASE}/auth/refresh`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          // Same-origin POST; state the Origin so a future same-site policy
+          // does not refuse a legitimate refresh on impersonation grounds.
+          Origin: window.location.origin,
+        },
+        body: JSON.stringify({}),
+        credentials: "same-origin",
+      });
+      if (!res.ok) return null;
+      const data = (await res.json()) as AuthTokens;
+      if (!data.access_token) return null;
+      window.localStorage.setItem(TOKEN_KEY, data.access_token);
+      return data.access_token;
+    } catch {
+      return null;
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+  return refreshPromise;
+}
+
+async function apiFetchImpl<T>(
+  path: string,
+  init: RequestInit,
+  retriesLeft: number,
+): Promise<T> {
   const headers = new Headers(init.headers);
   if (init.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -189,7 +236,23 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
     headers.set("Authorization", `Bearer ${token}`);
   }
 
-  const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
+  let res = await fetch(`${API_BASE}${path}`, { ...init, headers });
+
+  // Phase 3: an expired access token is repaired once by rotating through the
+  // HttpOnly refresh cookie (automatically attached for same-origin). Auth
+  // endpoints are excluded: /auth/login legitimately 401s and must surface that.
+  if (
+    res.status === 401 &&
+    retriesLeft > 0 &&
+    !path.startsWith("/auth/") &&
+    getAccessToken()
+  ) {
+    const fresh = await refreshAccessToken();
+    if (fresh) {
+      headers.set("Authorization", `Bearer ${fresh}`);
+      res = await fetch(`${API_BASE}${path}`, { ...init, headers });
+    }
+  }
 
   if (!res.ok) {
     let detail: unknown;
@@ -236,6 +299,12 @@ export const authApi = {
   myProfile: () => apiFetch<BackendProfile>("/users/me/profile"),
 
   myRoles: () => apiFetch<UserRoles>("/users/me/roles"),
+
+  logout: () =>
+    apiFetch<StandardActionResponse>("/auth/logout", {
+      method: "POST",
+      body: JSON.stringify({ refresh_token: getRefreshToken() ?? undefined }),
+    }),
 };
 
 /** Roles that may open the admin console. Mirrors the backend `require_role` gates. */
@@ -296,6 +365,41 @@ async function stateLookup(): Promise<NonNullable<typeof statesCache>> {
     statesCache = await apiFetch<NonNullable<typeof statesCache>>("/locations/states");
   }
   return statesCache ?? [];
+}
+
+/**
+ * Every state the backend knows about, for populating a dropdown.
+ *
+ * Exported because the admission form needs a populated `<select>` rather than a
+ * bundled constant: `ALL_STATES` in `lib/data` is derived from the deliberately
+ * empty `COLLEGES` array and is therefore permanently `[]`, so a required
+ * "select a state" validation was rejecting every submission against a dropdown
+ * with no options. Throws on failure so the caller can show free text rather
+ * than an empty list.
+ */
+export async function fetchStateNames(): Promise<string[]> {
+  return (await stateLookup()).map((s) => s.name).filter(Boolean);
+}
+
+/**
+ * Course names, from the live catalogue, for the same reason as
+ * `fetchStateNames`. Falls back to the course's `degree` label when a row has no
+ * name, and de-duplicates case-insensitively so the dropdown does not list
+ * "B.Tech" and "B.Tech " as two options.
+ */
+export async function fetchCourseNames(): Promise<string[]> {
+  const list = await courseLookup();
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const row of list) {
+    const label = (row.name || row.degree || "").trim();
+    if (!label) continue;
+    const key = label.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(label);
+  }
+  return out;
 }
 
 export async function resolveCourseId(name: string): Promise<number | null> {
@@ -510,8 +614,24 @@ export interface AdminAuditLog {
   user_email: string | null;
 }
 
+export interface AdminRole {
+  id: number;
+  name: string;
+  description: string | null;
+}
+
+export interface AdminUpdateUserPayload {
+  is_active?: boolean;
+  role_ids?: number[];
+}
+
 export const adminApi = {
   users: (params = "") => apiFetch<AdminUser[]>(`/users${params}`),
+
+  roles: () => apiFetch<AdminRole[]>("/roles"),
+
+  updateUser: (id: number, payload: AdminUpdateUserPayload) =>
+    apiFetch<AdminUser>(`/users/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
 
   reviews: (params = "") => apiFetch<AdminReview[]>(`/reviews${params}`),
 

@@ -1,4 +1,5 @@
 ﻿from datetime import datetime, timedelta, timezone
+from dataclasses import dataclass
 from uuid import uuid4
 
 from jose import jwt
@@ -43,24 +44,50 @@ def create_access_token(subject: str | int, role: str) -> str:
     return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=ALGORITHM)
 
 
-def create_refresh_token(subject: str | int, role: str) -> str:
+@dataclass(frozen=True)
+class SignedRefreshToken:
+    """A signed refresh token plus the two claims the ledger needs.
+
+    `token` is what travels over the wire (the JWT string); `jti` and
+    `expires_at` are duplicated into `refresh_tokens` so a revocation sweep
+    never has to verify a signature to know what expired or which token to
+    find. Returning a bare string forced callers to re-decode it just to learn
+    its own identifier, which is how the ledger ended up never being fed.
+    """
+
+    token: str
+    jti: str
+    expires_at: datetime
+
+
+def new_token_family() -> str:
+    """A fresh rotation-chain identifier, minted at every *authentication*.
+
+    Refresh inherits its presenter's family, which is exactly what makes a
+    replayed token revocable as a unit: one chain, one device, one leak.
+    """
+    return uuid4().hex
+
+
+def create_refresh_token(subject: str | int, role: str) -> SignedRefreshToken:
     now = datetime.now(timezone.utc)
+    jti = uuid4().hex
+    expires_at = now + timedelta(days=settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS)
     payload = {
         "sub": str(subject),
         "role": role,
         "type": "refresh",
-        # `jti` is the token's unique id. Without it a refresh token is
-        # indistinguishable from every other refresh token ever issued to that
-        # user, so logout and rotation have nothing to act on. Phase 3 adds the
-        # `refresh_tokens` table that consumes this; minting it now means tokens
-        # issued between now and then are already revocable-in-principle.
-        "jti": uuid4().hex,
+        # `jti` is the token's unique id, consumed by the `refresh_tokens`
+        # ledger: rotation and logout act on exactly one issued token, and reuse
+        # detection needs the identifier to decide which family to revoke.
+        "jti": jti,
         "iat": now,
-        "exp": now + timedelta(days=settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS),
+        "exp": expires_at,
     }
-    return jwt.encode(
+    token = jwt.encode(
         payload, settings.JWT_REFRESH_SECRET_KEY, algorithm=ALGORITHM
     )
+    return SignedRefreshToken(token=token, jti=jti, expires_at=expires_at)
 
 
 def decode_token(token: str, secret: str | None = None) -> dict:

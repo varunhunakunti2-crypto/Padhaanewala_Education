@@ -228,6 +228,77 @@ def test_r4_8_admin_cannot_strand_a_peer_with_zero_roles(admin_account):
         assert RoleName.ADMIN.value in {r.name for r in db.get(User, tid).roles}
 
 
+def test_r4_9_admin_cannot_touch_a_super_admin_account(admin_account):
+    """An `admin` may read a super_admin account but never modify it.
+
+    Regression: the privilege ceiling locked role *changes* but left
+    `is_active` open, so an `admin` could still deactivate a peer super_admin
+    (or add lower roles to one). That is control over the account, so all
+    mutation is closed here.
+    """
+    target = _register("untouchable")
+    target_id = _set_roles(
+        target["email"], [RoleName.SUPER_ADMIN.value, RoleName.ADMIN.value]
+    )
+    headers = _login(admin_account["email"])
+
+    response = client.patch(
+        f"/api/v1/users/{target_id}",
+        json={"is_active": False},
+        headers=headers,
+    )
+    assert response.status_code == 403, response.text
+    assert "super_admin" in response.json()["detail"].lower()
+
+    response = client.patch(
+        f"/api/v1/users/{target_id}",
+        json={"role_ids": [_role_id(RoleName.CONTENT_MANAGER.value)]},
+        headers=headers,
+    )
+    assert response.status_code == 403, response.text
+
+    with SessionLocal() as db:
+        row = db.get(User, target_id)
+        assert row.is_active is True
+        assert {r.name for r in row.roles} == {
+            RoleName.SUPER_ADMIN.value,
+            RoleName.ADMIN.value,
+        }
+
+
+def test_r4_9_super_admin_can_still_deactivate_a_peer():
+    """The new lock must not leave the top role helpless over its peers."""
+    caller = _register("boss3")
+    _set_roles(caller["email"], [RoleName.SUPER_ADMIN.value])
+    peer = _register("boss4")
+    peer_id = _set_roles(peer["email"], [RoleName.SUPER_ADMIN.value])
+
+    with SessionLocal() as db:
+        others = (
+            db.query(User)
+            .join(User.roles)
+            .filter(
+                Role.name == RoleName.SUPER_ADMIN.value,
+                User.is_active.is_(True),
+                User.id != peer_id,
+            )
+            .count()
+        )
+
+    response = client.patch(
+        f"/api/v1/users/{peer_id}",
+        json={"is_active": False},
+        headers=_login(caller["email"]),
+    )
+    if others == 0:
+        # The peer was the last active super_admin — the lockout guard wins.
+        assert response.status_code == 400
+        assert "last active super_admin" in response.json()["detail"]
+    else:
+        assert response.status_code == 200, response.text
+        assert response.json()["is_active"] is False
+
+
 def test_r4_8_super_admin_can_still_demote_a_peer():
     """The removal rule must not be so strict that the top role is helpless.
 
@@ -658,9 +729,14 @@ def test_r3_2_refresh_token_is_rejected_as_access_token(student):
     login = client.post(
         "/api/v1/auth/login", json={"email": student["email"], "password": PASSWORD}
     ).json()
+    assert login["refresh_token"] is None, "Phase 3: refresh travels by cookie"
+    # Grab the actual refresh credential from the cookie jar so this test still
+    # asserts what it is named for, not "Bearer None".
+    refresh = client.cookies.get(settings.REFRESH_COOKIE_NAME)
+    assert refresh, "login must have set the refresh cookie"
     response = client.get(
         "/api/v1/users/me",
-        headers={"Authorization": f"Bearer {login['refresh_token']}"},
+        headers={"Authorization": f"Bearer {refresh}"},
     )
     assert response.status_code == 401
 
@@ -674,12 +750,15 @@ def test_r3_3_access_and_refresh_use_different_secrets(student):
     login = client.post(
         "/api/v1/auth/login", json={"email": student["email"], "password": PASSWORD}
     ).json()
+    refresh = client.cookies.get(settings.REFRESH_COOKIE_NAME)
+    assert refresh, "login must have set the refresh cookie"
+    assert login["access_token"]
 
     with pytest.raises(JWTError):
-        decode_token(login["refresh_token"], settings.JWT_REFRESH_SECRET_KEY)
+        decode_token(refresh, settings.JWT_REFRESH_SECRET_KEY)
         # decode_token defaults to the *access* secret, so the refresh token must
         # not validate there.
-        decode_token(login["refresh_token"])
+        decode_token(refresh)
         raise JWTError("refresh token validated under the access secret")
 
     with pytest.raises(JWTError):

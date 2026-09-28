@@ -1,8 +1,7 @@
 import Link from "next/link";
-import { useMemo } from "react";
-import { CalendarDays, ArrowRight, ExternalLink, Building2, FileText } from "lucide-react";
+import { CalendarDays, ArrowRight, ExternalLink, FileText } from "lucide-react";
 import { formatDate } from "@/lib/utils";
-import type { BlogPost, Exam, MockTest, Scholarship } from "@/lib/types";
+import type { BlogPost, Exam, Scholarship } from "@/lib/types";
 import { Badge } from "@/components/ui/Badge";
 import { Reveal } from "@/components/ui/Reveal";
 import { SectionHeading } from "@/components/ui/SectionHeading";
@@ -120,70 +119,6 @@ export function HomeScholarships({ scholarships }: { scholarships: Scholarship[]
   );
 }
 
-export function HomeMockTests({ tests }: { tests: MockTest[] }) {
-  // Group the catalogue by exam so the cards reflect what is actually published.
-  const subjects = useMemo(() => {
-    const byExam = new Map<string, MockTest[]>();
-    for (const t of tests) {
-      const key = t.exam || "General";
-      const bucket = byExam.get(key);
-      if (bucket) bucket.push(t);
-      else byExam.set(key, [t]);
-    }
-    return Array.from(byExam.entries())
-      .slice(0, 3)
-      .map(([exam, list]) => ({
-        name: `${exam} Mock Tests`,
-        desc: Array.from(new Set(list.map((t) => t.subject).filter(Boolean))).join(" · ") || "Mixed subjects",
-        href: list[0] ? `/mock-tests/${list[0].slug}` : "/mock-tests",
-        count: `${list.reduce((n, t) => n + (t.questionCount || 0), 0)} questions across ${list.length} ${list.length === 1 ? "test" : "tests"}`,
-      }));
-  }, [tests]);
-
-  if (subjects.length === 0) return null;
-
-  return (
-    <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8 lg:py-20">
-      <Reveal>
-        <SectionHeading
-          eyebrow="Practice & improve"
-          title="Free mock tests"
-          description="Real exam timer, instant solutions and detailed analysis."
-          action={
-            <Link href="/mock-tests" className="inline-flex items-center gap-1.5 text-sm font-semibold text-purple-700 hover:text-purple-800">
-              Start practicing <ArrowRight className="h-4 w-4" />
-            </Link>
-          }
-        />
-      </Reveal>
-
-      <div className="mt-8 grid grid-cols-1 gap-5 md:grid-cols-3">
-        {subjects.map((s) => (
-          <Reveal key={s.name}>
-            <Link
-              href={s.href}
-              className="group flex h-full flex-col rounded-3xl border border-slate-100 bg-white p-6 transition hover:-translate-y-0.5 hover:border-purple-200 hover:shadow-xl hover:shadow-purple-900/5"
-            >
-              <div className="flex items-center justify-between">
-                <span className="grid h-11 w-11 place-items-center rounded-2xl bg-purple-50 text-purple-600">
-                  <Building2 className="h-5 w-5" />
-                </span>
-                <Badge variant="purple">Free</Badge>
-              </div>
-              <h3 className="mt-4 font-display text-lg font-bold text-gray-900">{s.name}</h3>
-              <p className="mt-1 text-sm text-slate-500">{s.desc}</p>
-              <p className="mt-3 text-xs font-semibold text-purple-700">{s.count}</p>
-              <span className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-purple-700">
-                Take a mock <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-              </span>
-            </Link>
-          </Reveal>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 export function HomeArticles({ posts }: { posts: BlogPost[] }) {
   // Take the newest real posts so links can never point at a slug that 404s.
   const articles = posts.slice(0, 4);
@@ -255,10 +190,10 @@ export function FinalCta() {
               <ExternalLink className="h-4 w-4" /> Get Admission Help
             </Link>
             <Link
-              href="/college-predictor"
+              href="/colleges"
               className="inline-flex h-12 items-center gap-2 rounded-full border border-white/40 bg-white/10 px-7 text-sm font-semibold text-white backdrop-blur transition hover:bg-white/20"
             >
-              Try College Predictor
+              Browse Colleges
             </Link>
           </div>
         </div>

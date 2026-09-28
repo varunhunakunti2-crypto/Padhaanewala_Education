@@ -6,49 +6,19 @@ import {
   Menu,
   X,
   GraduationCap,
-  Compass,
-  Scale,
-  Award,
-  BookOpen,
-  Building2,
   LayoutDashboard,
-  Sparkles,
-  FileQuestion,
-  CalendarDays,
-  MessagesSquare,
-  PenLine,
-  Phone,
+  ShieldCheck,
+  Compass,
   ChevronDown,
   HelpCircle,
-  Newspaper,
   LogOut,
-  ShieldCheck,
 } from "lucide-react";
 import { cn, initialsOf } from "@/lib/utils";
 import { ButtonLink } from "@/components/ui/Button";
 import { usePathname, useRouter } from "next/navigation";
 import { ThemeToggle } from "@/components/layout/ThemeToggle";
 import { useApp } from "@/lib/context/AppContext";
-
-const PRIMARY_NAV = [
-  { label: "Colleges", href: "/colleges", icon: Building2 },
-  { label: "Courses", href: "/courses", icon: GraduationCap },
-  { label: "Predictor", href: "/college-predictor", icon: Sparkles },
-  { label: "Scholarships", href: "/scholarships", icon: Award },
-  { label: "Mock Tests", href: "/mock-tests", icon: FileQuestion },
-  { label: "Exams", href: "/exams", icon: CalendarDays },
-];
-
-const MORE_NAV = [
-  { label: "Compare", href: "/compare", icon: Scale },
-  { label: "AI Assistant", href: "/ask-ai", icon: MessagesSquare },
-  { label: "Reviews", href: "/reviews", icon: PenLine },
-  { label: "Blog", href: "/blog", icon: Newspaper },
-  { label: "Resources", href: "/resources", icon: BookOpen },
-  { label: "About", href: "/about", icon: Compass },
-  { label: "Contact", href: "/contact", icon: Phone },
-  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-];
+import { MORE_NAV, PRIMARY_NAV } from "@/lib/nav";
 
 export function Logo({ dark = false, showTagline = false }: { dark?: boolean; showTagline?: boolean }) {
   return (

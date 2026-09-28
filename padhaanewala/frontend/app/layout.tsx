@@ -6,7 +6,6 @@ import { Footer } from "@/components/layout/Footer";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { Providers } from "@/components/layout/Providers";
 import { WhatsAppFab } from "@/components/layout/WhatsAppFab";
-import { AskAiFab } from "@/components/layout/AskAiFab";
 import { SITE, SITE_URL } from "@/lib/site";
 
 const inter = Inter({
@@ -83,17 +82,36 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       suppressHydrationWarning
     >
       <body className="flex min-h-full flex-col bg-background pb-16 text-foreground transition-colors duration-300 lg:pb-0" suppressHydrationWarning>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem("cp_theme");if(t==="dark"||(!t&&window.matchMedia("(prefers-color-scheme: dark)").matches)){document.documentElement.classList.add("dark");document.documentElement.style.colorScheme="dark";}else{document.documentElement.classList.remove("dark");document.documentElement.style.colorScheme="light";}}catch(e){}})()`,
-          }}
-        />
+        {/*
+          Blocking, first in <body>, no `defer`/`async`. React renders a
+          non-hoisted <script> exactly where it sits, so this executes before
+          the first paint — which is the requirement for the dark-mode class to
+          be present before anything is drawn. It used to be an inline
+          `dangerouslySetInnerHTML` blob; Phase 5.1 moved it to
+          `public/theme-init.js` so the CSP in `proxy.ts` needs no
+          `'unsafe-inline'` in script-src for our own code. `next/script` is
+          deliberately not used: it appends to the document asynchronously,
+          which reintroduces the white flash.
+
+          `no-sync-scripts` is suppressed for the reason the file says: the rule
+          exists to stop render-blocking JavaScript, and this script's entire job
+          is to run before the first paint. It is 20 lines, it is served from our
+          own origin with a long cache lifetime, and nothing else in the document
+          runs before it. This is the one place the rule's default is wrong.
+        */}
+        {/* eslint-disable-next-line @next/next/no-sync-scripts */}
+        <script src="/theme-init.js" />
         <Providers>
           <Header />
           <main className="flex-1">{children}</main>
           <Footer />
           <BottomNav />
-          <AskAiFab />
+          {/* `AskAiFab` is no longer mounted. It was a site-wide floating link
+              into `/ask-ai`, which is de-listed: the route relays the user's raw
+              message to a metered third-party model with no rate limit, no input
+              cap and no timeout. A persistent global entry point to a metered
+              relay is a cost exposure on every page load, not just the page it
+              links to. */}
           <WhatsAppFab />
         </Providers>
       </body>

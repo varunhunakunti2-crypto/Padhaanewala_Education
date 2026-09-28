@@ -7,16 +7,20 @@ import {
 import { Button } from "@/components/ui/Button";
 import { Input, Label, Select } from "@/components/ui/FormField";
 import { useApp } from "@/lib/context/AppContext";
+import { SITE } from "@/lib/site";
 
 import { Panel, SectionHeading } from "@/components/admin/primitives";
 
 export function SettingsSection() {
   const { showToast } = useApp();
+  // Seeded from SITE so the admin console cannot drift from what the public site
+  // publishes. It previously offered `support@padhaanewala.com` — an address on
+  // a domain the site does not use — as the editable value.
   const fields = [
-    { label: "Site name", defaultValue: "padhaanewala" },
-    { label: "Support email", defaultValue: "support@padhaanewala.com" },
-    { label: "Contact phone", defaultValue: "+91 98765 43210" },
-    { label: "Counselling hours", defaultValue: "Mon–Sat, 9 AM – 8 PM" },
+    { label: "Site name", defaultValue: SITE.name },
+    { label: "Support email", defaultValue: SITE.email },
+    { label: "Contact phone", defaultValue: SITE.phone },
+    { label: "Counselling hours", defaultValue: "Mon–Sat, 9 AM – 8 PM IST" },
   ];
   return (
     <div className="space-y-5">

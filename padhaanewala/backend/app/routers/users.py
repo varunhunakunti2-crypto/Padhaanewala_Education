@@ -16,6 +16,7 @@ from app.schemas.auth import (
     UserRolesResponse,
 )
 from app.schemas.common import StandardResponse
+from app.services import session_service
 from app.utils import audit
 from app.utils.security import hash_password, verify_password
 
@@ -104,6 +105,11 @@ def change_my_password(
         )
 
     user.password_hash = hash_password(payload.new_password)
+    # R3.6 — a credential change ends every session on the account. The person
+    # who resets chooses a new password because they believe somebody else has
+    # access, and that somebody is holding a refresh token. Revoking it all here
+    # is the difference between "reset" and "reset to a broken expectation".
+    session_service.revoke_all_sessions(db, user.id, reason="password_change")
     # R5.3 — credential changes are privileged operations. The hash itself is
     # never logged, only the fact that it changed.
     audit.record(
@@ -193,6 +199,21 @@ def update_user_admin(
     caller_roles = audit.role_names(user)
     old_roles = audit.role_names(target)
     old_is_active = target.is_active
+
+    # R4.9 — a super_admin account may only be modified by another super_admin.
+    # The privilege ceiling already stopped an `admin` from *demoting* one, but
+    # `is_active` (and adding lower roles) had no such guard, so an `admin`
+    # could still deactivate a super_admin or alter its extra roles. All
+    # mutation — not just role changes — is closed. Reading stays open so
+    # admins can still audit who holds the top role.
+    if (
+        RoleName.SUPER_ADMIN.value in old_roles
+        and RoleName.SUPER_ADMIN.value not in caller_roles
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only a super_admin can modify a super_admin account",
+        )
 
     if user_id == user.id and payload.is_active is False:
         raise HTTPException(

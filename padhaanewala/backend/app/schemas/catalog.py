@@ -544,6 +544,11 @@ class MockTestUpdate(BaseModel):
 
 
 class EnquiryCreate(BaseModel):
+    # `extra="forbid"` turns a client-supplied `ip_address` (or any other
+    # unmodelled field) into a 422 instead of silently ignoring it — the field's
+    # absences is the point, see the `ip_address` comment below.
+    model_config = {"extra": "forbid"}
+
     name: str = Field(min_length=2, max_length=255)
     mobile: str = Field(min_length=10, max_length=20)
     email: str | None = Field(default=None, max_length=255)
@@ -552,7 +557,7 @@ class EnquiryCreate(BaseModel):
     state_id: int | None = None
     city: str | None = Field(default=None, max_length=100)
     qualification: str | None = Field(default=None, max_length=100)
-    message: str | None = None
+    message: str | None = Field(default=None, max_length=2000)
     source: str | None = Field(default=None, max_length=50)
     source_url: str | None = Field(default=None, max_length=255)
     utm_source: str | None = Field(default=None, max_length=100)
@@ -560,7 +565,10 @@ class EnquiryCreate(BaseModel):
     utm_campaign: str | None = Field(default=None, max_length=100)
     utm_content: str | None = Field(default=None, max_length=100)
     device_type: str | None = Field(default=None, max_length=20)
-    ip_address: str | None = Field(default=None, max_length=45)
+    # `ip_address` is deliberately absent (4.1): this is an unauthenticated
+    # endpoint, so a caller-supplied value is a lie about provenance and is
+    # rejected rather than silently dropped. The server derives it from the
+    # connection. The field also functionally rejects spoofed CRMs records.
 
 
 class EnquiryResponse(BaseModel):

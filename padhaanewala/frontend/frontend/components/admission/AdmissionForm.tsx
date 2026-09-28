@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Send,
   CheckCircle2,
@@ -17,9 +17,93 @@ import { Input, Label, Select } from "@/components/ui/FormField";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { useApp } from "@/lib/context/AppContext";
-import { ALL_STATES } from "@/lib/data";
-import { ALL_DEGREES } from "@/lib/data";
-import { ApiError, resolveCourseId, resolveStateId, submitEnquiry } from "@/lib/api";
+import {
+  ApiError,
+  fetchCourseNames,
+  fetchStateNames,
+  resolveCourseId,
+  resolveStateId,
+  submitEnquiry,
+} from "@/lib/api";
+
+/**
+ * Courses offered while the catalogue lookup is in flight.
+ *
+ * The live list from `/courses` replaces this the moment it answers, so these
+ * labels are only what a student sees for the first few hundred milliseconds.
+ * `resolveCourseId` is what turns a label into the `course_id` the API stores, so
+ * an unmatched label is not an error — the column is nullable and the enquiry
+ * still lands.
+ */
+const FALLBACK_COURSES = [
+  "B.Tech",
+  "B.E",
+  "B.Sc",
+  "BCA",
+  "MBA",
+  "BBA",
+  "B.Com",
+  "M.Tech",
+  "MBBS",
+  "BAMS",
+  "BHMS",
+  "B.Sc Nursing",
+  "B.Arch",
+  "B.Pharm",
+  "BDS",
+  "MDS",
+  "LLB",
+  "BA LLB",
+  "CA",
+  "CS",
+];
+
+/** The same, for states and union territories. */
+const FALLBACK_STATES = [
+  "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Delhi",
+  "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka",
+  "Kerala", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya", "Mizoram",
+  "Nagaland", "Odisha", "Puducherry", "Punjab", "Rajasthan", "Sikkim",
+  "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal",
+  "Andaman and Nicobar Islands", "Chandigarh", "Dadra and Nagar Haveli and Daman and Diu",
+  "Jammu and Kashmir", "Ladakh", "Lakshadweep",
+];
+
+type OptionState =
+  | { status: "loading" }
+  | { status: "ready"; options: string[] }
+  /** The lookup failed, so the field degrades to free text rather than blocking. */
+  | { status: "unavailable" };
+
+/**
+ * Resolve the live option list for a dropdown, or report that it is unavailable.
+ *
+ * The caller decides what to render while `loading` (here: the `FALLBACK_*` list,
+ * so the field is fillable immediately rather than disabled behind a network
+ * round trip). A zero-option dropdown paired with a required validation rule is
+ * a form that cannot be submitted, which is the defect this whole mechanism
+ * exists to prevent — so failure never resolves to an empty list.
+ */
+function useOptions(load: () => Promise<string[]>): OptionState {
+  const [state, setState] = useState<OptionState>({ status: "loading" });
+
+  useEffect(() => {
+    let active = true;
+    load()
+      .then((options) => {
+        if (!active) return;
+        setState(options.length > 0 ? { status: "ready", options } : { status: "unavailable" });
+      })
+      .catch(() => {
+        if (active) setState({ status: "unavailable" });
+      });
+    return () => {
+      active = false;
+    };
+  }, [load]);
+
+  return state;
+}
 
 const INITIAL = {
   name: "",
@@ -40,6 +124,24 @@ export function AdmissionForm({ compact = false }: { compact?: boolean }) {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
 
+  // `useCallback` keeps these references stable so `useOptions` does not tear
+  // down and re-run its effect on every render, which would refetch in a loop.
+  const loadCourses = useCallback(() => fetchCourseNames(), []);
+  const loadStates = useCallback(() => fetchStateNames(), []);
+
+  const courses = useOptions(loadCourses);
+  const states = useOptions(loadStates);
+
+  // Which fields were filled as free text because their lookup failed, so the
+  // value can be preserved in the enquiry's message instead of being dropped.
+  const freeText = useMemo(
+    () => ({
+      course: courses.status === "unavailable",
+      state: states.status === "unavailable",
+    }),
+    [courses.status, states.status],
+  );
+
   const set = (key: keyof typeof INITIAL) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [key]: e.target.value }));
 
@@ -48,8 +150,8 @@ export function AdmissionForm({ compact = false }: { compact?: boolean }) {
     if (form.name.trim().length < 2) e.name = "Enter your full name";
     if (!/^[6-9]\d{9}$/.test(form.mobile)) e.mobile = "Enter a valid 10-digit mobile number";
     if (form.email && !/^\S+@\S+\.\S+$/.test(form.email)) e.email = "Enter a valid email";
-    if (!form.course) e.course = "Select a course";
-    if (!form.state) e.state = "Select a state";
+    if (!form.course) e.course = "Select or type a course";
+    if (!form.state) e.state = "Select or type your state";
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -62,9 +164,20 @@ export function AdmissionForm({ compact = false }: { compact?: boolean }) {
     setSubmitting(true);
     try {
       const [course_id, state_id] = await Promise.all([
-        resolveCourseId(form.course),
-        resolveStateId(form.state),
+        freeText.course ? Promise.resolve(null) : resolveCourseId(form.course),
+        freeText.state ? Promise.resolve(null) : resolveStateId(form.state),
       ]);
+
+      // `EnquiryCreate` has no free-text column for course or state — both are
+      // nullable foreign keys. When the lookup that populates the dropdown failed
+      // the typed value would otherwise be discarded, so it is prepended to the
+      // message the counsellor reads. A lost state on a lead is a lost lead.
+      const parts: string[] = [];
+      if (freeText.state && form.state) parts.push(`State: ${form.state}`);
+      if (freeText.course && form.course) parts.push(`Course: ${form.course}`);
+      if (form.message) parts.push(form.message);
+      const message = parts.length ? parts.join("\n") : null;
+
       await submitEnquiry({
         name: form.name,
         mobile: form.mobile,
@@ -73,7 +186,7 @@ export function AdmissionForm({ compact = false }: { compact?: boolean }) {
         state_id,
         city: form.city || null,
         qualification: form.qualification || null,
-        message: form.message || null,
+        message,
         source: "website_admission_form",
         source_url: typeof window !== "undefined" ? window.location.href : undefined,
         device_type: typeof navigator !== "undefined" && navigator.userAgent.includes("Mobi") ? "mobile" : "desktop",
@@ -137,17 +250,27 @@ export function AdmissionForm({ compact = false }: { compact?: boolean }) {
         <Label htmlFor="enq-course" className="flex items-center gap-1.5">
           <GraduationCap className="h-3.5 w-3.5 text-purple-500" /> Course of interest *
         </Label>
-        <Select id="enq-course" value={form.course} onChange={set("course")} error={!!errors.course}>
-          <option value="">Select a course</option>
-          {ALL_DEGREES.map((d) => (
-            <option key={d} value={d}>{d}</option>
-          ))}
-          <option value="MBBS">MBBS</option>
-          <option value="BAMS">BAMS</option>
-          <option value="BHMS">BHMS</option>
-          <option value="B.Sc Nursing">B.Sc Nursing</option>
-          <option value="B.Arch">B.Arch</option>
-        </Select>
+        {courses.status === "unavailable" ? (
+          <>
+            <Input
+              id="enq-course"
+              value={form.course}
+              onChange={set("course")}
+              placeholder="Type your course, e.g. B.Tech"
+              error={!!errors.course}
+            />
+            <p className="text-xs text-gray-500">
+              We could not load the course list, so please type it in.
+            </p>
+          </>
+        ) : (
+          <Select id="enq-course" value={form.course} onChange={set("course")} error={!!errors.course}>
+            <option value="">Select a course</option>
+            {(courses.status === "ready" ? courses.options : FALLBACK_COURSES).map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </Select>
+        )}
         {errors.course && <p className="text-xs text-red-600">{errors.course}</p>}
       </div>
 
@@ -162,12 +285,27 @@ export function AdmissionForm({ compact = false }: { compact?: boolean }) {
         <Label htmlFor="enq-state" className="flex items-center gap-1.5">
           <MapPin className="h-3.5 w-3.5 text-purple-500" /> State *
         </Label>
-        <Select id="enq-state" value={form.state} onChange={set("state")} error={!!errors.state}>
-          <option value="">Select your state</option>
-          {ALL_STATES.map((s) => (
-            <option key={s} value={s}>{s}</option>
-          ))}
-        </Select>
+        {states.status === "unavailable" ? (
+          <>
+            <Input
+              id="enq-state"
+              value={form.state}
+              onChange={set("state")}
+              placeholder="Type your state, e.g. Karnataka"
+              error={!!errors.state}
+            />
+            <p className="text-xs text-gray-500">
+              We could not load the state list, so please type it in.
+            </p>
+          </>
+        ) : (
+          <Select id="enq-state" value={form.state} onChange={set("state")} error={!!errors.state}>
+            <option value="">Select your state</option>
+            {(states.status === "ready" ? states.options : FALLBACK_STATES).map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </Select>
+        )}
         {errors.state && <p className="text-xs text-red-600">{errors.state}</p>}
       </div>
 

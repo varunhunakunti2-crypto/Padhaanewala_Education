@@ -3,18 +3,52 @@ import Link from "next/link";
 import { Phone, Mail, MapPin, Clock, MessageCircle, HelpCircle, Headset } from "lucide-react";
 import { SectionHeading } from "@/components/ui/SectionHeading";
 import { AdmissionHelpButton } from "@/components/admission/AdmissionForm";
+import { SITE } from "@/lib/site";
 
 export const metadata: Metadata = {
   title: "Contact Us",
   description: "Get in touch with the Padhaanewala team for admissions, scholarships, partnerships or feedback.",
 };
 
-const CHANNELS = [
-  { icon: <Phone className="h-5 w-5" />, title: "Call us", value: "+91 98765 43210", sub: "Mon–Sat, 9 AM – 8 PM" },
-  { icon: <Mail className="h-5 w-5" />, title: "Email us", value: "support@padhaanewala.com", sub: "Replies within 24 hours" },
-  { icon: <MessageCircle className="h-5 w-5" />, title: "WhatsApp", value: "+91 98765 43210", sub: "Quick replies on WhatsApp" },
-  { icon: <MapPin className="h-5 w-5" />, title: "Office", value: "Bengaluru, Karnataka", sub: "Online counselling pan-India" },
+/**
+ * Read from `SITE` rather than retyped.
+ *
+ * This page published `support@padhaanewala.com` while the site is
+ * `padhaanewala.in` and every legal document names `hello@padhaanewala.in`. Mail
+ * to the `.com` address is delivered to a domain we may not even control, so the
+ * address a customer is told to use for support was not the address that
+ * reaches support. Three contact points for one small company is the same defect
+ * in a different guise, so there is now one.
+ */
+interface Channel {
+  readonly icon: React.ReactNode;
+  readonly title: string;
+  readonly value: string;
+  /** Absent for a channel with no address to link, e.g. the postal office. */
+  readonly href?: string;
+  readonly sub: string;
+}
+
+const CHANNELS: readonly Channel[] = [
+  { icon: <Phone className="h-5 w-5" />, title: "Call us", value: SITE.phone, href: `tel:${SITE.phoneRaw}`, sub: "Mon–Sat, 9 AM – 8 PM IST" },
+  { icon: <Mail className="h-5 w-5" />, title: "Email us", value: SITE.email, href: `mailto:${SITE.email}`, sub: "Replies within 24 hours on business days" },
+  { icon: <MessageCircle className="h-5 w-5" />, title: "WhatsApp", value: SITE.phone, href: `https://wa.me/${SITE.whatsapp}`, sub: "Quick replies on WhatsApp" },
+  { icon: <MapPin className="h-5 w-5" />, title: "Office", value: `${SITE.address.locality}, ${SITE.address.region}`, sub: "Online counselling pan-India" },
 ];
+
+const CHANNEL_CARD =
+  "rounded-2xl border border-slate-100 bg-white p-6 text-center transition hover:-translate-y-0.5 hover:border-purple-200 hover:shadow-lg hover:shadow-purple-900/5";
+
+function ChannelBody({ channel }: { channel: Channel }) {
+  return (
+    <>
+      <span className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-purple-50 text-purple-600">{channel.icon}</span>
+      <h3 className="mt-4 font-bold text-gray-900">{channel.title}</h3>
+      <p className="mt-1 text-sm font-semibold text-purple-700">{channel.value}</p>
+      <p className="mt-0.5 text-xs text-gray-400">{channel.sub}</p>
+    </>
+  );
+}
 
 export default function ContactPage() {
   return (
@@ -26,14 +60,23 @@ export default function ContactPage() {
       />
 
       <div className="mt-10 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-        {CHANNELS.map((c) => (
-          <div key={c.title} className="rounded-2xl border border-slate-100 bg-white p-6 text-center transition hover:-translate-y-0.5 hover:border-purple-200 hover:shadow-lg hover:shadow-purple-900/5">
-            <span className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-purple-50 text-purple-600">{c.icon}</span>
-            <h3 className="mt-4 font-bold text-gray-900">{c.title}</h3>
-            <p className="mt-1 text-sm font-semibold text-purple-700">{c.value}</p>
-            <p className="mt-0.5 text-xs text-gray-400">{c.sub}</p>
-          </div>
-        ))}
+        {CHANNELS.map((c) =>
+          c.href ? (
+            <a
+              key={c.title}
+              href={c.href}
+              target={c.href.startsWith("http") ? "_blank" : undefined}
+              rel={c.href.startsWith("http") ? "noreferrer" : undefined}
+              className={CHANNEL_CARD}
+            >
+              <ChannelBody channel={c} />
+            </a>
+          ) : (
+            <div key={c.title} className={CHANNEL_CARD}>
+              <ChannelBody channel={c} />
+            </div>
+          ),
+        )}
       </div>
 
       <div className="mt-10 grid grid-cols-1 gap-5 lg:grid-cols-3">
@@ -61,7 +104,12 @@ export default function ContactPage() {
           <Clock className="h-8 w-8 text-purple-600" />
           <h3 className="mt-4 font-display text-xl font-extrabold text-gray-900">Response time</h3>
           <p className="mt-2 text-sm text-gray-500">
-            We respond to every enquiry within 24 hours on business days.
+            We respond to every enquiry within 24 hours on business days. Complaints
+            about the site itself go to our Grievance Officer instead — see the{" "}
+            <Link href="/legal/grievance" className="font-semibold text-purple-700 hover:underline">
+              Grievance Redressal page
+            </Link>
+            , which sets out the escalation route and the 30-day response window.
           </p>
         </div>
       </div>

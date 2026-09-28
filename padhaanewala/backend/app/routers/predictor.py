@@ -12,10 +12,56 @@ from app.schemas.catalog import CollegeListItemResponse
 
 router = APIRouter(prefix="/api/v1/predictor", tags=["predictor"])
 
+#: Exam slugs accepted by `POST /predictor`. Canonical, and the values the
+#: frontend should send.
 VALID_EXAMS = ["neet-ug", "jee-main", "cuet-ug", "kcet"]
 VALID_CATEGORIES = ["General", "OBC", "EWS", "SC", "ST"]
 VALID_OWNERSHIP = ["any", "government", "private"]
 BUCKET_ORDER = ["highly-suitable", "possible", "reach", "not-eligible"]
+
+#: Human-readable exam names, matched against `slug` so the API accepts the
+#: field it advertises (BUG-02: `/predictor/exams` published `name` while
+#: `POST /predictor` rejected exactly that value). `name.lower()` -> slug.
+EXAM_NAME_TO_SLUG = {
+    "neet ug": "neet-ug",
+    "jee main": "jee-main",
+    "cuet ug": "cuet-ug",
+    "kcet": "kcet",
+    "kcet (karnataka)": "kcet",
+}
+
+#: Case-insensitive category lookup -> canonical label (BUG-02: a human-typed
+#: `"general"` was rejected because `VALID_CATEGORIES` is capitalised).
+_CATEGORY_TO_CANONICAL = {label.lower(): label for label in VALID_CATEGORIES}
+
+
+def _canonical_exam(value: str) -> str:
+    """Return the canonical exam slug for a slug or a published `name`."""
+    lowered = value.strip().lower()
+    if lowered in VALID_EXAMS:
+        return lowered
+    slug = EXAM_NAME_TO_SLUG.get(lowered)
+    if slug is not None:
+        return slug
+    raise HTTPException(
+        status_code=400,
+        detail=(
+            f"Invalid exam '{value}'. Must be one of: {', '.join(VALID_EXAMS)}"
+        ),
+    )
+
+
+def _canonical_category(value: str) -> str:
+    label = _CATEGORY_TO_CANONICAL.get(value.strip().lower())
+    if label is None:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Invalid category '{value}'. Must be one of: "
+                f"{', '.join(VALID_CATEGORIES)}"
+            ),
+        )
+    return label
 
 CATEGORY_CARRY_MAP = {
     "neet-ug": {"General": 45000, "OBC": 85000, "EWS": 65000, "SC": 160000, "ST": 210000},
@@ -86,16 +132,10 @@ def predict_colleges(
     payload: PredictorRequest,
     db: Session = Depends(get_db),
 ):
-    if payload.exam not in VALID_EXAMS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid exam '{payload.exam}'. Must be one of: {', '.join(VALID_EXAMS)}",
-        )
-    if payload.category not in VALID_CATEGORIES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid category '{payload.category}'. Must be one of: {', '.join(VALID_CATEGORIES)}",
-        )
+    # BUG-02: accept both the `slug` and the human-readable `name` the /exams
+    # endpoint advertises, and normalise `category` case-insensitively.
+    exam = _canonical_exam(payload.exam)
+    category = _canonical_category(payload.category)
     if payload.ownership not in VALID_OWNERSHIP:
         raise HTTPException(
             status_code=400,
@@ -106,8 +146,8 @@ def predict_colleges(
         select(Cutoff)
         .options(selectinload(Cutoff.college), selectinload(Cutoff.course))
         .where(
-            Cutoff.exam_name == payload.exam,
-            Cutoff.category == payload.category,
+            Cutoff.exam_name == exam,
+            Cutoff.category == category,
         )
     )
     if payload.course_id:
@@ -117,8 +157,8 @@ def predict_colleges(
 
     if not cutoffs:
         return PredictorResponse(
-            exam=payload.exam,
-            category=payload.category,
+            exam=exam,
+            category=category,
             rank=payload.rank,
             total_results=0,
             results=[],
@@ -148,7 +188,7 @@ def predict_colleges(
     college_map = {c.id: c for c in colleges}
 
     seat_query = select(SeatMatrix).where(
-        SeatMatrix.exam == payload.exam,
+        SeatMatrix.exam == exam,
     )
     if payload.course_id:
         seat_query = seat_query.where(SeatMatrix.course_id == payload.course_id)
@@ -277,8 +317,8 @@ def predict_colleges(
     )
 
     return PredictorResponse(
-        exam=payload.exam,
-        category=payload.category,
+        exam=exam,
+        category=category,
         rank=payload.rank,
         total_results=len(results),
         results=results,

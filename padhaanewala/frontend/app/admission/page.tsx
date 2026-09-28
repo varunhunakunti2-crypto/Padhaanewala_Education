@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { AdmissionForm } from "@/components/admission/AdmissionForm";
 import { SectionHeading } from "@/components/ui/SectionHeading";
+import { SITE } from "@/lib/site";
 
 export const metadata: Metadata = {
   title: "Get Admission Help",
@@ -56,16 +57,31 @@ export default function AdmissionPage() {
           <div className="mt-8 space-y-3 rounded-2xl border border-slate-100 bg-white p-6">
             <p className="font-bold text-gray-900">Prefer to talk directly?</p>
             <p className="flex items-center gap-2 text-sm text-gray-600">
-              <Phone className="h-4 w-4 text-purple-600" /> +91 98765 43210 (Mon–Sat, 9 AM – 8 PM)
+              <Phone className="text-purple-600" />
+              <a href={`tel:${SITE.phoneRaw}`} className="hover:underline">
+                {SITE.phone}
+              </a>{" "}
+              (Mon–Sat, 9 AM – 8 PM IST)
             </p>
             <p className="flex items-center gap-2 text-sm text-gray-600">
-              <Mail className="h-4 w-4 text-purple-600" /> counsellor@padhaanewala.com
+              <Mail className="text-purple-600" />
+              <a href={`mailto:${SITE.email}`} className="hover:underline">
+                {SITE.email}
+              </a>
             </p>
             <p className="flex items-center gap-2 text-sm text-gray-600">
-              <MessageSquare className="h-4 w-4 text-purple-600" /> WhatsApp us on the same number
+              <MessageSquare className="text-purple-600" />
+              <a
+                href={`https://wa.me/${SITE.whatsapp}`}
+                target="_blank"
+                rel="noreferrer"
+                className="hover:underline"
+              >
+                WhatsApp us on the same number
+              </a>
             </p>
             <p className="flex items-center gap-2 text-sm text-gray-600">
-              <MapPin className="h-4 w-4 text-purple-600" /> Counselling available pan-India (online)
+              <MapPin className="text-purple-600" /> Counselling available pan-India (online)
             </p>
           </div>
         </div>

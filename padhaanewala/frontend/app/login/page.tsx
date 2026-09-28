@@ -246,9 +246,9 @@ export default function LoginPage() {
         </h1>
         <p className="mt-2 text-center text-sm text-gray-500">
           {mode === "login"
-            ? "Enter your email and password to access your dashboard."
+            ? "Enter your email and password to access your account."
             : mode === "signup"
-              ? "Join 2.4 lakh+ students exploring colleges on Padhaanewala."
+              ? "Create a free account to save colleges across devices."
               : otpStage === "mobile"
                 ? "We will text a one-time code to the mobile on your account."
                 : "Enter the code we just sent by SMS."}

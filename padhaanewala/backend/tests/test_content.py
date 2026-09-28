@@ -163,6 +163,10 @@ def test_blog_lifecycle(admin_token):
 
     public = client.get(f"/api/v1/blogs/{blog['slug']}")
     assert public.status_code == 200
+    # 4.6 — GET no longer mutates the counter; the explicit view endpoint owns it.
+    assert public.json()["view_count"] == 0
+    assert client.post(f"/api/v1/blogs/{blog['slug']}/view").status_code == 204
+    public = client.get(f"/api/v1/blogs/{blog['slug']}")
     assert public.json()["view_count"] == 1
 
     listing = client.get("/api/v1/blogs")

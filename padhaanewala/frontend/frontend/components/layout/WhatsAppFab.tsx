@@ -3,13 +3,14 @@
 // Floating WhatsApp bubble — self-contained, no dependencies beyond lucide (already used app-wide)
 // and the same purple design tokens as the rest of the UI. Rendered once by the root layout.
 
-const WHATSAPP_NUMBER = "919876543210"; // padhaanewala support — India +91
+import { SITE } from "@/lib/site";
+
 const WHATSAPP_MSG = encodeURIComponent(
-  "Hi padhaanewala! I have a question about college planning / mock tests.",
+  "Hi! I have a question about college admissions on padhaanewala.",
 );
 
 export function WhatsAppFab() {
-  const href = `https://wa.me/${WHATSAPP_NUMBER}?text=${WHATSAPP_MSG}`;
+  const href = `https://wa.me/${SITE.whatsapp}?text=${WHATSAPP_MSG}`;
   return (
     <a
       href={href}
