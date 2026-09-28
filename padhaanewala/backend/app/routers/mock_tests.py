@@ -24,7 +24,9 @@ from app.schemas.catalog import (
     StartAttemptResponse,
     SubmitAttemptRequest,
     TestAttemptResponse,
+    TestQuestionCreate,
     TestQuestionResponse,
+    TestQuestionUpdate,
     TestResultResponse,
 )
 
@@ -462,6 +464,148 @@ def get_mock_test_questions(mock_test_ref: str, db: Session = Depends(get_db)):
         )
         for q in questions
     ]
+
+
+def _next_question_sort_order(db: Session, mock_test_id: int) -> int:
+    """One past the highest order in the paper, so an append lands last."""
+    highest = db.scalar(
+        select(func.max(TestQuestion.sort_order)).where(
+            TestQuestion.mock_test_id == mock_test_id
+        )
+    )
+    return (highest or 0) + 1
+
+
+def _find_question(
+    db: Session, mock_test_ref: str, question_id: int
+) -> TestQuestion:
+    """Resolve a question *within* its paper.
+
+    Scoping to the paper is what stops a question being edited through some other
+    paper's URL, since ``{mock_test_ref}`` accepts an id or a slug and the two
+    routes are otherwise independent.
+    """
+    mock_test = _find_mock_test_admin(db, mock_test_ref)
+    if mock_test is None:
+        raise HTTPException(status_code=404, detail="Mock test not found")
+    question = db.get(TestQuestion, question_id)
+    if question is None or question.mock_test_id != mock_test.id:
+        raise HTTPException(status_code=404, detail="Question not found")
+    return question
+
+
+def _check_gradeable(data: dict) -> None:
+    """Reject a question the autograder could never score, with a 422.
+
+    Lives in the router rather than the schema because it has to judge the
+    *merged* state: a partial update that narrows ``options`` must still be
+    caught when it strands the key outside them.
+
+    The case worth having is an ``mcq`` whose ``correct_answer`` is not one of its
+    options. It is accepted by every layer, the autograder compares against the
+    options, finds no match, and marks every submission of that question wrong --
+    permanently, with nothing anywhere reporting a problem.
+    """
+    if data["question_type"] != QuestionType.MCQ.value:
+        # `numeric` is allowed to leave `numeric_answer` null: a question with no
+        # key yet is a legitimate draft, and it is never auto-graded until it has
+        # one. `tolerance >= 0` is already enforced by the schema. `essay` is
+        # routed to manual review, so it needs neither options nor a key.
+        return
+
+    options = data.get("options") or []
+    if not options:
+        raise HTTPException(
+            status_code=422, detail="An mcq question needs at least one option"
+        )
+    correct = data.get("correct_answer")
+    if correct is None:
+        raise HTTPException(
+            status_code=422, detail="An mcq question needs a correct_answer"
+        )
+    if correct not in options:
+        raise HTTPException(
+            status_code=422,
+            detail=f"correct_answer {correct!r} is not one of the options",
+        )
+
+
+@router.post(
+    "/{mock_test_ref}/questions",
+    response_model=AdminQuestionResponse,
+    status_code=201,
+    dependencies=[Depends(require_role(*CONTENT_ROLES))],
+)
+def create_mock_test_question(
+    mock_test_ref: str, payload: TestQuestionCreate, db: Session = Depends(get_db)
+):
+    mock_test = _find_mock_test_admin(db, mock_test_ref)
+    if mock_test is None:
+        raise HTTPException(status_code=404, detail="Mock test not found")
+
+    data = payload.model_dump()
+    _check_gradeable(data)
+    if data.get("sort_order") is None:
+        data["sort_order"] = _next_question_sort_order(db, mock_test.id)
+
+    question = TestQuestion(mock_test_id=mock_test.id, **data)
+    db.add(question)
+    db.commit()
+    db.refresh(question)
+    return question
+
+
+@router.put(
+    "/{mock_test_ref}/questions/{question_id}",
+    response_model=AdminQuestionResponse,
+    dependencies=[Depends(require_role(*CONTENT_ROLES))],
+)
+def update_mock_test_question(
+    mock_test_ref: str,
+    question_id: int,
+    payload: TestQuestionUpdate,
+    db: Session = Depends(get_db),
+):
+    question = _find_question(db, mock_test_ref, question_id)
+    data = payload.model_dump(exclude_unset=True)
+
+    # Validate the merged state, not just the fields being changed, so narrowing
+    # the options cannot leave a key stranded outside them.
+    _check_gradeable(
+        {
+            "question_type": data.get("question_type", question.question_type),
+            "options": data.get("options", question.options),
+            "correct_answer": data.get("correct_answer", question.correct_answer),
+        }
+    )
+
+    for field, value in data.items():
+        setattr(question, field, value)
+    db.commit()
+    db.refresh(question)
+    return question
+
+
+@router.delete(
+    "/{mock_test_ref}/questions/{question_id}",
+    status_code=204,
+    dependencies=[Depends(require_role(*CONTENT_ROLES))],
+)
+def delete_mock_test_question(
+    mock_test_ref: str, question_id: int, db: Session = Depends(get_db)
+):
+    """Soft delete, matching what ``DELETE /{mock_test_ref}`` does to a paper.
+
+    Hard-deleting the row is not available here: ``test_answers.question_id`` is
+    ``ondelete="CASCADE"``, so removing a question would cascade away every
+    answer to it across every attempt by every student, and silently rewrite
+    results already shown to them. ``is_active`` drops it from the paper while
+    leaving the history intact.
+    """
+    question = _find_question(db, mock_test_ref, question_id)
+    question.is_active = False
+    db.commit()
+
 
 @router.post("/{mock_test_ref}/start", response_model=StartAttemptResponse)
 def start_mock_test(

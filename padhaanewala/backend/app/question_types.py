@@ -22,11 +22,14 @@ Enforcement is deliberately split, because the two tables are populated in two
 different ways:
 
 * ``mock_tests`` is written by the API, so Pydantic validation on
-  ``MockTestCreate``/``MockTestUpdate`` is enough to keep it clean.
-* ``test_questions`` has no create endpoint and no seed script -- rows are
-  inserted by hand or by an ad-hoc script. There is no Pydantic layer in that
-  path at all, so the DB CHECK constraint is the *only* thing that can catch a
-  typo. That is the one place here where a constraint earns its keep.
+    ``MockTestCreate``/``MockTestUpdate`` is enough to keep it clean.
+* ``test_questions`` is now written by the API too -- ``TestQuestionCreate`` and
+    ``TestQuestionUpdate`` back ``POST``/``PUT /{mock_test_ref}/questions/{id}``
+    -- so a typo is caught at authoring time. Rows still also arrive by hand or
+    by an ad-hoc script, and those bypass Pydantic entirely, so the DB CHECK
+    constraint is retained as the last line of defence for that path rather than
+    dropped.
+
 
 Adding a type: add it to :class:`QuestionType`, then extend both CHECK
 constraints via a migration.

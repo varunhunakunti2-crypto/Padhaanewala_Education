@@ -409,6 +409,75 @@ class MockTestAdminDetailResponse(MockTestResponse):
     questions: list[AdminQuestionResponse] = []
 
 
+class TestQuestionCreate(BaseModel):
+    """Body for ``POST /{mock_test_ref}/questions``.
+
+    Every bound here mirrors a column, and that is not decoration: an oversized
+    value would otherwise reach Postgres and come back as a 500 failing the whole
+    request, which is exactly the failure mode the ``selected_answer`` bound
+    already had. ``Numeric(6, 2)`` holds five integer digits, ``Numeric(8, 4)``
+    holds four, and so on.
+
+    The cross-field grading rules are deliberately *not* here. They live in the
+    router, because a partial update has to be judged against the question's
+    existing state and a schema cannot see it.
+    """
+
+    question_text: str = Field(min_length=1)
+    question_type: QuestionType = QuestionType.MCQ
+    options: list[str] | None = None
+    correct_answer: str | None = Field(default=None, max_length=255)
+    subject: str | None = Field(default=None, max_length=100)
+    topic: str | None = Field(default=None, max_length=255)
+    numeric_answer: Decimal | None = Field(
+        default=None, ge=Decimal("-99999999.9999"), le=Decimal("99999999.9999")
+    )
+    # Absolute margin, so it cannot be negative.
+    tolerance: Decimal = Field(
+        default=Decimal("0"), ge=Decimal("0"), le=Decimal("9999.9999")
+    )
+    marks: Decimal = Field(
+        default=Decimal("1"), ge=Decimal("0"), le=Decimal("9999.99")
+    )
+    negative_marks: Decimal = Field(
+        default=Decimal("0"), ge=Decimal("0"), le=Decimal("9999.99")
+    )
+    difficulty: str = Field(default="medium", max_length=20)
+    explanation: str | None = None
+    #: Optional. Left unset, the router appends after the highest existing order.
+    sort_order: int | None = None
+
+
+class TestQuestionUpdate(BaseModel):
+    """Body for ``PUT /{mock_test_ref}/questions/{question_id}``.
+
+    Every field optional and judged only when present, so a caller can correct
+    one field without resending the question. ``question_text`` keeps
+    ``min_length`` because an empty question is never what the caller meant.
+    """
+
+    question_text: str | None = Field(default=None, min_length=1)
+    question_type: QuestionType | None = None
+    options: list[str] | None = None
+    correct_answer: str | None = Field(default=None, max_length=255)
+    subject: str | None = Field(default=None, max_length=100)
+    topic: str | None = Field(default=None, max_length=255)
+    numeric_answer: Decimal | None = Field(
+        default=None, ge=Decimal("-99999999.9999"), le=Decimal("99999999.9999")
+    )
+    tolerance: Decimal | None = Field(
+        default=None, ge=Decimal("0"), le=Decimal("9999.9999")
+    )
+    marks: Decimal | None = Field(default=None, ge=Decimal("0"), le=Decimal("9999.99"))
+    negative_marks: Decimal | None = Field(
+        default=None, ge=Decimal("0"), le=Decimal("9999.99")
+    )
+    difficulty: str | None = Field(default=None, max_length=20)
+    explanation: str | None = None
+    sort_order: int | None = None
+    is_active: bool | None = None
+
+
 class ExamCreate(BaseModel):
     name: str = Field(min_length=2, max_length=255)
     conducting_authority: str = Field(min_length=2, max_length=255)

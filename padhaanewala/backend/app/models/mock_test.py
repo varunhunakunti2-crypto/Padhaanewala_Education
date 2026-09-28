@@ -24,9 +24,10 @@ from app.question_types import ALL_QUESTION_TYPES
 #: request schemas -- where it can be a 422 -- rather than left to the column.
 SELECTED_ANSWER_MAX_LENGTH = 255
 
-#: Shared by both tables. `test_questions` is the one that matters: it has no
-#: create endpoint and no seed script, so rows arrive by hand or ad-hoc script
-#: and this constraint is the only guard on the value. A typo would otherwise
+#: Shared by both tables. `test_questions` is the one that matters: the API
+#: validates the value via `TestQuestionCreate`/`TestQuestionUpdate`, but rows
+#: still also arrive by hand or by an ad-hoc script, which bypasses Pydantic, so
+#: this constraint stays as the last line of defence. A typo would otherwise
 #: land unnoticed and silently withhold marks at grading time.
 _QUESTION_TYPE_CHECK = "question_type IN ({})".format(
     ", ".join(f"'{value}'" for value in ALL_QUESTION_TYPES)
