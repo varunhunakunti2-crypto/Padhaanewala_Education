@@ -1,15 +1,18 @@
 """Pytest bootstrap.
 
-Three safety measures are applied before the application is imported:
+Four safety measures are applied before the application is imported:
 
 1. Rate limiting is disabled so auth tests are not throttled by Redis.
 2. Email verification is not enforced at login, because registration creates
    users with `is_email_verified=False` and roughly fifteen tests across eight
-   files register-then-login expecting tokens. The gate itself is still covered
-   explicitly in `test_otp.py`, which re-enables it per-test via monkeypatch.
-3. The suite runs inside a dedicated PostgreSQL **schema** rather than the
-   default `public` schema. Previously it ran against the developer database and
-   executed `TRUNCATE TABLE users CASCADE` on it, silently destroying real data.
+    files register-then-login expecting tokens. The gate itself is still covered
+    explicitly in `test_otp.py`, which re-enables it per-test via monkeypatch.
+3. The `Host` header the suite presents is allowlisted, because
+    `TrustedHostMiddleware` otherwise rejects TestClient's default
+    `testserver` with a bodiless 400 before any route runs.
+4. The suite runs inside a dedicated PostgreSQL **schema** rather than the
+    default `public` schema. Previously it ran against the developer database and
+    executed `TRUNCATE TABLE users CASCADE` on it, silently destroying real data.
 
 `PADHAANEWALA_SCHEMA` is honoured by `app/database.py`, so the FastAPI app, the
 seed scripts and Alembic all resolve tables inside the scratch schema.
@@ -30,6 +33,17 @@ import sys
 os.environ["RATE_LIMIT_ENABLED"] = "false"
 os.environ["EMAIL_VERIFICATION_REQUIRED"] = "false"
 os.environ.setdefault("PADHAANEWALA_SCHEMA", "test_suite")
+
+# `TrustedHostMiddleware` rejects a `Host` header outside
+# `settings.allowed_host_list`, which derives to `['localhost']` while
+# ALLOWED_HOSTS is empty. Starlette's TestClient defaults to base_url
+# "http://testserver", so it sent `Host: testserver` and every request came back
+# 400 with an empty body -- the whole suite failed at its first register() call.
+# ALLOWED_HOSTS is the supported override for exactly this, so name the hosts the
+# suite actually presents rather than patching the middleware or the client. The
+# production guard that refuses to start without an explicit ALLOWED_HOSTS is
+# untouched, and this only widens the list for the test process.
+os.environ["ALLOWED_HOSTS"] = "testserver,localhost,127.0.0.1"
 
 # Make the repo root importable regardless of the invocation directory.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
