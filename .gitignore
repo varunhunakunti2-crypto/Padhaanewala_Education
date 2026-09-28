@@ -1,0 +1,19 @@
+# ============================================================================
+# ROOT-LEVEL IGNORE RULES
+#
+# The sub-projects keep their own rules (padhaanewala/.gitignore and
+# padhaanewala/frontend/.gitignore). Those apply to everything beneath them, so
+# this file exists only to cover paths at the repository root -- chiefly env
+# files created there, which nothing was protecting.
+# ============================================================================
+
+# Environment files - never commit real values
+.env*
+!.env.example
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+.idea/
