@@ -107,7 +107,16 @@ python scripts/seed_universities.py
 python scripts/seed_colleges_courses.py
 python scripts/seed_scholarships.py
 python scripts/seed_exams.py
+python scripts/seed_mock_tests.py
 ```
+
+`seed_mock_tests.py` loads the papers and questions from
+`frontend/lib/data/mockTests.json` — the same file the frontend imports, so the
+two cannot drift. It is idempotent: an existing paper is left alone. `--refresh`
+rebuilds the questions of a paper that already exists, and is destructive,
+because deleting questions cascades to `test_answers` and so voids the saved
+answers of every attempt taken on it. Run `seed_exams.py` first; a paper whose
+exam is missing is still loaded, just without the `exam_id` link.
 
 ### 4b. Bootstrap an admin account
 
