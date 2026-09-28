@@ -30,6 +30,7 @@ import {
   BookOpen,
   Building2,
   CalendarDays,
+  ClipboardCheck,
   Compass,
   GraduationCap,
   Home,
@@ -54,7 +55,6 @@ export interface NavItem {
  *
  * Each one is a page whose backing data is empty or whose feature is not ready:
  *
- *  - `/mock-tests`         `mock_tests` and `test_questions` hold 0 rows.
  *  - `/college-predictor`  `cutoffs` and `seat_matrix` hold 0 rows, so the
  *                          client-side scorer has no admissions data to read.
  *  - `/plan`               The exam planner is unreachable from navigation and
@@ -63,11 +63,14 @@ export interface NavItem {
  *  - `/dashboard`          A signed-in account page, not a public feature. It
  *                          stays reachable after login but is out of the nav.
  *
+ * `/mock-tests` was on this list while `mock_tests` and `test_questions` held 0
+ * rows. Both are populated now, so it is re-listed: it appears in `PRIMARY_NAV`,
+ * the sitemap, and without `BETA_NOINDEX`.
+ *
  * Adding a route here requires nothing else: the nav arrays, the sitemap and
  * `robots.ts` all derive from this list. Removing one is a one-line revert.
  */
 export const BETA_HIDDEN_ROUTES = [
-  "/mock-tests",
   "/college-predictor",
   "/plan",
   "/ask-ai",
@@ -96,6 +99,7 @@ export const BETA_NOINDEX = { robots: { index: false, follow: false } } as const
 export const PRIMARY_NAV: readonly NavItem[] = [
   { label: "Colleges", href: "/colleges", icon: Building2 },
   { label: "Courses", href: "/courses", icon: GraduationCap },
+  { label: "Mock Tests", href: "/mock-tests", icon: ClipboardCheck },
   { label: "Scholarships", href: "/scholarships", icon: Award },
   { label: "Exams", href: "/exams", icon: CalendarDays },
 ];
@@ -207,6 +211,7 @@ export const SITEMAP_PAGES: readonly SitemapPage[] = [
   { path: "/colleges", changeFrequency: "weekly", priority: 0.9 },
   { path: "/courses", changeFrequency: "weekly", priority: 0.7 },
   { path: "/exams", changeFrequency: "weekly", priority: 0.7 },
+  { path: "/mock-tests", changeFrequency: "weekly", priority: 0.7 },
   { path: "/scholarships", changeFrequency: "monthly", priority: 0.7 },
   { path: "/compare", changeFrequency: "monthly", priority: 0.6 },
   { path: "/reviews", changeFrequency: "monthly", priority: 0.5 },
@@ -221,15 +226,17 @@ export const SITEMAP_PAGES: readonly SitemapPage[] = [
 /**
  * Catalogue slugs enumerated into the sitemap.
  *
- * Each entry names the section whose live slugs are walked. `/mock-tests` is
- * absent because the route is de-listed: listing `/mock-tests/jee-main-2026`
- * for a test that cannot be taken is worse than not listing the section at all.
+ * Each entry names the section whose live slugs are walked. `/mock-tests` was
+ * absent while the route was de-listed, because listing a paper that could not
+ * be taken is worse than not listing the section. It is back now that the
+ * section is populated and takeable.
  */
 export const SITEMAP_SLUG_SECTIONS = [
   { section: "colleges", pathPrefix: "/colleges", changeFrequency: "monthly", priority: 0.8 },
   { section: "courses", pathPrefix: "/courses", changeFrequency: "monthly", priority: 0.7 },
   { section: "exams", pathPrefix: "/exams", changeFrequency: "weekly", priority: 0.7 },
   { section: "blogs", pathPrefix: "/blog", changeFrequency: "monthly", priority: 0.6 },
+  { section: "mock-tests", pathPrefix: "/mock-tests", changeFrequency: "weekly", priority: 0.7 },
 ] as const satisfies readonly {
   section: string;
   pathPrefix: string;
