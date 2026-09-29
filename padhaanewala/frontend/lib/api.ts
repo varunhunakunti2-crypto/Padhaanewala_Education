@@ -2,9 +2,116 @@ import type { StudentProfile } from "@/lib/types";
 
 export const API_BASE = (process.env.NEXT_PUBLIC_API_URL || "/api/v1").replace(/\/+$/, "");
 
-const TOKEN_KEY = "cp_access_token";
-const REFRESH_TOKEN_KEY = "cp_refresh_token";
 const USER_KEY = "cp_user";
+
+/**
+ * Credentials written by builds that predate Phase 3.6.
+ *
+ * The access token lived in `localStorage` until this change, so any browser
+ * that has ever signed in still has a long-lived JWT sitting in local storage,
+ * where every npm dependency, every extension and any injected script can read
+ * it. Moving the *new* token to memory is only half the fix: without an explicit
+ * purge, the old one is still there, still valid for 30 minutes, and still
+ * exfiltratable. `purgeLegacyTokenStorage` deletes these on boot.
+ */
+const LEGACY_TOKEN_KEYS = ["cp_access_token", "cp_refresh_token"] as const;
+
+/**
+ * The access token, in memory only.
+ *
+ * ## Why not `localStorage`
+ *
+ * The OWASP Session Management Cheat Sheet is unambiguous: *"Do not store
+ * authentication tokens, session IDs, JWTs, refresh tokens, or any credential in
+ * `localStorage` or `sessionStorage`. These APIs are accessible to any
+ * JavaScript executing in the origin, so a single XSS vulnerability discloses
+ * every token."* `localStorage` is readable by first-party code, by all 373 npm
+ * packages, by every browser extension with host permissions, and by any
+ * injected script — and it survives the tab closing, so one XSS on any page
+ * yields a credential that keeps working after the tab is gone.
+ *
+ * The refresh token is already an HttpOnly cookie and is unreadable from
+ * JavaScript by construction. This is the same guarantee for the access token,
+ * as far as it can be had: JS can still *use* the token this frame holds, but
+ * cannot read it out of storage and walk away with it.
+ *
+ * ## What this costs
+ *
+ * A page load no longer restores the session from storage; it has to call
+ * `/auth/refresh` and be handed a new access token. That is one extra same-origin
+ * round trip before the app can know whether anyone is signed in, and it is the
+ * price of the property above. `authReady` in `AppContext` gates on it so the UI
+ * does not flash a signed-out state in the meantime.
+ *
+ * The trade is deliberate and worth stating plainly: this does **not** prevent
+ * XSS. An injected script can still call the API as the user while the page is
+ * open. What it removes is the durable, exfiltratable copy — the thing that
+ * turns "one bad page, one afternoon" into "a credential that works for a month".
+ */
+
+/** Rotating this on every deploy invalidates every open tab at once, so no. */
+const ACCESS_TOKEN_CHANNEL = "cp-access-token";
+/** Cross-tab mutex name. Arbitrary, but must match across tabs of one origin. */
+const REFRESH_LOCK_NAME = "cp-refresh-token-rotation";
+
+let accessToken: string | null = null;
+let accessChannel: BroadcastChannel | null = null;
+
+function ensureChannel(): BroadcastChannel | null {
+  if (typeof window === "undefined" || typeof BroadcastChannel === "undefined") return null;
+  if (!accessChannel) accessChannel = new BroadcastChannel(ACCESS_TOKEN_CHANNEL);
+  return accessChannel;
+}
+
+/**
+ * Adopt a token, and tell the other tabs about it.
+ *
+ * The broadcast is what makes cross-tab rotation safe: rotation is single-use
+ * with reuse detection and no grace window, so two tabs refreshing at the same
+ * moment would present the same refresh token, the loser would trip
+ * `RefreshReuseDetected`, and the whole family would be revoked — signing the
+ * user out of every tab through no action of their own. See `withRefreshLock`.
+ */
+function setAccessToken(next: string | null, broadcast = true): void {
+  accessToken = next;
+  if (next && broadcast) {
+    try {
+      ensureChannel()?.postMessage({ type: "access-token", token: next });
+    } catch {
+      // A closed channel must not fail a successful sign-in.
+    }
+  }
+}
+
+export function getAccessToken(): string | null {
+  return accessToken;
+}
+
+/**
+ * Delete the tokens earlier builds wrote to `localStorage`.
+ *
+ * Idempotent, and safe to call on every boot. Called from `AppContext` during
+ * hydration; the keys are already gone for a fresh visitor, and for anyone who
+ * signed in before this change this is the step that actually removes the
+ * exposure.
+ */
+export function purgeLegacyTokenStorage(): void {
+  if (typeof window === "undefined") return;
+  for (const key of LEGACY_TOKEN_KEYS) {
+    try {
+      window.localStorage.removeItem(key);
+    } catch {
+      // Private-mode Safari can throw on storage access; the token is in memory
+      // either way, so there is nothing to recover from here.
+    }
+  }
+}
+
+/** Adopt a token handed over by another tab, without persisting it. */
+export function adoptAccessToken(token: string | null): void {
+  if (token) setAccessToken(token, false);
+  else accessToken = null;
+}
 
 export class ApiError extends Error {
   status: number;
@@ -141,21 +248,18 @@ export const EMPTY_STATS: CatalogStats = {
   errors: {},
 };
 
-export function getAccessToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(TOKEN_KEY);
-}
-
-export function getRefreshToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(REFRESH_TOKEN_KEY);
-}
-
 export function storeAuth(tokens: AuthTokens): void {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(TOKEN_KEY, tokens.access_token);
-  if (tokens.refresh_token) {
-    window.localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refresh_token);
+  setAccessToken(tokens.access_token);
+  // A previous build may have written a refresh token here. The refresh token is
+  // an HttpOnly cookie now and is never re-read from storage, but the stale copy
+  // would otherwise sit in local storage for as long as the browser keeps it.
+  for (const key of LEGACY_TOKEN_KEYS) {
+    try {
+      window.localStorage.removeItem(key);
+    } catch {
+      /* storage unavailable; nothing persisted to clean up */
+    }
   }
 }
 
@@ -176,44 +280,217 @@ export function storeUser(user: BackendProfile): void {
 
 export function clearAuth(): void {
   if (typeof window === "undefined") return;
-  window.localStorage.removeItem(TOKEN_KEY);
-  window.localStorage.removeItem(REFRESH_TOKEN_KEY);
+  accessToken = null;
   window.localStorage.removeItem(USER_KEY);
+  // Defence in depth for a rollback: if an older bundle is ever served again it
+  // will look for these keys, and it should not find a live credential.
+  for (const key of LEGACY_TOKEN_KEYS) {
+    try {
+      window.localStorage.removeItem(key);
+    } catch {
+      /* storage unavailable */
+    }
+  }
 }
 
 export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   return apiFetchImpl<T>(path, init, 1);
 }
 
+/**
+ * Listen for an access token rotated by another tab.
+ *
+ * Returns an unsubscribe function. Also primes the channel, which is what makes
+ * the very first cross-tab broadcast land — a channel created *after* the
+ * message was sent never sees it, so a listener that attaches lazily on 401
+ * would miss the token it is waiting for.
+ */
+export function subscribeToAccessToken(onToken: (token: string | null) => void): () => void {
+  const channel = ensureChannel();
+  if (!channel) return () => undefined;
+  const handler = (event: MessageEvent) => {
+    const data = event.data as { type?: string; token?: string } | null;
+    if (data?.type === "access-token" && typeof data.token === "string") {
+      setAccessToken(data.token, false);
+      onToken(data.token);
+    } else if (data?.type === "signed-out") {
+      accessToken = null;
+      onToken(null);
+    }
+  };
+  channel.addEventListener("message", handler);
+  return () => channel.removeEventListener("message", handler);
+}
+
+/**
+ * Drop the in-memory token and tell the other tabs to do the same.
+ *
+ * The local clear is not a convenience — it is the point. This is called on the
+ * path where `/auth/refresh` answers 401/403, meaning the session is genuinely
+ * gone, and the caller then falls through to surfacing whatever request it was
+ * repairing. Without clearing here, `getAccessToken()` keeps returning a dead
+ * token: the UI stays signed-in-looking and every subsequent request re-sends
+ * the corpse and re-401s, one repair attempt at a time.
+ *
+ * Only the in-memory token is cleared. `cp_user` and the legacy keys are left
+ * alone, because that is `clearAuth`'s job and the two are called at different
+ * points: here the user did not ask to sign out, their session simply expired,
+ * and keeping the cached profile avoids a login form that has forgotten their
+ * name.
+ */
+export function broadcastSignOut(): void {
+  accessToken = null;
+  try {
+    ensureChannel()?.postMessage({ type: "signed-out" });
+  } catch {
+    /* channel closed; the local clear above is the part that matters */
+  }
+}
+
+/**
+ * Serialise refresh across tabs, so rotation happens at most once at a time.
+ *
+ * ## Why this is not optional
+ *
+ * Refresh tokens are single-use with reuse detection and **no grace window**
+ * (`session_service.rotate` raises `RefreshReuseDetected` the moment a
+ * consumed token is presented again, and the family is revoked). Two tabs that
+ * refresh concurrently both send the *same* cookie; one wins, the other presents
+ * an already-rotated token, and the entire family is revoked. The user is signed
+ * out of every tab, on every device in that family, for doing nothing.
+ *
+ * Before this change that race was rare, because a page load restored the
+ * session from `localStorage` and refreshed only on a 401. Making the access
+ * token memory-only means *every* page load rotates, which is what makes the
+ * race routine rather than rare — so the coordination has to arrive with it.
+ *
+ * `ifAvailable: true` is deliberate. A queued lock could block indefinitely if
+ * the holding tab is frozen or backgrounded, and a page that hangs at "checking
+ * your session" is worse than one that refreshes and risks a rare re-login. If
+ * another tab holds the lock we wait briefly for its broadcast instead, and only
+ * then fall back to refreshing ourselves.
+ */
+async function withRefreshLock<T>(fn: () => Promise<T>): Promise<T> {
+  const locks = typeof navigator !== "undefined" ? navigator.locks : undefined;
+  if (!locks) return fn();
+
+  let result = await locks.request(REFRESH_LOCK_NAME, { ifAvailable: true }, async (lock) => {
+    // `lock` is null when another tab holds it.
+    return lock ? fn() : null;
+  });
+
+  if (result === null) {
+    // Someone else is mid-rotation. Give their broadcast a moment to arrive.
+    const broadcast = await waitForCrossTabToken();
+    if (broadcast) return broadcast as T;
+    // No token arrived — the other tab may have failed, been closed, or the
+    // browser may not deliver broadcasts. Refreshing is the only way to learn
+    // whether the session is still live, so do it.
+    result = await fn();
+  }
+  return result;
+}
+
+/** Resolve with a token another tab broadcasts, or `null` after `ms`. */
+function waitForCrossTabToken(ms = 1500): Promise<string | null> {
+  return new Promise((resolve) => {
+    if (typeof BroadcastChannel === "undefined") {
+      resolve(null);
+      return;
+    }
+    const channel = ensureChannel();
+    if (!channel) {
+      resolve(null);
+      return;
+    }
+    const finish = (value: string | null) => {
+      clearTimeout(timer);
+      channel.removeEventListener("message", handler);
+      resolve(value);
+    };
+    const handler = (event: MessageEvent) => {
+      const data = event.data as { type?: string; token?: string } | null;
+      if (data?.type === "access-token" && typeof data.token === "string") {
+        setAccessToken(data.token, false);
+        finish(data.token);
+      }
+    };
+    const timer = setTimeout(() => finish(null), ms);
+    channel.addEventListener("message", handler);
+  });
+}
+
 /** Single-flight refresh of the access token via the HttpOnly refresh cookie.
  *
- * Concurrent 401s share one in-flight request instead of hammering the backend
- * with a refresh per caller. On failure every waiter gets `null` and the caller
- * surfaces the original 401.
+ * Concurrent 401s in one tab share one in-flight request instead of hammering the
+ * backend with a refresh per caller, and `withRefreshLock` extends that across
+ * tabs. On failure every waiter gets `null` and the caller surfaces the original
+ * 401.
+ *
+ * ## `force`
+ *
+ * There are two callers with genuinely different needs, and conflating them is
+ * a bug that cost a full test cycle to find:
+ *
+ *  - **Boot** (`AppContext`): "do I have a token, from anywhere?". If a sibling
+ *    tab is already rotating, take its broadcast. Cheap, and avoids a second
+ *    rotation.
+ *  - **401 repair** (`apiFetchImpl`): the token in hand has just been
+ *    *rejected by the server*. Returning it unchanged would retry the request
+ *    with the same known-bad credential, 401 again, and hand the caller an error
+ *    while leaving a dead token in memory that every later request re-sends.
+ *
+ * So the 401 path passes `force: true` and the shortcut below is skipped. The
+ * failure mode is quiet — a user who is "signed in" and gets 401 on everything
+ * until they reload — which is exactly the class of bug BUG-01 was.
  */
 let refreshPromise: Promise<string | null> | null = null;
 
-export async function refreshAccessToken(): Promise<string | null> {
+export async function refreshAccessToken(options: { force?: boolean } = {}): Promise<string | null> {
+  const { force = false } = options;
   if (refreshPromise) return refreshPromise;
   refreshPromise = (async () => {
     try {
-      const res = await fetch(`${API_BASE}/auth/refresh`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          // Same-origin POST; state the Origin so a future same-site policy
-          // does not refuse a legitimate refresh on impersonation grounds.
-          Origin: window.location.origin,
-        },
-        body: JSON.stringify({}),
-        credentials: "same-origin",
+      return await withRefreshLock(async (): Promise<string | null> => {
+        // Another tab may have rotated while we waited for the lock. Adopting
+        // its broadcast is free; rotating again would be a reuse. Skipped when
+        // `force` is set, because then the token we hold is the one that was
+        // just refused.
+        if (accessToken && !force) return accessToken;
+
+        const res = await fetch(`${API_BASE}/auth/refresh`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            // R3.7. SameSite=strict is the primary CSRF defence; stating the
+            // Origin satisfies the backend's secondary check and means a
+            // cross-site caller is refused before the token is even looked up.
+            Origin: window.location.origin,
+          },
+          body: JSON.stringify({}),
+          credentials: "same-origin",
+          // Without this a refresh on a slow connection hangs `authReady`
+          // forever and the whole app waits behind it.
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (!res.ok) {
+          // 401/403 here means the session is genuinely gone — expired family,
+          // revoked, or signed out elsewhere. Other tabs are holding a token that
+          // no longer works, so tell them rather than leaving them to discover it
+          // one 401 at a time. This also drops *our* token; see
+          // `broadcastSignOut`.
+          if (res.status === 401 || res.status === 403) broadcastSignOut();
+          return null;
+        }
+        const data = (await res.json()) as AuthTokens;
+        if (!data.access_token) return null;
+        setAccessToken(data.access_token);
+        return data.access_token;
       });
-      if (!res.ok) return null;
-      const data = (await res.json()) as AuthTokens;
-      if (!data.access_token) return null;
-      window.localStorage.setItem(TOKEN_KEY, data.access_token);
-      return data.access_token;
     } catch {
+      // Network error or the 10s timeout. Treated as "no token", which surfaces
+      // as signed-out. A transient network blip signing someone out is a lesser
+      // evil than a page that never finishes hydrating.
       return null;
     } finally {
       refreshPromise = null;
@@ -247,7 +524,9 @@ async function apiFetchImpl<T>(
     !path.startsWith("/auth/") &&
     getAccessToken()
   ) {
-    const fresh = await refreshAccessToken();
+    // `force`, because the token in hand is the one the server just refused.
+    // Without it the refresh short-circuits and hands back the same dead token.
+    const fresh = await refreshAccessToken({ force: true });
     if (fresh) {
       headers.set("Authorization", `Bearer ${fresh}`);
       res = await fetch(`${API_BASE}${path}`, { ...init, headers });
@@ -300,10 +579,21 @@ export const authApi = {
 
   myRoles: () => apiFetch<UserRoles>("/users/me/roles"),
 
+  /**
+   * Revoke the server-side session.
+   *
+   * No body. The refresh token is an HttpOnly cookie the browser attaches on its
+   * own, and the backend reads it from there (`auth.py:403` falls back to
+   * `request.cookies`). This previously sent `{ refresh_token: … }` read from
+   * local storage, which could only ever be `undefined` — the token moved to a
+   * cookie in Phase 3 — so the field was always dropped by `JSON.stringify` and
+   * the call looked like it needed a credential it does not have.
+   */
   logout: () =>
     apiFetch<StandardActionResponse>("/auth/logout", {
       method: "POST",
-      body: JSON.stringify({ refresh_token: getRefreshToken() ?? undefined }),
+      body: JSON.stringify({}),
+      credentials: "same-origin",
     }),
 };
 

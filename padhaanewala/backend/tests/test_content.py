@@ -2,7 +2,7 @@ import uuid
 
 import pytest
 from fastapi.testclient import TestClient
-from jose import jwt
+import jwt
 
 from app.database import SessionLocal
 from app.main import app
@@ -298,7 +298,14 @@ def test_notification_flow(student, admin_token):
     assert empty.status_code == 200
     assert empty.json() == []
 
-    student_id = int(jwt.get_unverified_claims(student["token"])["sub"])
+    # `jwt.get_unverified_claims` was python-jose's way to read a token's payload
+    # without checking the signature. PyJWT has no direct equivalent; decoding
+    # with signature verification switched off is the same operation. Used only
+    # to recover the subject the fixture just created, so the "unverified" part
+    # is safe here.
+    student_id = int(
+        jwt.decode(student["token"], options={"verify_signature": False})["sub"]
+    )
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
     created = client.post(
         "/api/v1/notifications",

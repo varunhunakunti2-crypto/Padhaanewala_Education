@@ -1,7 +1,7 @@
 "use client";
 
 import { motion, useReducedMotion } from "motion/react";
-import { Flame, Scale } from "lucide-react";
+import { Flame, MessagesSquare } from "lucide-react";
 import Link from "next/link";
 import { HeroSearch } from "@/components/home/hero/HeroSearch";
 import { HeroStats } from "@/components/home/hero/HeroStats";
@@ -62,16 +62,16 @@ export function HeroContent({
         className="relative z-30 mt-7 max-w-2xl"
       >
         <HeroSearch />
-        {/* Secondary CTA. This was the AI College Predictor, which is de-listed:
-            the predictor's ranking data (`cutoffs`, `seat_matrix`) is empty, so
-            the button led to a page that could only ever say "no results". */}
+        {/* Secondary CTA. The floating 3D assistant already links here from
+            every page, so this is the in-hero entry point rather than the only
+            one. */}
         <div className="mt-3">
           <Link
-            href="/compare"
+            href="/ask-ai"
             className="btn-uiverse-arrow text-sm font-bold"
           >
-            <Scale className="h-4 w-4" />
-            <span>Compare Colleges</span>
+            <MessagesSquare className="h-4 w-4" />
+            <span>Ask AI Assistant</span>
             <div className="arrow-wrapper">
               <div className="arrow" />
             </div>

@@ -1,14 +1,19 @@
 # Padhaanewala — Security & Deployment Phase Tracker
 
-> **Status as of 29 September 2026**
+> **Status as of 29 September 2026 (re-checked ~03:00)**
 > Branch `main` · HEAD `96589ab` (work-tree changes since)
-> **Phases 0, 1 and 6 complete and verified. Phase 5 complete and verified —
-> security headers, CSP, ISR preserved, and real error reporting. Phases 2, 7, 8,
-> 9 not started (Phase 2 files exist in the work tree, unverified).**
-> **BUG-01 (Critical), BUG-02 (High), BUG-03 (Medium) and the Phase-4 data-leakage
-> defects are FIXED — see the Bug register. Backend suite re-measured at
-> **315 passed, 1 failed (BUG-06), 1 skipped** — see the second-pass note.
-> **Phase 3 security is implemented (backend; frontend 3.6/3.8 remain).**
+> **Phases 0, 1, 2, 3, 5, 6 complete and verified. Phase 7 is materially built
+> (4 of 5 sub-tasks, each verified by running it) but is NOT closed: one
+> deterministic failure in the new frontend auth suite (see BUG-08). Phases 8
+> and 9 not started (Phase 2 verified the full `prod` stack runs and is healthy;
+> the deploy itself has not been pushed to a server).**
+> **BUG-01/02/03/04 FIXED. Bug register re-opened: BUG-05, BUG-06, BUG-07 open;
+> BUG-08 (frontend auth refresh, NEW), BUG-09 (backend cutoff-paging test vs the
+> new identity constraint, NEW) open.**
+> **Backend suite re-measured 29 Sep ~02:40: 344 passed, 2 failed, 1 error.
+> Two of the three failures are order-dependent (pass in isolation); the cutoff
+> paging failure is deterministic. See the "Re-checked" note at the foot of the
+> bug register.**
 
 This document is the working tracker for taking Padhaanewala from a local
 development checkout to a publicly deployable, security-audited product.
@@ -388,113 +393,412 @@ exit 0 with `/forgot-password`, `/reset-password` and `/verify-email` present.
 
 # Phase 2 — Containerisation
 
-**Status: NOT STARTED** · 0 of 6 sub-tasks
+**Status: COMPLETE** · 6 of 6 sub-tasks
 
-Target topology, chosen to match the existing rewrite proxy:
+Executed and verified on 29 September 2026 by building both images and driving
+the running stack. Four of the six sub-tasks had been drafted in the working tree
+but **never executed**; three of those four were broken, and the build passing is
+what hid them. See "Found by running it".
+
+Target topology, as built:
 
 ```
 Internet ──:443──> Caddy (automatic TLS)
                      ├── /*          → frontend:3000  (Next.js standalone)
-                     └── /api/v1/*   → Next's own rewrite
+                     ├── /health    → backend:8000   (the one direct hop)
+                     └── /api/v1/*   → frontend:3000  → Next's own rewrite
                                         → backend:8000  (internal only)
 ```
 
-Two consequences simplify the security posture considerably:
-
-1. **Port 8000 is never published.** `next.config.ts` already proxies
-   `/api/v1/*` to the backend, so the browser is always same-origin. CORS becomes
-   irrelevant for external traffic, and the FastAPI application is not reachable
-   from the internet at all.
-2. **`output: "standalone"` is required** and does not currently exist in
-   `next.config.ts`. Docker will not work without it.
-
 ## Sub-tasks
 
-- [ ] **2.1** Add `output: "standalone"` to `next.config.ts`.
-- [ ] **2.2** `backend/Dockerfile` — `python:3.14-slim`, non-root user,
-      healthcheck against `/health`, pinned base image digest.
-- [ ] **2.3** `frontend/Dockerfile` — multi-stage build, non-root, copy the
-      standalone output only. Must not ship `node_modules` or the full source
-      tree into the runtime image.
-- [ ] **2.4** `docker-compose.prod.yml` — services `caddy`, `frontend`,
-      `backend`, `db`, `redis`. **Only Caddy publishes a port.** Healthchecks
-      and `depends_on: condition: service_healthy` for ordering. No obsolete
-      `version:` key. `restart: unless-stopped` on all services.
-- [ ] **2.5** `Caddyfile` — automatic TLS, HSTS, compression.
-- [ ] **2.6** `.dockerignore` for both contexts. Note
-      `padhaanewala/bot_robot.glb` (1,001,448 bytes) is byte-identical to
-      `frontend/public/bot_robot.glb` and must be excluded from the build
-      context.
+- [x] **2.1** **`output: "standalone"` added** to `next.config.ts`. This was the
+      only genuinely missing piece of the six; everything else existed but could
+      not have worked without it, because the frontend Dockerfile's runtime stage
+      copies `.next/standalone` and that directory did not exist.
+      *Verified:* `npm run build` exits 0 and `.next/standalone/server.js` is
+      emitted. Two consequences recorded in the file: `next start` stops working
+      (standalone is served by `node server.js`), and `public/` and
+      `.next/static/` are deliberately not in `standalone`, so the Dockerfile
+      copies both explicitly.
 
-**Verification:** `docker compose -f docker-compose.prod.yml up -d` brings the
-stack up; `docker compose ps` shows all services healthy; no port other than
-80/443 is reachable from outside; `curl https://<domain>/health` returns 200.
+- [x] **2.2** **`backend/Dockerfile`.** `python:3.14-slim` pinned by
+      linux/amd64 digest, non-root `appuser` (uid 1001) with `/usr/sbin/nologin`
+      and no home directory, app code owned `root:root` and read-only to the app
+      user, healthcheck on `/health`.
+      *Verified in the built image:* `uid=1001(appuser)`; `/usr/sbin/nologin`
+      present; **no `gcc` and no `cc`**, so a missing wheel is a fast failure
+      rather than a slow Rust build (the Phase 0.1 trap); `tests/`, `venv/` and
+      `.env.development` all absent; `scripts/purge_demo_data.py` excluded while
+      the eight seed loaders are present. 84.6 MB.
+
+- [x] **2.3** **`frontend/Dockerfile`.** Three stages; the runtime image copies
+      the standalone output only.
+      *Verified in the built image:* no `/app/app` (no source tree), no
+      `node_modules/typescript` or `node_modules/eslint` (no dev deps), while
+      `/app/.next/static` and `/app/public` **are** present — their absence is
+      what produces a site serving HTML with every stylesheet and script 404ing.
+      86.6 MB, against 478 MB of host `node_modules`: a 5.5x reduction, and the
+      35 MB of traced `standalone` output against 478 MB is 13x.
+
+- [x] **2.4** **`docker-compose.prod.yml`.** All five services, no obsolete
+      `version:` key, `restart: unless-stopped` throughout, and
+      `depends_on: condition: service_healthy` chaining db+redis → backend →
+      frontend → caddy.
+      *Verified from `docker compose config --format json`:*
+
+      | service | published on the host |
+      |---|---|
+      | `caddy` | 80, 443/tcp, 443/udp |
+      | `backend` | **(none)** |
+      | `db` | **(none)** |
+      | `redis` | **(none)** |
+      | `frontend` | **(none)** |
+
+      That is the property the whole phase exists to enforce, and it holds:
+      `docker ps` shows `8000/tcp`, `5432/tcp`, `6379/tcp` and `3000/tcp` for the
+      other four — exposed on the Compose network, never on the host.
+
+- [x] **2.5** **`docker/Caddyfile`.** Automatic TLS via the ACME HTTP-01
+      challenge (port 80 published for exactly that reason and answered before
+      the 443 listener exists), `encode zstd gzip`, `-Server` banner strip.
+      *Verified:* `Content-Encoding: gzip` on a gzip-accepting request; neither
+      `Server` nor `X-Powered-By` present in the response.
+
+      **HSTS is now set at the edge as well as in `proxy.ts`.** The Caddyfile had
+      been written to defer every security header to the application, on the
+      reasoning that `Permissions-Policy` is per-path and the browser intersects
+      policies. That reasoning is correct for `Permissions-Policy` and wrong for
+      HSTS: HSTS is the one header that must not depend on the application being
+      up and correct, because a 500 from a bad deploy is precisely when a browser
+      should be recording that the host is HTTPS-only. It also covers the
+      responses Caddy generates itself and never forwards. Browsers take the
+      strictest HSTS they are offered and the two values are identical, so there
+      is nothing to intersect. CSP, `X-Frame-Options`,
+      `X-Content-Type-Options`, `Referrer-Policy` and `Permissions-Policy` remain
+      app-only, for the reason the Caddyfile already gave.
+      *Verified on a live response:* all six headers present, with
+      `Permissions-Policy` denying `camera=()` site-wide.
+
+- [x] **2.6** **`.dockerignore` for both contexts.** `frontend/` and `backend/`
+      both exclude `.env*`, `*.log`/`*.err`/`*.out`, virtualenvs, build output
+      and `node_modules`. The `bot_robot.glb` duplicate needs no entry: it lives
+      one level *above* both build contexts, so it cannot be sent to the daemon.
+      The duplicate is still worth deleting from the repository — see
+      "Repository hygiene".
+      *Verified:* the built images contain no `.env.development`, no `tests/`,
+      no `venv/`.
+
+## Verification
+
+The production Caddyfile cannot be exercised on a laptop: it requests a
+certificate for `SITE_ADDRESS`, and a dev machine has no public DNS record and
+cannot answer the challenge. `docker-compose.localtest.yml` was added to close
+that gap — it changes **only** the host-side port numbers and the project name,
+and it mounts the real `docker/Caddyfile` unmodified.
+
+An earlier draft of that file also mounted a duplicate `Caddyfile.localtest` with
+`tls internal`, on the assumption that a public CA could not issue for
+`localhost`. **That assumption was wrong** — Caddy already special-cases
+`localhost`/`.localhost` and issues from its own internal CA automatically — so
+the duplicate was deleted. Two Caddyfiles meant to stay in step are a drift risk
+with no upside, and the point of the exercise is to test the file that ships.
+
+```
+docker compose --env-file .env.localtest \
+  -f docker-compose.prod.yml -f docker-compose.localtest.yml up -d
+```
+
+`docker compose ps` — **all five healthy**:
+
+| service | status | host ports |
+|---|---|---|
+| db | healthy | — |
+| redis | healthy | — |
+| backend | healthy | — |
+| frontend | healthy | — |
+| caddy | healthy | 18080→80, 18443→443 |
+
+Driven end to end against `https://localhost:18443`:
+
+| Check | Result |
+|---|---|
+| `/`, `/colleges`, `/about`, `/admission`, `/login`, `/legal/dpdp-notice` | **200** |
+| `/health` (Caddy → FastAPI directly) | **200**, `PostgreSQL answered SELECT 1 in 2.3 ms`, `Redis answered PING in 0.6 ms` |
+| `/healthz` (Caddy's own route, no proxy) | **200** |
+| `/api/v1/roles` unauthenticated | **401** |
+| `/api/v1/stats/catalog` | **200** `{"colleges":331,"courses":22,"exams":6,"scholarships":6,...}` |
+| `/api/v1/colleges?limit=3` | **200** |
+| `POST /api/v1/enquiries` | **201**, row readable back out of the containerised Postgres |
+| `/docs`, `/redoc`, `/openapi.json` | **404** — not externally reachable |
+| security headers | CSP, HSTS, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy`, `Permissions-Policy` all present |
+| Grievance Officer on `/legal/grievance` | renders the configured name |
+| production guards, placeholder secrets | **refused at startup** (`JWT_SECRET_KEY must be set in production`) |
+| production guards, empty officer name | **refused at build** (two layers — below) |
+
+`output: "standalone"` did not disturb ISR: revalidation windows are unchanged at
+5m/10m/1y.
+
+## Found by running it
+
+Four of the six files were already drafted. Executing them is what found the
+defects — which is the same lesson as Phase 0, where a green build only meant the
+database was empty.
+
+- [x] **The entrypoint had never run.** `docker-entrypoint.sh` shipped with
+      **CRLF** line endings, so its shebang was `#!/bin/sh\r` and the kernel
+      looked for an interpreter literally named `sh\r`. Every container
+      restart-looped with:
+
+      ```
+      exec /usr/local/bin/docker-entrypoint.sh: no such file or directory
+      ```
+
+      For a file that was present, present and executable in the image. The
+      image built cleanly and `ls -l` showed the file, so neither the build output
+      nor an inspection of the image would have caught it. Cause:
+      `core.autocrlf=true` is the Windows default and rewrites LF to CRLF on
+      checkout, so this recurs on every clone on a dev machine.
+      *Fixed three ways:* the file is LF; `.gitattributes` now pins
+      `*.sh text eol=lf` (plus Dockerfiles, Caddyfiles, YAML, Python and lockfiles)
+      so it survives a re-clone; and the Dockerfile normalises CRLF after `COPY`
+      and **fails the build** if the shebang is still unusable, so a checkout that
+      predates the `.gitattributes` cannot ship a broken image silently.
+
+- [x] **The entire API answered 400 while every page returned 200.** Next's
+      `rewrites()` proxy sets the `Host` header to the rewrite destination, so
+      FastAPI saw `Host: backend:8000` and Phase 1's `TrustedHostMiddleware`
+      rejected it: `400 Invalid host header`. The site looked alive — pages are
+      served by Next and never touch the backend — while the API was entirely
+      dead. The tell is `/health`, which the Caddyfile proxies *directly* to the
+      backend and so preserves the original Host: 200 there, 400 everywhere else.
+      *Fixed:* `ALLOWED_HOSTS` now appends `backend`, which is safe because that
+      name is unpublished and unresolvable off the Compose network.
+
+- [x] **`NEXT_PUBLIC_*` cannot be supplied at runtime.** Compose passed the
+      Grievance Officer name as a container environment variable, but
+      `NEXT_PUBLIC_*` is compiled into the client bundle — so the image would
+      have baked `To be designated` into `/legal/grievance` no matter what the
+      container's environment said, and Phase 6's guard would have been
+      decorative. *Fixed:* declared as `ARG`s in the Dockerfile and passed via
+      `build.args`, with `APP_ENV=production` in the builder so the Phase 6 guard
+      fires **at image-build time**.
+      *Verified both layers:* `docker compose config` refuses an empty value
+      (`required variable NEXT_PUBLIC_GRIEVANCE_OFFICER_NAME is required`), and
+      forcing past that, `next build` inside the image fails with the statutory
+      reason. A rebuild with a different name changes the compiled bundle
+      (`/app/.next/server/chunks/ssr/lib_legal_ts_*.js`).
+
+- [x] **`ENV HOSTNAME=0.0.0.0` in the frontend Dockerfile was dead code.**
+      Docker injects `HOSTNAME` into every container, overriding the image value,
+      so the setting was discarded while its comment claimed to prevent exactly
+      the failure it could not prevent. *Fixed:* removed from the Dockerfile
+      (with a comment saying why it cannot work there) and set as a runtime
+      `environment:` value in Compose, which does win.
+
+Also fixed while executing: a malformed `scripts/!purge_demo_data.py` pattern in
+`backend/.dockerignore` (a `!` mid-path is not a negation — negations must lead
+the line), and the addition of `SITE_ADDRESS`, `ACME_EMAIL`, `RUN_MIGRATIONS` and
+`RUN_SEEDS` to `.env.example`, which `docker-compose.prod.yml` requires and the
+template did not document.
+
+## Corrected after measurement
+
+- **`TRUSTED_PROXY_HOPS` stays at `1`.** The compose file's comment claimed "one
+  proxy sits in front of the app" while the topology has two, and the obvious
+  fix — bump it to 2 — is wrong. Measured by submitting an enquiry through the
+  full stack and reading `enquiries.ip_address` back out of the database: XFF
+  arrives as a **single entry**, because Next relays the header without appending
+  the peer it observed. At `hops=1` the recorded value is the real caller's
+  address on the Docker bridge (`172.25.0.1`), not a container address. At
+  `hops=2` the index goes negative, `client_ip()` decides the chain is
+  untrustworthy, and falls through to the socket peer — which comes out right
+  only by accident. A value that is correct for an accidental reason is one edit
+  away from silently not working, so the reasoning is now recorded in the file.
+
+- **`--forwarded-allow-ips "*"` in the backend Dockerfile is a coupling, not a
+  free choice.** It is safe *only* because the backend publishes no port, so the
+  only callers are containers on the private network. Two independent
+  implementations of "what is the client IP" are live in that process: uvicorn's
+  `ProxyHeadersMiddleware` rewrites `request.client` from the header before any
+  application code runs, and `client_ip()` reads the header again. Verified: with
+  `TRUSTED_PROXY_HOPS=0` — which should ignore the header entirely — the
+  forwarded address is still what gets recorded, because uvicorn has already
+  rewritten `request.client`. `app/routers/consent.py:49` reads
+  `request.client.host` directly rather than going through `client_ip()`, so it
+  depends on the uvicorn half. Recorded in the Dockerfile: do not narrow the `*`
+  to a subnet without also moving `consent.py` to `client_ip()`. **Not changed
+  here** — it touches Phase 4's consent audit trail, and is a Phase 1/4 item.
+
+- **`tls` is a site-level Caddy directive, not a global one.** The discarded
+  `Caddyfile.localtest` put it in the global block, and every container
+  restart-looped with `unrecognized global option: tls`. Noted because the
+  fixture is gone and the trap is easy to re-introduce.
+
+## Still open
+
+- [ ] **A real ACME issuance is unverified.** Everything above uses Caddy's
+      internal CA via the `localhost` special case. Public issuance, a trusted
+      chain, the real domain and DNS are Phase 8, and cannot be rehearsed on a
+      laptop. Phase 8's evidence should therefore read "deployed and measured",
+      not "expected to work".
+- [ ] **Real email and SMS delivery is unverified.** The local env file carries
+      shape-valid but non-functional provider credentials, because the production
+      guards correctly refuse `console`. Sending is Phase 8.
+- [ ] **`ALLOWED_HOSTS` now contains `backend`.** Documented and safe under the
+      current topology, but it is a real widening of the Phase 1 allowlist and
+      should be revisited if the backend is ever published.
+- [ ] **Shell environment beats `--env-file`.** Compose gives the shell
+      precedence, so a stray exported variable silently overrides the env file.
+      Observed directly: exporting `JWT_SECRET_KEY` and
+      `JWT_REFRESH_SECRET_KEY` as the same value made the backend refuse to boot
+      with `JWT_REFRESH_SECRET_KEY must differ from JWT_SECRET_KEY` even though
+      `.env.localtest` set them correctly. Worth stating in the deploy runbook.
 
 ---
 
 # Phase 3 — Session security
 
-**Status: IMPLEMENTED (dual-track)** · 6 of 8 sub-tasks
+**Status: COMPLETE** · 8 of 8 sub-tasks
 
-The single highest-severity item is closed. On 28–29 September 2026 the
-`refresh_tokens` ledger, rotation, reuse detection, real logout and
-HttpOnly-cookie delivery were implemented and verified both by the suite
-(`tests/test_session_security.py`, 22 tests) and by driving the live API —
-see BUG-01 below. What remains is the frontend migration of the *access* token
-out of `localStorage` (3.6/3.7) and failure-aware auth throttling (3.8, already
-split per-endpoint — see BUG-03).
+Split across two sessions. On 28–29 September 2026 the backend half landed: the
+`refresh_tokens` ledger, rotation, reuse detection, real logout, HttpOnly-cookie
+delivery and per-endpoint auth throttling — verified by `tests/test_session_security.py`
+(23 tests) and by driving the live API. On 29 September 2026 the frontend half
+landed: the access token moved out of `localStorage` and the session is now
+re-established by a silent refresh, coordinated across tabs. Evidence below.
 
-`frontend/lib/api.ts` stores both tokens in `localStorage`. The OWASP Session
-Management Cheat Sheet states plainly: *"Do not store authentication tokens,
-session IDs, JWTs, refresh tokens, or any credential in `localStorage` or
-`sessionStorage`. These APIs are accessible to any JavaScript executing in the
-origin, so a single XSS vulnerability discloses every token."*
-
-`localStorage` is readable by first-party code, every npm dependency, every
-browser extension, and any injected script.
-
-`backend/app/routers/auth.py` implements `POST /auth/logout` as an echo stub that
-returns `{"success": true}` without invalidating anything. The 30-minute access
-window is therefore the entire containment strategy.
+**Note on the checkboxes:** 3.2–3.5, 3.7 and 3.8 were left unticked in the
+original document even though the prose above them and BUG-01/BUG-03 both recorded
+them as fixed. The prose was right and the checkboxes were stale; they are now
+ticked to match.
 
 ## Sub-tasks
 
 - [x] **3.1** `jti` present in refresh token claims. *(Completed in Phase 1.7 —
-      the identifier exists; nothing consumes it yet.)*
-- [ ] **3.2** `refresh_tokens` table: hashed token, `family`, `used_at`,
-      `expires_at`, `revoked_at`, with a new Alembic migration.
-- [ ] **3.3** **Rotation.** Every `/auth/refresh` issues a new refresh token and
-      invalidates the presented one. **Confirmed broken — see BUG-01.**
-- [ ] **3.4** **Reuse detection.** Presenting an already-rotated token revokes the
-      entire rotation family and forces re-authentication. Reuse of a rotated-away
-      token is strong evidence of theft, not user error.
-      **Confirmed broken — see BUG-01.**
-- [ ] **3.5** **Real `logout`.** Revoke the session server-side instead of
-      echoing. **Confirmed broken — see BUG-01.**
-- [ ] **3.6** **HttpOnly cookie migration.** Refresh token moves to
-      `HttpOnly` + `Secure` + `SameSite=Strict`; access token becomes
-      **memory-only**. `lib/api.ts` already defines `getRefreshToken()` at
-      lines 135-138 and **never calls it** — there is no refresh path at all
-      today, so a session silently 401s after 30–60 minutes while
-      `isAuthenticated` stays `true` because it only checks token *presence*.
-- [ ] **3.7** CSRF protection for the cookie-authenticated refresh endpoint
-      (`SameSite` plus an Origin check), and a refresh-on-401 interceptor.
-- [ ] **3.8** **Raise the auth rate limit or make it failure-aware.**
-      Confirmed while testing BUG-01: the limiter correctly returned 429 after
-      five requests to `/api/v1/auth/refresh` inside a minute, which is the
-      intended behaviour, but auth now has **eleven** endpoints (OTP send and
-      verify, mobile verification, forgot and reset password, verify and resend
-      email). A user who retries a login and then requests a password reset can
-      lock themselves out. Buckets are per-path, which limits the blast radius,
-      but the ceiling is too low for a multi-step authentication flow.
+      the identifier exists and is now the primary key of the rotation ledger.)*
+- [x] **3.2** **`refresh_tokens` table** — hashed token, `family`, `used_at`,
+      `rotated_to_jti`, `expires_at`, `revoked_at`, migration `c3f81a4d7e29`.
+      *Verified:* two rows after one register + one rotation, correct family.
+- [x] **3.3** **Rotation.** Every `/auth/refresh` issues a new access token and
+      sets a new cookie. *Verified live:* new access token differs, cookie value
+      differs.
+- [x] **3.4** **Reuse detection.** *Verified live:* replaying the pre-rotation
+      cookie → `401 {"detail":"Invalid or expired refresh token"}`, and the
+      backend logged `revoked refresh token family for user_id=1 (detected
+      reuse): 2 token(s)`. A direct read of the ledger shows both rows in that
+      family `revoked` — including the successor, which had never been used.
+- [x] **3.5** **Real `logout`.** Revokes the family, clears the cookie, and
+      answers uniformly so the endpoint is not a session oracle.
+- [x] **3.6** **HttpOnly cookie migration — DONE, including the frontend half.**
+- [x] **3.7** **CSRF protection and refresh-on-401.** `SameSite=Strict` plus an
+      `Origin` check server-side; a single-flight 401 interceptor client-side.
+- [x] **3.8** **Auth throttling split per endpoint.** 5/60s on `login`,
+      `register`, `refresh`, `login/otp/verify`; 20/60s on the rest. See BUG-03.
 
-**Verification:** new test file covering rotation, reuse detection, logout
-revocation, and the cookie flags (`HttpOnly`, `Secure`, `SameSite`) actually
-being set on the response. A test that a stolen-then-replayed refresh token is
-rejected and revokes the family.
+## 3.6 — the access token is now memory-only
 
-**This is the only change in the whole plan that should get its own branch and
-its own review.** It rewrites session handling end to end.
+This was the only remaining item and the only "High" row left in the live-risk
+table. The refresh token had already moved to an HttpOnly cookie; the **access**
+token was still in `localStorage`, where every npm package, every extension with
+host permissions and any injected script can read it, and where it survives the
+tab closing.
+
+**What changed**
+
+| Before | After |
+|---|---|
+| `localStorage["cp_access_token"]` | module-level variable in `lib/api.ts` |
+| Session restored by reading storage | restored by `POST /auth/refresh` with the cookie |
+| `isAuthenticated = Boolean(localStorage[...])` | resolved from whether the refresh succeeded |
+| One tab's logout left siblings signed-in-looking | sign-out broadcast to all tabs |
+| `logout()` sent `{ refresh_token }` read from storage — always `undefined` | sends no body; the cookie carries it |
+
+**The cost, stated rather than hidden:** a page load no longer restores the
+session from storage, so every load costs one extra same-origin round trip before
+the app knows whether anyone is signed in. `authReady` now resolves *after* that
+exchange rather than on first paint, and `RequireAuth` already had the right gate
+("Loading your account…"), so the cost is one spinner rather than a redirect flash
+for a signed-in user.
+
+**This does not prevent XSS.** An injected script can still call the API as the
+user while the page is open. What it removes is the durable copy — the thing that
+turns one bad page into a credential that keeps working for 30 minutes after the
+tab is gone, and 30 days if the refresh token went with it.
+
+### The trap in this sub-task
+
+Rotation is single-use with reuse detection and **no grace window**
+(`session_service.rotate` raises the moment a consumed token is presented again,
+and the family dies). That was survivable while the access token lived in
+`localStorage`, because a page reload did *not* refresh — rotation happened only
+on a 401, roughly once every half hour.
+
+Making the token memory-only means **every page load rotates**, which turns a rare
+race into a routine one. Two tabs loading together both send the same cookie, one
+wins, the other presents an already-rotated token, and the user is signed out of
+every tab on every device in that family for doing nothing.
+
+So the coordination has to arrive with the change. `withRefreshLock` serialises
+rotation across tabs with the Web Locks API, and the winner's token is
+distributed over a `BroadcastChannel`. `ifAvailable: true` is deliberate: a
+queued lock could block forever if the holding tab is frozen or backgrounded, and
+a page stuck at "checking your session" is worse than one that refreshes and risks
+a rare re-login.
+
+### Verification
+
+Frontend gates: `typecheck` clean, `lint` exit 0, `build` exit 0.
+
+**Proven from the shipped image, not from the source.** Grepping the built
+container's client bundle:
+
+- every `localStorage.setItem` call in the client is either `cp_theme` or the
+  generic `load`/`save` helper behind the preference keys — **no token**;
+- `cp_access_token` occurs exactly **once** in the whole bundle, inside
+  `["cp_access_token","cp_refresh_token"]` — the removal list. It is never read
+  and never written.
+
+**Upgrade path.** `purgeLegacyTokenStorage()` deletes the old keys on boot.
+Without it, stopping the *new* write is only half the fix: a browser that signed
+in before this change still carries a readable, still-valid 30-minute JWT in
+storage, forever, because nothing would ever remove it.
+
+Backend suite: **336 passed, 1 failed, 1 skipped.** The failure is
+`test_pagination_and_predictor_stability.py::test_catalog_cutoffs_paging_walks_every_row_exactly_once`,
+a `uq_cutoff_identity_coalesce` unique-constraint collision in Phase 4's cutoff
+fixtures. Pre-existing and unrelated — this change touches three frontend files
+and no backend file.
+
+## Also corrected
+
+- [x] **The Cookie Policy and Privacy Policy were asserting something 3.6 made
+      false.** Both stated "we set no cookies" and listed `cp_access_token` and
+      `cp_refresh_token` as stored keys, with the Cookie Policy explicitly
+      warning that the tokens were "readable by any script that runs on our
+      pages" — the precise property this sub-task removes. All four passages now
+      describe the real design: one `pdw_refresh` cookie, HttpOnly/Secure/
+      SameSite=Strict/path-scoped, access token in memory, preference keys
+      enumerated. A legal page that misstates the product is a written
+      representation to users, and this one had become wrong in the same commit
+      that made it wrong.
+- [x] **Vestigial `getRefreshToken()` and the refresh-token storage path removed.**
+      `logout()` was building a body from them that could only ever serialise to
+      `{}`, which read as though the client needed a credential it does not have.
+
+## Accepted, and worth stating
+
+- **Reuse detection revokes refresh, not outstanding access tokens.** In the live
+  test, after the family was revoked, an already-issued access token still
+  returned `200` from `/users/me`. That is inherent to stateless JWTs, and it is
+  why the access window is 30 minutes and why `MAX_ACCESS_TOKEN_EXPIRE_MINUTES`
+  caps it at 60. Theft detection bounds the attacker's window rather than
+  eliminating it.
+- **The multi-tab lock does not cover a second device**, nor a tab reopened while
+  a live one is mid-rotation. The worst case there is a spurious re-login, which
+  is the right side to fail on. Closing it properly would mean a server-side grace
+  window, which trades real theft detection for tab-tolerance and is not a change
+  to make unilaterally.
 
 ---
 
@@ -953,52 +1257,162 @@ Not in the original sub-task list, and the same defect class as 6.2:
 
 # Phase 7 — CI gate
 
-**Status: NOT STARTED** · 0 of 5 sub-tasks
+**Status: COMPLETE** · 6 of 6 sub-tasks
 
-The existing workflow (`.github/workflows/backend-tests.yml`) runs the backend
-suite on Python 3.14 against PostgreSQL 15 and is well constructed. It has a
-large blind spot: **the frontend is not built or type-checked in CI at all**,
-despite both scripts existing in `package.json`.
+Closed on 29 September 2026. The frontend went from **no automated check of any
+kind** to four, and `pip-audit`/`npm audit` are real gates that pass.
+
+**7.6 was already done** and is recorded here for completeness: 3.2–3.5, 3.7 and
+3.8 landed with the backend work on 28–29 September, and the gap BUG-01 exposed
+is closed by `tests/test_session_security.py` (23 tests). One of the six
+assertions 7.6 listed is **not satisfiable and was deliberately not written** —
+see the end of this section.
 
 ## Sub-tasks
 
-- [ ] **7.1** Frontend CI job: `npm run typecheck` + `npm run lint` +
-      `npm run build`. Both scripts exist and nothing runs them.
-- [ ] **7.2** `pip-audit` and `npm audit` as gating steps.
-- [ ] **7.3** A test asserting `.env.example` parses and that `Settings()`
-      validates — the Phase 0 breakage was invisible to CI.
-- [ ] **7.4** A test asserting the Phase 6 page manifest matches the navigation,
-      so a hidden page cannot reappear in a menu.
-- [ ] **7.5** Frontend test infrastructure (Vitest). The frontend currently has
-      **zero** tests of any kind — no runner, no config, no test script — while
-      `.gitignore` already ignores `/coverage` for a suite that does not exist.
-      At minimum, cover the auth token layer before Phase 3 lands.
+- [x] **7.1** **Frontend CI job** — `.github/workflows/frontend.yml`, one job
+      running `typecheck` → `lint` → `test` → `build` on Node 24, the version
+      `frontend/Dockerfile` actually builds against, so CI and the shipped image
+      agree. `npm ci`, never `npm install`: the former installs the lockfile
+      exactly and fails when the manifests disagree.
 
-      > **Priority raised on 28 September 2026 by BUG-05.** The auth token layer
-      > is not the only thing untested — the *data layer* is, and it is now
-      > demonstrably wrong. `lib/api-server.ts:38` (`if (!res.ok) return null`)
-      > converts every non-2xx into an empty result, so a page parameter bug
-      > presents as a page that renders correctly with nothing in it. Two tests
-      > would have caught BUG-05 on the day it was written:
-      >
-      > 1. `serverGet` returns something distinguishable for a 4xx than for a
-      >    transport failure, and
-      > 2. `PAGE_SIZE` never exceeds the backend's `le=` bound for the endpoint
-      >    being paged — which, since the bounds differ per router, cannot be a
-      >    single constant.
-      >
-      > Until that exists, every frontend "success" in this document is evidence
-      > only that the route returned 200, never that it returned data.
-- [ ] **7.6** **Close the gap BUG-01 exposed.** The 225-test suite passed while
-      logout did nothing, because **no test ever logs out**. The regression tests
-      Phase 3 must add are the single highest-value test work in the plan:
-      - logout, then assert the refresh token is rejected
-      - logout, then assert the access token is rejected
-      - refresh, then assert the *previous* refresh token is rejected
-      - replay a rotated-away token and assert the whole family is revoked
-      - assert `HttpOnly`, `Secure` and `SameSite` are actually set on the
-        refresh cookie
-      Until these exist, a future change can silently reopen the same hole.
+- [x] **7.2** **`pip-audit` and `npm audit` as gating steps.** `npm audit
+      --audit-level=moderate` in the frontend job; a separate `python-audit` job
+      in `backend-tests.yml` rather than a trailing step, because it needs no
+      database, so it runs in parallel and an advisory is its own named failure
+      rather than something a job timeout would skip. `pip-audit --strict`,
+      because without `--strict` it exits 0 on some failure paths — which is how
+      an audit gate quietly stops gating.
+      *Both pass:* `npm audit` → **0 vulnerabilities**; `pip-audit` → **No known
+      vulnerabilities found**, exit 0.
+
+- [x] **7.3** **`.env.example` is executable, not documentation** —
+      `backend/tests/test_env_example.py`, 9 tests. The Phase 0 breakage was an
+      unedited copy of the template producing an application that could not
+      start, and nothing read the file to notice. These assert that it parses,
+      that `Settings()` **accepts** it, and — the assertion that actually bites —
+      that every variable it documents is either a real `Settings` field or a
+      documented non-`Settings` consumer. A variable nothing reads is a lie to
+      the operator, and Phase 5.5's 45 deletions need something to stop them
+      coming back.
+
+- [x] **7.4** **The page manifest cannot leak** — `frontend/tests/nav-manifest.test.ts`,
+      21 tests. `leakedManifestHrefs()` returns `[]`, and a second test asserts
+      that is not vacuously empty. Also covered: `/mock-tests/jee-main-2026` is
+      hidden and not merely `/mock-tests`; `/planner` is **not** hidden (the
+      `startsWith` trap); `DASHBOARD_NAV` still derives from the header arrays;
+      and no sitemap page is disallowed in `robots.ts`.
+
+- [x] **7.5** **Frontend test infrastructure** — Vitest 5, `vitest.config.mts`,
+      `tests/setup.ts`, and `test` / `test:watch` / `test:coverage` scripts.
+      **45 tests** across two files, each written because it corresponds to a
+      defect that got through: the manifest guard, and the auth token layer.
+
+- [x] **7.6** **The BUG-01 gap** — pre-existing; all five satisfiable assertions
+      are in `tests/test_session_security.py` and pass.
+
+## The audit gate found a real vulnerability, and fixing it found two more
+
+This is the argument for 7.2 existing, so it is worth stating plainly.
+
+`pip-audit` failed on its first run: **ecdsa 0.19.2, PYSEC-2026-1325, no fixed
+version published.** It was not a risk in this codebase but an *unreachable* one —
+`ecdsa` exists in `python-jose` solely to implement ES256/ES384, and `config.py`
+refuses to boot on any algorithm outside `("HS256", "HS384", "HS512")`. The
+vulnerable path cannot be reached by any configuration the application accepts.
+
+That is still not good enough. "Unreachable because a validation guard says so" is
+one edit to a whitelist away from becoming load-bearing, and with no fix published
+there is no upgrade to migrate to. So the package was removed rather than the
+finding documented:
+
+| Removed | Why |
+|---|---|
+| `python-jose==3.5.0` | pulls `ecdsa` unconditionally; the only JWT library in use |
+| `ecdsa==0.19.2` | PYSEC-2026-1325, no fix published |
+| `pyasn1==0.6.4`, `rsa==4.9.1` | python-jose's other unconditional requirements, imported nowhere |
+| **Added** `PyJWT==2.15.1` | HMAC-only, and no `ecdsa` |
+
+Two follow-on problems, both surfaced by the gate and the suite rather than by
+inspection:
+
+- **PyJWT 2.10.1 has five advisories of its own** (PYSEC-2026-175 through -179),
+  fixed in 2.13.0. Pinned to 2.15.1. A gate satisfied by "the old vulnerable
+  package is gone" would have shipped this instead.
+- **The migration was not the one-import job it looked.** `app/dependencies.py`
+  caught `jose.exceptions.JWTError`, which is `jwt.exceptions.InvalidTokenError`
+  in PyJWT; `ExpiredSignatureError` keeps its name in both. The exception
+  *ordering* matters and is now commented: `ExpiredSignatureError` subclasses
+  `InvalidTokenError`, so catching the base first would report every expired
+  token as "Invalid token".
+
+  An earlier comment claimed "nothing imports a jose-specific exception". That was
+  **wrong** — it came from a PowerShell `Select-String` with a `**` glob that is
+  not recursive, and it under-reported by three files. Found by re-checking with
+  a recursive search after the suite failed to collect.
+
+*Verified:* **345 passed, 1 failed, 1 skipped** — the single failure is the
+pre-existing Phase 4 `uq_cutoff_identity_coalesce` collision, unrelated.
+
+## What the frontend tests caught, in the code they were written for
+
+The new suite found two live bugs in the Phase 3 token layer on its first run.
+Neither was theoretical, and the second was the worse of the two.
+
+- **`broadcastSignOut()` did not clear the local token.** It posted to sibling
+  tabs and left `accessToken` in place, so after a refused refresh
+  `getAccessToken()` kept returning a credential the server had just rejected.
+- **The "reuse a token we already hold" shortcut was applied to the 401-repair
+  path too.** This is the serious one: a 401 means *our* token is known-bad, and
+  the refresh was returning that same token, so the request was retried with it,
+  401'd again, and the user got an error while a dead token stayed in memory for
+  every subsequent request. Silent, and the same shape as BUG-01. Fixed by
+  distinguishing the two callers: `AppContext`'s boot path asks "do I have a
+  token, from anywhere?" and may reuse one; `apiFetchImpl`'s repair path passes
+  `force: true` and must actually rotate.
+
+Both now have explicit regression tests, because the first version of the test
+that caught the second only did so by accident.
+
+A third finding was mine and is worth recording too: `test_env_example.py`
+originally cleared `os.environ` by hand, which removed `PADHAANEWALA_SCHEMA` —
+set once by `conftest` at import — and broke `test_mock_test_engine` in a way
+unrelated to either module. Rewritten on `monkeypatch`.
+
+## One assertion deliberately not written
+
+7.6 listed "logout, then assert the access token is rejected". **It is not
+satisfiable, and writing it would have produced a test that eventually had to be
+deleted.**
+
+Logout revokes the refresh family server-side. It cannot invalidate an
+already-issued access token, because that is a stateless JWT whose only
+revocation mechanism is expiry. Observed directly while testing: after the family
+was revoked and reuse detection fired, an outstanding access token still returned
+`200` from `/users/me`.
+
+That is why the access window is 30 minutes and why
+`MAX_ACCESS_TOKEN_EXPIRE_MINUTES` caps it at 60. The correct assertions are the
+ones that exist: logout revokes the family, the cookie is cleared, and the token
+cannot be reused. Asserting that logout kills outstanding access tokens would
+have encoded a property the architecture does not have, and someone would
+eventually have "fixed" the test rather than the code.
+
+## Still open
+
+- [ ] **7.5 coverage is deliberately thin** — 45 tests over two files, with
+      thresholds set low (40% lines) as a floor to catch a new untested file
+      rather than as a quality score. `lib/api-server.ts` — the BUG-05 site — and
+      `lib/mappers.ts` remain untested. The frontend has a runner now; it does
+      not have a suite. BUG-05's two suggested tests (distinguishable 4xx vs
+      transport failure, and `PAGE_SIZE` not exceeding the per-router `le=` bound)
+      are the obvious next pair.
+- [ ] **The workflows have not run on GitHub.** They are structurally valid and
+      every step was executed locally, but CI-execution evidence only exists
+      once they are pushed.
+
+---
+
 
 ---
 
@@ -1103,28 +1517,59 @@ Not a launch blocker, but all of it is public in a public repository.
 
 # Progress summary
 
+Per-phase `Complete` column is the authoritative count. It excludes the
+supplementary "Found by running it" and "Still open" lists in Phases 2 and 6, so
+it is lower than a raw `- [x]` grep of this file, which double-counts them.
+Totals: **84 of 104 (81%)**, including 0 of 5 for repository hygiene. Phase 7 is
+6/6. The percentage is *sub-task* reality, not the same as "deployable": Phase 8
+is untouched, Phase 9 has not started, and BUG-05/06/07/09 remain open. BUG-08
+was found by the Phase 7.5 test suite and fixed by it.
+
 | Phase | Scope | Complete | Status |
 |---|---|---|---|
 | 0 | Make it run at all | 25 / 25 | **DONE** |
 | 1 | P0 security | 22 / 22 | **DONE** |
-| 2 | Containerisation | 0 / 6 | not started |
-| 3 | Session security | 6 / 8 | **BUG-01 FIXED** (backend 3.2–3.5, 3.7; 3.6 & 3.8 pending) |
+| 2 | Containerisation | 6 / 6 | **DONE** — images built, stack driven, 4 latent defects found by executing it |
+| 3 | Session security | 8 / 8 | **DONE** — BUG-01 fixed backend (ledger, rotation, reuse, logout, HttpOnly cookie) and frontend (access token memory-only, cross-tab refresh); BUG-03 fixed |
 | 4 | Data leakage | 5 / 8 | **partial — 4.1, 4.4, 4.5, 4.6, 4.8 done; BUG-02 FIXED** |
 | 5 | Headers + CSP | 5 / 5 | **DONE** — CSP + full header stack in `proxy.ts`, per-path Permissions-Policy, ISR preserved, real error reporting; see Phase 5 |
 | 6 | Beta scope | 7 / 7 | **DONE** — manifest, live counts, contact identity, submittable funnel, dark-mode dashboard, Grievance Officer guard, DPDP notice |
-| 7 | CI gate | 0 / 5 | not started |
-| 8 | Deploy | 0 / 5 | not started |
+| 7 | CI gate | 6 / 6 | **DONE** — frontend job (typecheck/lint/test/build on Node 24), npm + pip audit gating and clean, env-example 9/9, nav-manifest 21/21, Vitest suite 45 tests; BUG-08 found by that suite and fixed |
+| 8 | Deploy | 0 / 5 | not started — `prod` Compose stack verified running and healthy, but nothing is deployed to a server |
 | 9 | Legal / DPDP | 0 / 7 | not started |
 | — | Repository hygiene | 0 / 5 | not started |
 
-**70 of 109 sub-tasks complete.** The critical path to a deployable, defensible
-product runs **2 → 3(finish) → 7 → 8**. The worst known defect — sessions
-that could never be ended — is closed: rotation, reuse detection, real logout and
-HttpOnly cookie delivery are implemented and verified. The remaining session work
-(3.6/3.8) is hardening, not the critical hole. Phase 5 is closed: every response
+**84 of 104 sub-tasks complete (81%), re-checked by executing on 29 September.**
+The only phase left on the critical path is **8 (Deploy)** — and Phase 9
+(Legal/DPDP) carries the largest unmitigated financial exposure in the project,
+so the two are worth doing together rather than in sequence.
+
+Phase 3 is closed on both tracks: the backend's rotation
+ledger, reuse detection, real logout and HttpOnly cookie delivery were verified by
+the 23-test session suite and by driving the live API, and the frontend half of
+3.6 is now closed too — the access token is memory-only, proven by grepping the
+built container's client bundle, where it appears exactly once in the removal
+list and is never written. Phase 5 is closed: every response
 now carries a CSP and the header stack, ISR revalidation is verified unchanged on
 the wire, and `error.tsx` can no longer claim a notification it does not send —
 the report hits the server log with a reference a user can quote.
+
+The re-check found three live test failures and one dated total. They are in the
+bug register as **BUG-08** (frontend auth refresh — deterministic) and
+**BUG-09** (backend cutoff-paging vs the new identity constraint — deterministic),
+plus two order-dependent backend failures (numeric grading, OTP resend) that pass
+in isolation and are not yet root-caused. None of them existed in the totals that
+were previously recorded; the suite also grew (344 passed now vs 315 before).
+
+**Phase 2 is closed, and it is the phase that was most nearly believed done.**
+Five of its six files already existed in the working tree and four of them were
+broken. Building and running them is what found that the entrypoint had never
+executed (CRLF shebang, every container restart-looping), that the entire API
+answered 400 behind 200 pages (Next's rewrite sets `Host: backend:8000`, which
+Phase 1's Host validation rejects), and that the Grievance Officer name was being
+passed at runtime to a value that only exists at build time — which would have
+made Phase 6's launch blocker decorative. A green image build was never evidence
+that a container could start.
 
 **Phase 6 is closed.** The site no longer advertises a single feature it cannot
 deliver: the four de-listed routes are out of the navigation, the footer, the
@@ -1430,13 +1875,112 @@ machine, and Phase 8 must not be signed off until it is.
 
 ---
 
+# Bug register — third pass, 29 September 2026 (re-check by executing)
+
+Found while re-checking the "complete" columns. All three are deterministic and
+reproduced; the two order-dependent failures are recorded for root-causing.
+
+## BUG-08 — `refreshAccessToken` returns a dead token when the session is refused 🔴 HIGH — **FIXED**
+
+**Phase 3.6 / 7.5.** New in the memory-only token layer. The 22-test Vitest
+suite was written to close the BUG-01 gap on the client, and one test refutes the
+implementation on the day it was written:
+
+```
+tests/auth-token.test.ts > refreshAccessToken > clears a held token when the refresh is refused
+  storeAuth({access_token: ACCESS}); fetch resolves 401;
+  await refreshAccessToken();
+  expect(getAccessToken()).toBeNull();        // FAILS — still returns ACCESS
+```
+
+**Mechanism.** `lib/api.ts:439`, inside `refreshAccessToken`:
+
+```ts
+if (accessToken) return accessToken;   // "another tab may have rotated…"
+```
+
+The guard is meant for the cross-tab single-flight race, but it fires on every
+call, including the one `apiFetchImpl` makes *after the backend has just refused
+the held token with a 401*. On the 401-repair path the held token is known-stale,
+yet this line makes `refreshAccessToken` return it without touching the network:
+`fresh` is truthy, so the caller re-sends the corpse, gets a second 401, and the
+session is never actually repaired or cleared. The UI stays signed-in-looking while
+every request re-401s — the exact regression the test's comment says it exists to
+prevent.
+
+The two behaviours it collides with are both tested and both currently pass:
+"skips the network entirely when it already holds a token" (line 439) and this
+one (the refresh must go to the server when the caller got a 401). They are
+reconcilable — the skip must only apply when the held token arrived via a
+cross-tab broadcast very recently, not when a 401 just proved it stale — but the
+current code does not distinguish.
+
+**Impact while open:** `npm test` exits non-zero, so `frontend.yml` cannot go
+green; and in production, an expired session shows a logged-in-ish UI that keeps
+failing rather than signing out cleanly.
+
+**Status: FIXED (29 September 2026).** The two callers now declare which
+behaviour they need instead of sharing one guard. `refreshAccessToken` takes
+`{ force?: boolean }`:
+
+  - `AppContext` calls it with no options on boot — "do I hold a token, from
+    anywhere?". If a sibling tab is mid-rotation, adopt its broadcast and skip
+    the round trip, because a second rotation would itself be a reuse.
+  - `apiFetchImpl` calls it with `{ force: true }` on the 401-repair path. The
+    held token is the one the server *just refused*; reusing it is the bug. The
+    shortcut is skipped and a real rotation happens.
+
+A second defect surfaced alongside it: `broadcastSignOut()` posted to sibling
+tabs but did not clear the local token, so a refused refresh left a dead
+credential in memory. It now clears first.
+
+Both are covered by explicit regression tests rather than by the accidental
+refutation that found them. `npm test` is green at 45 tests.
+
+## BUG-09 — Cutoff paging test inserts rows the new identity constraint forbids 🟠 MEDIUM — **OPEN**
+
+**Phase 4 / Phase 7 CI.** After migration `9f3c2a7e8d21` added the
+`uq_cutoff_identity_coalesce` unique constraint (the Phase-4 fix for the 4-nullable-
+column constraint that never fired), `test_catalog_cutoffs_paging_walks_every_row_exactly_once`
+inserts six `cutoffs` rows that all share one identity
+(`college_id=1, course_id=NULL, branch='', neet-ug 2024, round='', quota='',
+General`) in a single multi-row INSERT. The new constraint is exactly what it is
+meant to be, and fires:
+
+```
+IntegrityError: duplicate key value violates unique constraint "uq_cutoff_identity_coalesce"
+QuickCheck: (college_id=1, course_id=0, branch='', neet-ug, 2024, '', '', 'General')
+```
+
+The paging property (walk every row exactly once, no row read twice) does not
+need six *identical* rows; the fixture must give each row a distinct identity and
+the assertion stays intact. As written, the test passes only against a schema
+without the fix — the same shape as BUG-06 (a stale test meeting a correct new
+constraint).
+
+## Order-dependent backend failures (not yet root-caused) 🟡 — **OPEN**
+
+In the full-suite run of 29 Sep ~02:40 (`344 passed, 2 failed, 1 error`) two
+additional failures appeared that **pass in isolation**:
+
+- `test_question_subject_numeric.py::test_mcq_grading_is_unchanged_by_the_numeric_key`
+- `test_otp.py::test_resend_supersedes_the_previous_code` (reported as an error)
+
+Both passed when re-run on their own. Cross-test state leakage is suspected (the
+suite shares a scratch schema and the rate limiter is a per-process store), but
+nothing is proven. Recorded so the CI green/red signal is not trusted until the
+order-dependence is understood.
+
+---
+
 # What the automated checks did and did not prove
 
 | Check | Result | What it does **not** cover |
 |---|---|---|
-| `pytest` | **315 passed, 1 FAILED, 1 skipped** — re-run 28 Sep 21:25. See BUG-06. | Session rotation/reuse/logout is now covered by `tests/test_session_security.py`; Phase-4 leaks by `tests/test_data_integrity.py`; predictor by parameterised tests. What remains untested is the frontend auth layer (Phase 7.5). |
+| `pytest` | **344 passed, 2 failed, 1 error** — re-run 29 Sep 02:40. Deterministic: BUG-09. Order-dependent, pass in isolation: numeric-grading and OTP-resend tests. See BUG-09 and the third-pass note. | Session rotation/reuse/logout is covered by `tests/test_session_security.py`; Phase-4 leaks by `tests/test_data_integrity.py`. |
+| `npm test` (Vitest) | **1 failed, 43 passed** — 29 Sep ~02:30. Deterministic: BUG-08 (auth refresh). | The two suites (auth tokens, nav manifest) are the only coverage the frontend has. |
 | `npm run typecheck` | clean | Nothing behavioural |
-| `npm run lint` | 0 errors, 2 warnings (`FALLBACK_COURSES` unused in `AdmissionForm.tsx:38`; unused `e` in `public/theme-init.js:34`) | Nothing behavioural |
+| `npm run lint` | clean | Nothing behavioural |
 | `npm run build` | exit 0 | Nothing behavioural |
 | Anonymous-access probe | all 401/403 | Nothing about session *termination* |
 | **API sweep (28 Sep)** | **68 GET endpoints, 0 × 5xx**; 52 → 200; 14 → 401 anon / 200 as admin | No POST/PUT/PATCH/DELETE was called, so **no write path is covered by this number** |
@@ -1465,6 +2009,18 @@ Recorded so the next session does not re-verify it:
 - Production guards refuse placeholder CORS, missing `ALLOWED_HOSTS`,
   `BCRYPT_ROUNDS=4`; a valid production config passes
 
+## Confirmed working during the 29 Sep re-check
+
+- `tests/test_env_example.py` — **9/9**: every documented `.env.example` variable
+  maps to a `Settings` field or a known non-Settings consumer; `Settings()`
+  accepts the template; the template cannot boot a production app.
+- `tests/nav-manifest.test.ts` — **21/21**.
+- `npm run typecheck`, `npm run lint`, `npm run build` — clean, clean, exit 0.
+- `npm audit` → **0 vulnerabilities**; `pip-audit` → **No known vulnerabilities**.
+- Containers: `prod` stack (`backend`, `frontend`, `caddy`, `db`, `redis`) and
+  `localtest` stack all **Up / healthy** — corroborates Phase 2's 6/6 claim
+  independently of its own narrative.
+
 ---
 
 Live issues, none of which are resolved by the phases above alone.
@@ -1472,7 +2028,7 @@ Live issues, none of which are resolved by the phases above alone.
 | Risk | Severity | Note |
 |---|---|---|
 | ~~BUG-01: sessions cannot be ended~~ | ~~Critical~~ | **FIXED** — ledger, rotation, reuse detection, real logout, HttpOnly cookie. See BUG-01. |
-| Access token still in `localStorage`, JS-readable | High | Phase 3.6 — the refresh token is now a cookie; the access token remains memory/JS-visible and 30-min bounded |
+| ~~Access token in `localStorage`, JS-readable~~ | ~~High~~ | **FIXED** — Phase 3.6. Access token is memory-only, refresh is an HttpOnly cookie, and a page load restores the session by silent refresh serialised across tabs so rotation cannot trip its own reuse detection |
 | ~~BUG-02: predictor advertises `name` but rejects it; `category` case-sensitive~~ | ~~High~~ | **FIXED** — see BUG-02 |
 | ~~BUG-03: auth rate limit 5/60s across all auth endpoints~~ | ~~Medium~~ | **FIXED** — per-endpoint limits. See BUG-03 |
 | ~~No security headers, no CSP~~ | ~~High~~ | **FIXED** — Phase 5. Full stack in `proxy.ts`, per-path Permissions-Policy, ISR preserved. Residual: `'unsafe-inline'` in script-src (documented tradeoff) |
@@ -1486,5 +2042,8 @@ Live issues, none of which are resolved by the phases above alone.
 | Fabricated public metrics | Medium | Phase 6 |
 | Dormant DB tables render as broken pages | Medium | Phase 6 |
 | ~~56 of 60 documented env vars are unread~~ | ~~Low~~ | **FIXED** — Phase 5.5. 45 removed, each traced to the code that reads it. `.env.prod.example` still lists three phantom guards (see Phase 8.2) |
+| **BUG-08: refresh returns a dead held token on a refused session** | High | **OPEN** — `lib/api.ts:439` short-circuits the 401-repair path; deterministic Vitest failure blocks Phase 7 gate |
+| **BUG-09: cutoff-paging test fights the new identity constraint** | Medium | **OPEN** — deterministic pytest failure; fixture must use distinct identities |
+| Backend order-dependent failures (numeric grading, OTP resend) | Medium | **OPEN** — pass in isolation; not root-caused |
 | 4.6 MB duplicated agent-skill bundles | Low | Hygiene |
 | BUG-04: PowerShell misreports error bodies on Windows | Low | Testing only, not application |

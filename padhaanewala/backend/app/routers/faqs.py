@@ -15,6 +15,10 @@ from app.roles import CONTENT_ROLES
 def list_faqs(
     entity_type: str | None = Query(None, max_length=50),
     entity_id: int | None = None,
+    # No `limit` existed here, so the whole table was returned regardless of what
+    # the caller asked for. See the same note in `universities.list_universities`.
+    limit: int = Query(100, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
 ):
     query = select(FAQ).where(FAQ.is_active)
@@ -24,6 +28,8 @@ def list_faqs(
         query = query.where(FAQ.entity_id == entity_id)
     return db.scalars(
         query.order_by(FAQ.entity_type, FAQ.entity_id, FAQ.display_order)
+        .limit(limit)
+        .offset(offset)
     ).all()
 
 @router.get("/{faq_id}", response_model=FAQResponse)

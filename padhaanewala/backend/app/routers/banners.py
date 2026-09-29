@@ -1,7 +1,7 @@
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -35,6 +35,19 @@ def _is_visible(banner: Banner) -> bool:
         return False
     return True
 
+
+def _visibility_predicate(today: date):
+    """SQL equivalent of `_is_visible`, for use inside a `WHERE` clause.
+
+    A NULL bound means "unbounded on that side", which is exactly what the
+    Python version's falsy check expresses. Kept as a named helper so the two
+    implementations can be compared by a test rather than by reading.
+    """
+    return and_(
+        or_(Banner.start_date.is_(None), Banner.start_date <= today),
+        or_(Banner.end_date.is_(None), Banner.end_date >= today),
+    )
+
 @router.get("", response_model=list[BannerResponse])
 def list_banners(
     position: str | None = None,
@@ -43,6 +56,13 @@ def list_banners(
     # banners to anonymous callers — even though the sibling `GET /{id}` handler
     # in this same file gates the identical flag. Both are gated now.
     include_inactive: bool = False,
+    # No `limit` existed here. The date-window filter also used to run in Python
+    # *after* the whole table was loaded, so it could not be combined with
+    # `limit`/`offset` without silently changing which rows a page contained.
+    # `_visibility_predicate` is the SQL form of `_is_visible`; the two must
+    # agree, and the test suite asserts they do.
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     user: User | None = Depends(get_optional_current_user),
     db: Session = Depends(get_db),
 ):
@@ -59,14 +79,16 @@ def list_banners(
     if position:
         query = query.where(Banner.position == position)
     if not include_inactive:
-        query = query.where(Banner.is_active)
+        query = query.where(
+            Banner.is_active,
+            _visibility_predicate(date.today()),
+        )
     banners = db.scalars(
         query.order_by(Banner.position, Banner.display_order)
+        .limit(limit)
+        .offset(offset)
     ).all()
-    result = [
-        _to_response(b) for b in banners if include_inactive or _is_visible(b)
-    ]
-    return result
+    return [_to_response(b) for b in banners]
 
 @router.get("/{banner_id}", response_model=BannerResponse)
 def get_banner(

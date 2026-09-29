@@ -1,6 +1,6 @@
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose.exceptions import ExpiredSignatureError, JWTError
+from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -24,7 +24,13 @@ def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token has expired",
         )
-    except JWTError:
+    # `InvalidTokenError` is PyJWT's base class for every token failure, the
+    # direct counterpart to python-jose's `JWTError`. It replaced `JWTError` in
+    # Phase 7.2, when python-jose was dropped to remove the unpatchable
+    # `ecdsa` advisory — see app/utils/security.py. The ordering matters:
+    # `ExpiredSignatureError` subclasses it, so it has to be caught first or
+    # every expired token would be reported as "Invalid token".
+    except InvalidTokenError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token",

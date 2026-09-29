@@ -1,6 +1,6 @@
 import re
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -27,9 +27,23 @@ def _find_university(db: Session, ref: str) -> University | None:
 
 
 @router.get("", response_model=list[UniversityResponse])
-def list_universities(db: Session = Depends(get_db)):
+def list_universities(
+    # This endpoint had no `limit` at all, so it was the one list route Phase
+    # 1.6's `Query(le=...)` sweep could not reach: `?limit=1000000` was silently
+    # ignored and the whole table was returned. It is also walked by the
+    # frontend's paged fetch, which assumes `limit`/`offset` are honoured —
+    # without them that walk ignores `offset`, receives the same page forever and
+    # only stops at the client's 5000-row ceiling.
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+):
     return db.scalars(
-        select(University).where(University.is_active).order_by(University.name)
+        select(University)
+        .where(University.is_active)
+        .order_by(University.name)
+        .limit(limit)
+        .offset(offset)
     ).all()
 
 

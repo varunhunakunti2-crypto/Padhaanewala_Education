@@ -52,6 +52,28 @@ if (process.env.APP_ENV === "production") {
 }
 
 const nextConfig: NextConfig = {
+  /**
+   * Phase 2.1. Required by `frontend/Dockerfile`, whose runtime stage copies
+   * `.next/standalone` — without it there is no such directory and the build
+   * fails at `COPY`.
+   *
+   * `standalone` makes Next trace the real import graph and emit a
+   * self-contained `server.js` plus a minimal `node_modules`. The alternative,
+   * `next start`, requires the whole source tree and all 373 packages (~500 MB,
+   * including ESLint and the TypeScript compiler, neither of which can execute
+   * at runtime).
+   *
+   * Two consequences to know before changing it:
+   *
+   *  - `next start` stops working. The standalone output is served by
+   *    `node server.js`. `npm start` still calls `next start`, which remains
+   *    correct for a non-container deploy and is not what the image runs.
+   *  - `public/` and `.next/static/` are deliberately *not* in `standalone`.
+   *    Omitting them yields a site that serves HTML with every stylesheet and
+   *    script 404ing, so the Dockerfile copies both explicitly.
+   */
+  output: "standalone",
+
   // Phase 5.2. Every response carries the header stack from proxy.ts; this one
   // has no value and advertises the framework what built the page. Caddy also
   // strips it via `-Server`, but the app should not emit it when run directly.

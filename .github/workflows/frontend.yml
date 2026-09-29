@@ -1,0 +1,104 @@
+# Frontend gate. Phase 7.1 and 7.2.
+#
+# ## Why this file exists
+#
+# `npm run typecheck` and `npm run lint` have been in package.json since the
+# beginning, and **nothing ran them**. The entire frontend — every one of roughly
+# 200 components, the session token layer, the security header policy, the page
+# manifest — reached `main` with no automated check of any kind on it. A `next
+# build` and an ESLint pass were things a developer ran locally, on the days
+# they remembered, which is a policy, not a gate.
+#
+# The backend has had CI throughout. The asymmetry is why four of the five
+# defects this project found by executing things (BUG-01, BUG-02, BUG-05, and the
+# Phase 2 entrypoint that had never executed) were invisible to automation: none
+# of them were in the half that had a pipeline.
+name: frontend-tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: frontend-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: padhaanewala/frontend
+
+jobs:
+  verify:
+    name: typecheck, lint, test, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          # 24 is what frontend/Dockerfile builds against (node:24-alpine), so CI
+          # and the shipped image agree. `engines.node` says >=20.9.0, which is the
+          # floor the code supports, not what it is tested on.
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: padhaanewala/frontend/package-lock.json
+
+      - name: Install dependencies
+        # `npm ci`, never `npm install`. `ci` installs exactly the lockfile and
+        # fails when package.json and package-lock.json disagree, which is the
+        # state a build should refuse rather than resolve its way out of.
+        run: npm ci
+
+      # --- 7.1 -----------------------------------------------------------
+      - name: Typecheck
+        # Runs `next typegen` first, so the generated route types exist. Without
+        # it a fresh checkout fails on missing `PageProps` types rather than on a
+        # real error, which trains people to ignore this step.
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        # Phase 7.5. The manifest guard (7.4) and the auth token layer.
+        run: npm run test
+
+      - name: Build
+        # Needs the two variables next.config.ts refuses to build without in
+        # production, and it needs them at *build* time because NEXT_PUBLIC_*
+        # is inlined into the bundle. Supplied as obviously-fake values: the
+        # point of this step is that the build succeeds with a compliant
+        # configuration, and the real names are a deployment concern.
+        env:
+          APP_ENV: production
+          NEXT_PUBLIC_GRIEVANCE_OFFICER_NAME: CI Placeholder
+          NEXT_PUBLIC_SITE_URL: https://padhaanewala.in
+        run: npm run build
+
+      # --- 7.2 -----------------------------------------------------------
+      # `npm audit` gates on *any* advisory, which is stricter than most teams
+      # want and is the right default for a project that has already shipped one
+      # unpatched CVE release. `continue-on-error` is deliberately absent.
+      #
+      # It runs after the build rather than before so a vulnerability report is
+      # delivered alongside a working artifact, and so an audit outage does not
+      # hide a type error.
+      - name: Dependency audit (npm)
+        run: npm audit --audit-level=moderate
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: frontend-failure-logs
+          path: |
+            padhaanewala/frontend/.next/**/*.log
+            padhaanewala/frontend/coverage/
+          if-no-files-found: warn
+          retention-days: 7

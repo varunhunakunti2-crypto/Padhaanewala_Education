@@ -10,7 +10,7 @@ import uuid
 
 import pytest
 from fastapi.testclient import TestClient
-from jose import jwt
+import jwt
 from sqlalchemy import text
 
 from app.config import settings
@@ -743,7 +743,7 @@ def test_r3_2_refresh_token_is_rejected_as_access_token(student):
 
 def test_r3_3_access_and_refresh_use_different_secrets(student):
     """R3.3 — neither token validates under the other's key."""
-    from jose.exceptions import JWTError
+    from jwt.exceptions import InvalidTokenError
 
     from app.utils.security import decode_token
 
@@ -754,16 +754,16 @@ def test_r3_3_access_and_refresh_use_different_secrets(student):
     assert refresh, "login must have set the refresh cookie"
     assert login["access_token"]
 
-    with pytest.raises(JWTError):
+    with pytest.raises(InvalidTokenError):
         decode_token(refresh, settings.JWT_REFRESH_SECRET_KEY)
         # decode_token defaults to the *access* secret, so the refresh token must
         # not validate there.
         decode_token(refresh)
-        raise JWTError("refresh token validated under the access secret")
+        raise InvalidTokenError("refresh token validated under the access secret")
 
-    with pytest.raises(JWTError):
+    with pytest.raises(InvalidTokenError):
         decode_token(login["access_token"], settings.JWT_REFRESH_SECRET_KEY)
-        raise JWTError("access token validated under the refresh secret")
+        raise InvalidTokenError("access token validated under the refresh secret")
 
     assert settings.JWT_SECRET_KEY != settings.JWT_REFRESH_SECRET_KEY
 
@@ -777,7 +777,7 @@ def test_r3_4_access_token_lifetime_is_short():
 
 def test_r3_1_role_claim_matches_db_roles(student):
     """The claim is informational, but it should not be a lie either."""
-    from jose import jwt as _jwt
+    import jwt as _jwt
 
     from app.utils.security import ALGORITHM
 

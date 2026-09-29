@@ -108,3 +108,35 @@ jobs:
           name: pytest-report-postgres-${{ matrix.postgres }}
           path: padhaanewala/backend/pytest-report.xml
           if-no-files-found: warn
+
+  # --- 7.2 -------------------------------------------------------------
+  # A separate job rather than a step at the end of `pytest`.
+  #
+  # It is independent of the database, so it runs in parallel and does not add
+  # its ~40s to the test job's critical path, and an advisory is its own failure
+  # with its own name in the checks list rather than a trailing step that a
+  # timeout would skip.
+  #
+  # `requirements.txt` is a fully-pinned freeze including transitive
+  # dependencies — which is why dependabot treats it as a single unit — so
+  # `pip-audit` resolves to the exact tree the suite just tested. `--strict`
+  # matters: without it pip-audit exits 0 on some failure paths, which is how an
+  # audit gate quietly stops gating.
+  python-audit:
+    name: pip-audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: |
+            padhaanewala/backend/requirements.txt
+            padhaanewala/backend/requirements-dev.txt
+      - run: |
+          python -m pip install --upgrade pip-audit
+          pip-audit --strict --progress-spinner off \
+            -r padhaanewala/backend/requirements.txt \
+            -r padhaanewala/backend/requirements-dev.txt

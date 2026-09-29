@@ -57,20 +57,31 @@
 
 	# --- Security headers -------------------------------------------------
 	#
-	# Deliberately NOT written here. The application (`frontend/proxy.ts`,
-	# Phase 5.2) is the single source of truth for every security header: it sets
-	# the CSP and the four to the CSP, and it sets Permissions-Policy *per path*.
-	# That per-path behaviour is why they cannot live at the edge — a blanket
-	# `camera=()` here would veto the `camera=(self)` the app grants to
-	# `/mock-tests`, because the browser intersects every permission policy it
-	# receives and the most restrictive wins. Two sources for one header is how
-	# that intersection gets broken by accident.
+	# Only the two that belong at the edge, and each for a specific reason.
 	#
-	# The only edge response the app never produces is `/healthz`, which is a
-	# plain "ok" and carries no content worth framing or sniffing.
+	# HSTS is set here *as well as* in the application (`frontend/proxy.ts`,
+	# Phase 5.2). The duplication is deliberate and is the one header worth
+	# having twice, because it is the one header that must not depend on the
+	# application being up and correct: a 500 from a bad deploy, or a route that
+	# crashes before the proxy runs, is precisely when a browser should be
+	# recording that this host is HTTPS-only. It also covers the responses Caddy
+	# generates itself and never forwards — `/healthz` and the redirect on :80.
+	# Browsers take the strictest HSTS they are given and the two values are
+	# identical, so there is nothing to intersect.
+	#
+	# What is deliberately NOT set here: Content-Security-Policy, X-Frame-Options,
+	# X-Content-Type-Options, Referrer-Policy, Permissions-Policy. The
+	# application is the single source of truth for all five, and for
+	# Permissions-Policy it has to be: a blanket `camera=()` at the edge would
+	# veto the `camera=(self)` the app grants to `/mock-tests`, because the
+	# browser intersects every policy it receives and the most restrictive wins.
+	# Two sources for *that* header is how the intersection gets broken.
 	header {
-		# Hides the server banner.
+		# Hides the server banner. Also stripped application-side by
+		# `poweredByHeader: false`; here because this is the only layer that
+		# sees Caddy's own responses too.
 		-Server
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 	}
 
 	# --- Health, for the load balancer and for uptime monitoring ------------

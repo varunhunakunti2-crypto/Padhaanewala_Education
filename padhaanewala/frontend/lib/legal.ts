@@ -13,12 +13,12 @@
  * it is a written representation to users. The notable current-state facts the
  * copy depends on:
  *
- *  - No cookies are set *by the application itself*. The server issues no
- *    `Set-Cookie` for analytics or advertising because no such SDK is installed.
- *    Session state is an HttpOnly, Secure, SameSite=Strict cookie scoped to
- *    `/api/v1/auth`, added in the Phase 3 session-security work; the access
- *    token is held in memory. The cookie policy lists the remaining
- *    `localStorage` keys verbatim. See lib/api.ts and lib/context/AppContext.tsx.
+ *  - One cookie, `pdw_refresh`, is set by the application: HttpOnly, Secure in
+ *    production, SameSite=Strict, path-scoped to `/api/v1/auth`. It is the
+ *    session credential and no script can read it. The access token is held in
+ *    memory only (Phase 3.6) and is never persisted; the Cookie Policy lists the
+ *    remaining `localStorage` keys verbatim. See lib/api.ts and
+ *    lib/context/AppContext.tsx.
  *  - No analytics, advertising or error-tracking SDK is installed. Not Google
  *    Analytics, not Meta Pixel, not Sentry, not Vercel Analytics.
  *  - No payment gateway is integrated. Every service is currently free.
@@ -209,7 +209,7 @@ export const LEGAL_DOCS: readonly LegalDoc[] = [
         heading: "Cookies and local storage",
         blocks: [
           p(
-            "We set no cookies. Your session is kept in your browser's local storage instead, which never leaves your device except when your browser attaches it to an API request. Our Cookie Policy lists every key we store and explains how to clear it.",
+            "We set one cookie, `pdw_refresh`, which keeps you signed in. It is HttpOnly and Secure with SameSite=Strict, and its path is limited to the sign-in endpoints. Your short-lived access token is never stored in your browser — it is held in the page's memory while you use the site. Everything else we keep on your device is preference data, which lives in your browser's local storage and never leaves it except when you send it to us. Our Cookie Policy lists every key and explains how to clear it.",
           ),
         ],
       },
@@ -725,20 +725,23 @@ export const LEGAL_DOCS: readonly LegalDoc[] = [
     title: "Cookie Policy",
     shortTitle: "Cookies",
     icon: "cookie",
-    description: `${SITE.name} sets no cookies. This page explains what cookies are, what we store in your browser instead, and how to clear it.`,
+    description: `${SITE.name} sets one cookie, the HttpOnly sign-in token. This page explains what it is, what we keep in your browser instead, and how to clear it.`,
     sections: [
       {
         id: "short-answer",
         heading: "The short answer",
         blocks: [
           p(
-            "We set no cookies. Not one. This is not a rounding of “we only set essential cookies” — our servers issue no Set-Cookie header, our code never calls document.cookie, and there is no advertising or analytics script that could set one.",
+            "We set exactly one cookie: `pdw_refresh`, the token that keeps you signed in. That is not a rounding of “we only set essential cookies” — there is no advertising cookie, no analytics cookie, no tracking cookie, and no third-party script on this site that could set one. No analytics, advertising or error-tracking service is installed at all.",
           ),
           p(
-            "Your session and your preferences live in your browser's local storage instead. We have documented every key we use below so you can see exactly what is stored on your device.",
+            "That one cookie is marked HttpOnly, so no script running on this site — including ours — can read it. It is marked Secure, so it is only ever sent over an encrypted connection, and SameSite=Strict, so it is not attached to requests made by other websites. Its path is limited to the sign-in endpoints.",
+          ),
+          p(
+            "Your short-lived access token is not stored at all. It is held in the page's memory while you are using the site, which is why a page reload exchanges the cookie for a new one. Your preferences — theme, shortlists, comparison, recent searches — are kept in your browser's local storage, and every key is listed below.",
           ),
           note(
-            "If a future release introduces cookies or similar storage, this page will be updated with the purpose, name, type and duration of each one before it ships.",
+            "If we ever add another cookie we will update this page with its purpose, name, type and duration before it ships.",
           ),
         ],
       },
@@ -753,13 +756,13 @@ export const LEGAL_DOCS: readonly LegalDoc[] = [
       },
       {
         id: "what-we-store",
-        heading: "What we store in your browser instead",
+        heading: "What we store in your browser",
         blocks: [
           p(
-            "Local storage is a similar browser store that is never attached to outgoing requests automatically, and that is not readable by other websites. It holds your session and your preferences, on your device only, until you clear it or close the browser.",
+            "The cookie above is the only one. Alongside it, your browser's local storage holds the preferences and shortlists below. Local storage is a similar store that is never attached to outgoing requests automatically, and that other websites cannot read.",
           ),
           ul(
-            "cp_access_token, cp_refresh_token, cp_user — your sign-in session and the basic account details the interface needs. These are the equivalent of session cookies, stored where JavaScript can read them so the app can call our API.",
+            "cp_user — the basic account details the interface needs to render your name and initials.",
             "cp_theme — whether you chose light or dark mode.",
             "cp_saved, cp_saved_courses, cp_saved_scholarships, cp_compare, cp_profile — your shortlisted colleges, courses, scholarships, comparison list and profile selections.",
             "cp_recent_views, cp_recent_searches, cp_recent_locations, cp_compare_history — recently viewed items and your search history, so the site can show “continue where you left off”.",
@@ -767,7 +770,10 @@ export const LEGAL_DOCS: readonly LegalDoc[] = [
             "pw-exam-plans — the exam dates and study plan you create in the exam planner.",
           ),
           p(
-            "One thing worth being aware of: because the session tokens sit in local storage rather than in an httpOnly cookie, they are readable by any script that runs on our pages. We do not run third-party scripts, but this is a deliberate trade-off for a browser-only app. Signing out clears all three keys on this device.",
+            "No sign-in token is in that list, and that is deliberate. An access token left in local storage can be read by any script on the page — ours, a browser extension, or anything injected by a compromised dependency — and would still be usable after the tab closed. Ours is held in memory only, so the worst case for a compromised page is that it can make calls as you while the page is open, rather than handing over a working credential that outlives it. The cookie that does survive is HttpOnly, which no script can read at all.",
+          ),
+          p(
+            "Signing out clears the cookie and the account details on this device, and revokes the session on our servers, so it cannot be resumed.",
           ),
         ],
       },
@@ -797,7 +803,7 @@ export const LEGAL_DOCS: readonly LegalDoc[] = [
         heading: "How to manage or clear what is stored",
         blocks: [
           p(
-            "Use the sign-out button, which clears the session keys immediately. To clear everything, open your browser's site-data settings for this domain and clear it; in Chrome and Edge this is the padlock or tune icon in the address bar, then “Cookies and other site data”. Clearing your browser's data will also reset your theme and shortlisted items on that device, but it will not delete anything stored in your account on our servers.",
+            "Use the sign-out button. It clears the sign-in cookie and the account details on this device, and it revokes the session on our servers so it cannot be resumed. To clear everything else, open your browser's site-data settings for this domain and clear it; in Chrome and Edge this is the padlock or tune icon in the address bar, then “Cookies and other site data”. Clearing your browser's data will also reset your theme and shortlisted items on that device, but it will not delete anything stored in your account on our servers.",
           ),
         ],
       },

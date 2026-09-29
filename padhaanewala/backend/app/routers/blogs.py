@@ -51,13 +51,22 @@ def _to_blog_response(db: Session, blog: Blog) -> BlogResponse:
     )
 
 @router.get("/blog-categories", response_model=list[BlogCategoryResponse])
-def list_categories(db: Session = Depends(get_db)):
+def list_categories(
+    # No `limit`/`offset` existed here, so the frontend's paged walk received the
+    # same full list on every page and duplicated rows until it hit its 5000-row
+    # ceiling. See `universities.list_universities`.
+    limit: int = Query(50, ge=1, le=50),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+):
     rows = db.execute(
         select(BlogCategory, func.count(Blog.id))
         .outerjoin(Blog, Blog.category_id == BlogCategory.id)
         .where(BlogCategory.is_active)
         .group_by(BlogCategory.id)
         .order_by(BlogCategory.name)
+        .limit(limit)
+        .offset(offset)
     ).all()
     return [
         BlogCategoryResponse(

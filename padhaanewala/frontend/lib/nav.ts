@@ -59,7 +59,6 @@ export interface NavItem {
  *                          client-side scorer has no admissions data to read.
  *  - `/plan`               The exam planner is unreachable from navigation and
  *                          has no server-side storage for what it writes.
- *  - `/ask-ai`             An open relay into a metered third-party model.
  *  - `/dashboard`          A signed-in account page, not a public feature. It
  *                          stays reachable after login but is out of the nav.
  *
@@ -67,13 +66,19 @@ export interface NavItem {
  * rows. Both are populated now, so it is re-listed: it appears in `PRIMARY_NAV`,
  * the sitemap, and without `BETA_NOINDEX`.
  *
+ * `/ask-ai` was here for the same reason, on the grounds that it is a relay into
+ * a metered third-party model. `/api/ai` is now capped at 500 characters and 12
+ * requests a minute per IP (Phase 4.7), which is the control that bounds cost, and
+ * the assistant is reachable from a floating button on every page — so a
+ * de-listed route that the header, the footer, the sitemap and a site-wide button
+ * all point at is a contradiction rather than a saving.
+ *
  * Adding a route here requires nothing else: the nav arrays, the sitemap and
  * `robots.ts` all derive from this list. Removing one is a one-line revert.
  */
 export const BETA_HIDDEN_ROUTES = [
   "/college-predictor",
   "/plan",
-  "/ask-ai",
   "/dashboard",
 ] as const;
 
@@ -212,6 +217,7 @@ export const SITEMAP_PAGES: readonly SitemapPage[] = [
   { path: "/courses", changeFrequency: "weekly", priority: 0.7 },
   { path: "/exams", changeFrequency: "weekly", priority: 0.7 },
   { path: "/mock-tests", changeFrequency: "weekly", priority: 0.7 },
+  { path: "/ask-ai", changeFrequency: "monthly", priority: 0.6 },
   { path: "/scholarships", changeFrequency: "monthly", priority: 0.7 },
   { path: "/compare", changeFrequency: "monthly", priority: 0.6 },
   { path: "/reviews", changeFrequency: "monthly", priority: 0.5 },

@@ -41,6 +41,28 @@ FROM deps AS builder
 # inside a build sandbox.
 ENV NEXT_TELEMETRY_DISABLED=1
 
+# APP_ENV defaults to `production` *in the builder*, so the launch-blocker guard
+# in next.config.ts fires while the image is being built rather than after it is
+# deployed. This is the whole reason it is a build-time check: a
+# `NEXT_PUBLIC_*` value is inlined into the bundle, so the only moment a
+# production deployment can learn that the grievance officer is undesignated is
+# here, before an image exists to ship.
+ARG APP_ENV=production
+# Statutory publication duty (IT Rules 2021 r.3(2)(g), Consumer Protection Act
+# 2019). Compiled into the bundle, so it must arrive as a build arg — passing it
+# as a runtime environment variable in docker-compose.prod.yml would have no
+# effect at all on the served page.
+ARG NEXT_PUBLIC_GRIEVANCE_OFFICER_NAME
+ARG NEXT_PUBLIC_GRIEVANCE_OFFICER_PHONE
+# The canonical origin, used by metadataBase, JSON-LD and the sitemap. Left empty
+# in the builder it falls back to https://padhaanewala.in, which is correct for
+# this deployment and wrong for a staging host — hence the build arg.
+ARG NEXT_PUBLIC_SITE_URL
+ENV APP_ENV=${APP_ENV} \
+    NEXT_PUBLIC_GRIEVANCE_OFFICER_NAME=${NEXT_PUBLIC_GRIEVANCE_OFFICER_NAME} \
+    NEXT_PUBLIC_GRIEVANCE_OFFICER_PHONE=${NEXT_PUBLIC_GRIEVANCE_OFFICER_PHONE} \
+    NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL}
+
 COPY . .
 
 # `NEXT_PUBLIC_*` values are inlined into the client bundle at build time, so
@@ -69,13 +91,14 @@ FROM node:24-alpine@sha256:83f1c388c31fb2e51f7cbd4dea949b96260798c98f206e8e4696b
 
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
-    PORT=3000 \
-    HOSTNAME=0.0.0.0
+    PORT=3000
 
-# Next's standalone server binds to $HOSTNAME. `0.0.0.0` is required — the
-# default is the container hostname, which is not resolvable from the Compose
-# network, and the symptom is Caddy reporting a connection refused while the
-# container looks healthy.
+# `HOSTNAME` is deliberately NOT set here. Next's standalone `server.js` binds to
+# `process.env.HOSTNAME || '0.0.0.0'`, and Docker injects HOSTNAME into every
+# container — set to the container's own hostname — which overrides any `ENV` in
+# this file. Setting it here would be silently discarded while looking like the
+# thing that makes the container reachable. The value that does take effect is
+# supplied at runtime in docker-compose.prod.yml.
 
 RUN addgroup --system --gid 1001 nodejs \
     && adduser --system --uid 1001 --ingroup nodejs nextjs

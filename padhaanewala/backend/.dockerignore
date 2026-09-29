@@ -63,7 +63,6 @@ coverage.xml
 # `purge_demo_data.py` is the exception: it deletes rows, and a data-destroying
 # script has no business being present in a production image where a mistyped
 # command is unrecoverable.
-scripts/!purge_demo_data.py
 scripts/purge_demo_data.py
 
 # bootstrap_test_db.py points at PADHAANEWALA_SCHEMA and creates a scratch

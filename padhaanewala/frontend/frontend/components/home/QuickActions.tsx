@@ -6,19 +6,14 @@ import {
   Scale,
   Award,
   CalendarDays,
-  Newspaper,
+  FileQuestion,
+  MessagesSquare,
   Headset,
   ArrowRight,
 } from "lucide-react";
 import { Reveal } from "@/components/ui/Reveal";
 import { SectionHeading } from "@/components/ui/SectionHeading";
 
-/**
- * The college predictor and mock tests used to sit in this grid, next to four
- * tiles that work. Both are de-listed in `lib/nav.ts`; the two kept entries are
- * the catalogue search and the comparison tool, and `/admission` and `/blog`
- * take their place.
- */
 const ACTIONS = [
   {
     title: "Find Colleges",
@@ -34,6 +29,22 @@ const ACTIONS = [
     href: "/compare",
     icon: Scale,
     grad: "from-blue-600 to-cyan-600",
+    shadow: "shadow-blue-600/25",
+  },
+  {
+    title: "Mock Tests",
+    desc: "Practice exams with a real timer and instant score analysis.",
+    href: "/mock-tests",
+    icon: FileQuestion,
+    grad: "from-emerald-500 to-teal-500",
+    shadow: "shadow-emerald-500/25",
+  },
+  {
+    title: "AI Assistant",
+    desc: "Ask anything about courses, exams and admissions.",
+    href: "/ask-ai",
+    icon: MessagesSquare,
+    grad: "from-blue-600 to-cyan-500",
     shadow: "shadow-blue-600/25",
   },
   {
@@ -59,14 +70,6 @@ const ACTIONS = [
     icon: CalendarDays,
     grad: "from-cyan-600 to-sky-600",
     shadow: "shadow-cyan-600/25",
-  },
-  {
-    title: "Guides & Articles",
-    desc: "Admissions, exams and careers, written for Indian students.",
-    href: "/blog",
-    icon: Newspaper,
-    grad: "from-violet-600 to-purple-600",
-    shadow: "shadow-violet-600/25",
   },
 ];
 

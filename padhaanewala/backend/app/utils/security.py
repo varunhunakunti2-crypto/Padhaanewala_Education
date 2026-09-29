@@ -1,8 +1,44 @@
-﻿from datetime import datetime, timedelta, timezone
+﻿"""Password hashing and JWT minting.
+
+## Why PyJWT and not python-jose (Phase 7.2)
+
+`pip-audit` gates this repository, and it failed on day one: **ecdsa 0.19.2,
+PYSEC-2026-1325, no fixed version published.** That is not a hypothetical risk
+in this codebase — it is an *unreachable* one, and the distinction is the whole
+reason to fix it rather than suppress it.
+
+`ecdsa` was not chosen. It arrived as a hard `install_requires` of
+`python-jose==3.5.0`, which pulls it unconditionally, and it exists in
+python-jose solely to implement **ES256/ES384**. This project signs with HMAC
+only: `ALGORITHM` below is `settings.JWT_ALGORITHM`, and the production guard in
+`config.py` *refuses to boot* on anything outside `("HS256", "HS384", "HS512")`.
+So the vulnerable code path cannot be reached by any configuration this
+application will accept.
+
+That is still not good enough. "Unreachable because a validation guard says so"
+is a weaker guarantee than "not installed": the guarantee is one edit to a
+whitelist away from silently becoming load-bearing, and `ecdsa` 0.19.2 has no
+published fix, so there is no upgrade to migrate to. Removing `python-jose`
+removes the package rather than documenting the absence.
+
+The migration is one import here, plus one exception rename in
+`app/dependencies.py`: `jose.exceptions.JWTError` is `jwt.exceptions.
+InvalidTokenError` in PyJWT, and `ExpiredSignatureError` keeps its name in both.
+The HMAC-only call surface here is otherwise API-identical —
+`jwt.encode(payload, key, algorithm=...)` and
+`jwt.decode(token, key, algorithms=[...])`. The 336-test suite, 23 of which
+exercise every path through this module, is the evidence that the swap changed
+nothing observable.
+
+`pyasn1` and `rsa` were python-jose's other unconditional requirements and are
+gone for the same reason; neither is imported anywhere in the project.
+"""
+
+from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
 from uuid import uuid4
 
-from jose import jwt
+import jwt
 from passlib.context import CryptContext
 
 from app.config import settings

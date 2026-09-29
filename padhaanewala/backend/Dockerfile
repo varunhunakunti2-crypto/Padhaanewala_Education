@@ -86,6 +86,33 @@ COPY --chown=root:root scripts/ ./scripts/
 COPY --chown=root:root docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod 0755 /usr/local/bin/docker-entrypoint.sh
 
+# Normalise CRLF -> LF, and do not let the build fail silently if it cannot.
+#
+# This is not defensive decoration. The script shipped with CRLF endings, which
+# `core.autocrlf=true` reproduces on every checkout on a Windows machine, and a
+# shebang with a trailing CR names an interpreter called `sh\r`. The kernel then
+# fails with `ENOENT` — reported as "no such file or directory" for a file that
+# is present, present and executable — and every container restart-loops:
+#
+#     exec /usr/local/bin/docker-entrypoint.sh: no such file or directory
+#
+# The build succeeded and `ls -l` showed the file, so neither the build output nor
+# a casual inspection of the image would have caught it. `sed` in the same layer
+# as the COPY is the only place that can: it makes the image correct regardless
+# of how the working tree happens to be checked out, which is what a build server
+# and a developer laptop will not agree about.
+#
+# The guard turns "the container silently restart-loops" into "the build stops
+# with a message naming the file", which is the whole difference between a five
+# minute diagnosis and a five hour one.
+RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh \
+    && if head -c 2 /usr/local/bin/docker-entrypoint.sh | od -An -c | grep -q '\\r'; then \
+         echo "FATAL: docker-entrypoint.sh still has CRLF after normalisation." >&2; \
+         exit 1; \
+       fi \
+    && head -n 1 /usr/local/bin/docker-entrypoint.sh | grep -q '^#!.*[^[:space:]]$' \
+       || { echo "FATAL: docker-entrypoint.sh has no usable shebang." >&2; exit 1; }
+
 # `/tmp` is world-writable by necessity, but made sticky so one process cannot
 # read another's files through it.
 RUN chmod 1777 /tmp
@@ -109,6 +136,31 @@ ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 # the rate limiter's Redis client is a module-level singleton, so horizontal
 # scaling has to go through the orchestrator (more replicas) rather than more
 # workers in one container. See "Scaling" in docs/Pending-phases.md.
+#
+# --forwarded-allow-ips "*" trusts X-Forwarded-For from *any* peer, which on its
+# own is the hole Phase 1.5 closed: the header is client-controlled, and Phase 1
+# introduced `TRUSTED_PROXY_HOPS` precisely so the topology, not the header,
+# decides whether it is believed.
+#
+# It is safe here, but only because of the topology and not because of the flag.
+# This container publishes no port, so the only thing that can reach it is
+# another container on the private Compose network, and the only one that
+# forwards a request is the frontend. That reasoning is load-bearing: if anyone
+# ever adds a `ports:` mapping for the backend, this flag becomes an
+# internet-reachable header-trust bypass and every rate-limit bucket and audit
+# row can be forged by a caller who sets the header themselves.
+#
+# The coupling is worth knowing because it is invisible from either file alone.
+# Verified while running the stack: with `--forwarded-allow-ips *`, `client_ip()`
+# at `TRUSTED_PROXY_HOPS=0` still returns the forwarded client rather than the
+# socket peer, because uvicorn's ProxyHeadersMiddleware has already rewritten
+# `request.client` before any application code runs. Two independent
+# implementations of "what is the client IP" are live in this process, and
+# `app/routers/consent.py:49` reads `request.client.host` directly rather than
+# going through `client_ip()`.
+#
+# Do not "tidy" the `*` into a subnet without also changing consent.py to use
+# `client_ip()`; doing the first alone silently changes what an audit row records.
 CMD ["uvicorn", "app.main:app", \
      "--host", "0.0.0.0", \
      "--port", "8000", \

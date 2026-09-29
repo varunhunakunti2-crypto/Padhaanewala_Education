@@ -1,0 +1,71 @@
+# Line-ending normalisation. Phase 2.
+#
+# Why this file exists: `core.autocrlf=true` is the Windows default, and it
+# rewrites LF to CRLF on checkout. That is harmless for source files, which is
+# why it goes unnoticed — and fatal for a shell script, because the kernel reads
+# the shebang line *including its carriage return* and looks for an interpreter
+# literally named `sh\r`. `backend/docker-entrypoint.sh` shipped with CRLF
+# endings, so `backend/Dockerfile` built cleanly, the file was present and
+# executable in the image, and every container died on start with:
+#
+#     exec /usr/local/bin/docker-entrypoint.sh: no such file or directory
+#
+# "No such file or directory" for a file that demonstrably exists is the
+# signature of a missing interpreter, not a missing script. The build passing is
+# not evidence the container can start.
+#
+# This file is the fix that survives a re-clone. `text eol=lf` pins the working
+# tree to LF for the listed patterns no matter what `core.autocrlf` says. The
+# Dockerfiles additionally normalise CRLF after `COPY` as a second line of
+# defence, because a build can legitimately be run from a working tree that has
+# not yet picked this file up.
+
+# --- Shell scripts. The load-bearing entry. -------------------------------
+# A shebang with a trailing CR is a different, nonexistent interpreter path.
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.bash text eol=lf
+
+# --- Anything a container or a tool reads and interprets verbatim. ---------
+# A CRLF in a Dockerfile continuation line, a Compose YAML file or a Caddyfile is
+# a parse error or a silently-misparsed token rather than a clean failure.
+Caddyfile text eol=lf
+Caddyfile.* text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.ini text eol=lf
+*.cfg text eol=lf
+*.toml text eol=lf
+.env.example text eol=lf
+
+# --- Python. --------------------------------------------------------------
+*.py text eol=lf
+
+# --- Lockfiles. `npm ci` and `pip install -r` compare hashes, and a rewritten
+# lockfile is a different hash. Notepad-style editors that "helpfully" add a
+# trailing newline or convert endings will fail the install rather than the build.
+package-lock.json text eol=lf
+requirements.txt text eol=lf
+
+# --- Everything else defaults to LF, which is the convention the whole
+# repository already follows in git's blob store. Without this, a file with no
+# matching rule above gets autocrlf treatment and the bug reappears somewhere
+# new.
+* text=auto eol=lf
+
+# --- Binary. `text=auto` would otherwise be at liberty to treat these as text
+# and rewrite them, which corrupts a PNG and, more subtly, breaks a pinned image
+# digest check.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.glb binary
+*.woff binary
+*.woff2 binary
+*.pdf binary
+*.xlsx binary
+*.zip binary
+*.gz binary

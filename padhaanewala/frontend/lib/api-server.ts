@@ -8,6 +8,12 @@
  * Every helper is failure-tolerant: if the backend is down or returns an error
  * it resolves to `null` / `[]` so callers can fall back to bundled data instead
  * of crashing the page.
+ *
+ * Failure-tolerant is not the same as failure-silent. A swallowed error is how
+ * BUG-05 shipped: the backend answered 422, `!res.ok` returned `null`, `null`
+ * became `[]`, and `/blog` served HTTP 200 with an empty article grid. Every
+ * non-2xx is therefore logged with its status and path, once per distinct
+ * failure, so a silent-empty page is always traceable to a real status code.
  */
 
 const RAW_BACKEND = (
@@ -28,6 +34,26 @@ export const REVALIDATE = {
 
 const DEFAULT_TIMEOUT_MS = 6000;
 
+/**
+ * Statuses already reported, so a persistently broken endpoint produces one log
+ * line per distinct failure rather than one per ISR revalidation. Unbounded on
+ * purpose in the sense that it is a `Set` of short strings; it only ever holds
+ * one entry per (status, path) pair the process has actually seen.
+ */
+const reportedFailures = new Set<string>();
+
+function reportFailure(path: string, res: Response): void {
+  const key = `${res.status} ${path}`;
+  if (reportedFailures.has(key)) return;
+  reportedFailures.add(key);
+  // eslint-disable-next-line no-console -- the build log is the only place a
+  // swallowed backend failure is observable. Silently rendering an empty page
+  // is the BUG-05 failure mode.
+  console.error(
+    `[api-server] ${key} — treating as empty. Body: ${res.statusText || "no status text"}`,
+  );
+}
+
 async function serverGet<T>(path: string, revalidate: number): Promise<T | null> {
   try {
     const res = await fetch(`${SERVER_API}${path}`, {
@@ -35,9 +61,25 @@ async function serverGet<T>(path: string, revalidate: number): Promise<T | null>
       signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
       next: { revalidate },
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      reportFailure(path, res);
+      return null;
+    }
     return (await res.json()) as T;
-  } catch {
+  } catch (err) {
+    // Transport failure (DNS, connection refused, timeout, abort) is
+    // distinguishable from an HTTP error status, and the two need different
+    // responses: a 422 means the request is wrong, a timeout means the backend
+    // is unreachable. Both used to collapse into the same `null`.
+    const key = `TRANSPORT ${path}`;
+    if (!reportedFailures.has(key)) {
+      reportedFailures.add(key);
+      console.error(
+        `[api-server] ${key} — treating as empty: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
     return null;
   }
 }
@@ -65,14 +107,50 @@ const pagedCache = new Map<string, Promise<unknown[]>>();
 
 /** Hard ceiling on rows so a runaway endpoint cannot exhaust memory. */
 const MAX_PAGED_ROWS = 5000;
-/** Must match the backend's `le=` bound; a 422 means the two have drifted. */
-const PAGE_SIZE = 100;
+
+/**
+ * The page size used by a paged walk, per endpoint.
+ *
+ * **This cannot be one constant.** The backend caps `limit` per router
+ * (`Query(..., le=N)`) and those caps differ: `/colleges`, `/courses`, `/exams`,
+ * `/scholarships` and `/mock-tests` allow 100, while `/blogs` allows **50** and
+ * `/exams/upcoming` allows **50**. A single `PAGE_SIZE = 100` therefore issued
+ * `GET /blogs?limit=100`, got a 422, and — because the failure was swallowed —
+ * rendered `/blog` as an empty page with a 200. That is BUG-05.
+ *
+ * The default is 50 rather than 100 on purpose: it is safe against *every*
+ * capped endpoint in the API today, so a newly added call site cannot be the
+ * thing that re-arms this. An endpoint opts up to 100 by naming itself here, and
+ * `tests/page-size-contract.test.ts` fails the build if a declared size ever
+ * exceeds the `le=` bound the backend actually declares for that path — so the
+ * two cannot drift apart silently again.
+ */
+export const DEFAULT_PAGE_SIZE = 50;
+
+export const ENDPOINT_PAGE_SIZES: Readonly<Record<string, number>> = {
+  "/colleges": 100,
+  "/courses": 100,
+  "/exams": 100,
+  "/mock-tests": 100,
+  "/scholarships": 100,
+  "/universities": 100,
+  // Declared explicitly even though it is the default: 50 is the backend's own
+  // cap here, and naming it documents that the walk is not free to grow.
+  "/blogs": 50,
+  "/blog-categories": 50,
+};
+
+export function pageSizeFor(path: string): number {
+  const base = path.split("?")[0];
+  return ENDPOINT_PAGE_SIZES[base] ?? DEFAULT_PAGE_SIZE;
+}
 
 async function serverGetAllPaged<T>(
   path: string,
   revalidate: number,
 ): Promise<T[]> {
-  const cacheKey = `${path}|${revalidate}`;
+  const pageSize = pageSizeFor(path);
+  const cacheKey = `${path}|${revalidate}|${pageSize}`;
   const cached = pagedCache.get(cacheKey);
   if (cached) return (await cached) as T[];
 
@@ -81,13 +159,13 @@ async function serverGetAllPaged<T>(
     const separator = path.includes("?") ? "&" : "?";
     for (;;) {
       const page = await serverGet<T[]>(
-        `${path}${separator}limit=${PAGE_SIZE}&offset=${rows.length}`,
+        `${path}${separator}limit=${pageSize}&offset=${rows.length}`,
         revalidate,
       );
       if (!Array.isArray(page) || page.length === 0) break;
       rows.push(...page);
       // A short page means we have reached the end.
-      if (page.length < PAGE_SIZE) break;
+      if (page.length < pageSize) break;
       if (rows.length >= MAX_PAGED_ROWS) break;
     }
     return rows;
@@ -469,7 +547,7 @@ export const getCollegeReviews = (slug: string) =>
   serverGetAll<ApiReview>(`/reviews/college/${encodeURIComponent(slug)}`, REVALIDATE.catalogDetail);
 
 export const getFaqs = (entityType: string, entityId: number) =>
-  serverGetAll<ApiFaq>(
+  serverGetAllPaged<ApiFaq>(
     `/faqs?entity_type=${encodeURIComponent(entityType)}&entity_id=${entityId}`,
     REVALIDATE.catalogDetail,
   );

@@ -6,6 +6,7 @@ import { Footer } from "@/components/layout/Footer";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { Providers } from "@/components/layout/Providers";
 import { WhatsAppFab } from "@/components/layout/WhatsAppFab";
+import { AskAiFab } from "@/components/layout/AskAiFab";
 import { SITE, SITE_URL } from "@/lib/site";
 
 const inter = Inter({
@@ -106,12 +107,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <main className="flex-1">{children}</main>
           <Footer />
           <BottomNav />
-          {/* `AskAiFab` is no longer mounted. It was a site-wide floating link
-              into `/ask-ai`, which is de-listed: the route relays the user's raw
-              message to a metered third-party model with no rate limit, no input
-              cap and no timeout. A persistent global entry point to a metered
-              relay is a cost exposure on every page load, not just the page it
-              links to. */}
+          {/* The floating assistant. Opens a chat panel in place rather than
+              navigating away, so a reader on a college detail page or an article
+              does not lose their place to ask a question. `/api/ai` is capped at
+              500 characters and 12 requests a minute per IP (Phase 4.7), which is
+              what bounds the spend now that the button is on every page. Both the
+              panel and three.js are code-split and fetched on first interaction. */}
+          <AskAiFab />
           <WhatsAppFab />
         </Providers>
       </body>

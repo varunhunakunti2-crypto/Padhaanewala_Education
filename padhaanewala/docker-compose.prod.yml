@@ -119,15 +119,38 @@ services:
       APP_URL: ${APP_URL:?APP_URL is required}
       API_URL: ${API_URL:?API_URL is required}
 
-      # Must be the *public* domain, because `next.config.ts` proxies to this
-      # service by name and Caddy is what makes the domain public. TrustedHost-
-      # Middleware rejects a request whose Host is not in this list.
-      ALLOWED_HOSTS: ${ALLOWED_HOSTS:?ALLOWED_HOSTS is required}
+      # Must be the *public* domain, because Caddy is what makes it public and
+      # TrustedHostMiddleware rejects a request whose Host is not in this list.
+      #
+      # `backend` must also be here, and its absence is a genuinely confusing
+      # failure. Next's `rewrites()` proxy sets the Host header to the rewrite
+      # destination, so FastAPI sees `Host: backend:8000` rather than the public
+      # domain — and every single API call answers **400 "Invalid host header"**.
+      # Pages still render 200, because they never touch the backend, so the site
+      # looks alive while the entire API is dead. `/health` is the tell: the
+      # Caddyfile proxies that one path *directly* to the backend, preserving the
+      # original Host, so it returns 200 while `/api/v1/*` returns 400.
+      #
+      # Adding the internal service name is safe because `backend` is not
+      # published and is not resolvable off this Compose network, so a caller who
+      # can present `Host: backend` is already inside the network.
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:?ALLOWED_HOSTS is required},backend
 
-      # Exactly one proxy (Caddy) sits in front of the app, so the client IP is
-      # the last entry in X-Forwarded-For. At 0 every caller would share the
-      # socket peer — Caddy's address — and one user could exhaust the rate limit
-      # for everyone.
+      # Exactly **one** proxy appends to X-Forwarded-For: Caddy. Next relays the
+      # header to the backend but does not append the peer it observed, so the
+      # backend receives a single-entry chain, `[client]`, and 1 takes that entry.
+      #
+      # Verified rather than reasoned, by submitting an enquiry through the full
+      # stack and reading `enquiries.ip_address` back out of the database:
+      # hops=1 records 172.25.0.1, the address of the real caller on the Docker
+      # bridge — not a container address. Worth doing, because the two plausible
+      # wrong values are *worse than useless* rather than obviously broken: at 2
+      # the index goes negative, `client_ip()` decides the chain is untrustworthy,
+      # and it silently falls through to the socket peer (Phase 1's
+      # `client_ip.py:59`). The recorded value happens to come out right only
+      # because uvicorn has already rewritten `request.client` — see the
+      # `--forwarded-allow-ips` note in backend/Dockerfile. A configuration that
+      # is correct for an accidental reason is one edit away from not working.
       TRUSTED_PROXY_HOPS: "1"
 
       CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS is required}
@@ -226,6 +249,21 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        # `NEXT_PUBLIC_*` is inlined into the client bundle by `next build`, so
+        # these cannot be supplied as runtime environment variables — the image
+        # would be built without them and the served page would show
+        # "To be designated" on /legal/grievance no matter what the container's
+        # environment says.
+        #
+        # `APP_ENV=production` in the builder is what makes the launch-blocker
+        # guard in next.config.ts fire at image-build time. Without it the guard
+        # is dormant in the container build and the placeholder ships silently,
+        # which is the one outcome the guard exists to prevent.
+        APP_ENV: production
+        NEXT_PUBLIC_GRIEVANCE_OFFICER_NAME: ${NEXT_PUBLIC_GRIEVANCE_OFFICER_NAME:?NEXT_PUBLIC_GRIEVANCE_OFFICER_NAME is required}
+        NEXT_PUBLIC_GRIEVANCE_OFFICER_PHONE: ${NEXT_PUBLIC_GRIEVANCE_OFFICER_PHONE:-}
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-https://padhaanewala.in}
     image: padhaanewala-frontend:prod
     restart: unless-stopped
     # No `ports:`. Caddy is the only ingress.
@@ -234,6 +272,18 @@ services:
         condition: service_healthy
     environment:
       NODE_ENV: production
+      # Next's standalone `server.js` binds to `process.env.HOSTNAME || '0.0.0.0'`.
+      # Docker *always* injects HOSTNAME into a container — it is set to the
+      # container's hostname — and an `ENV HOSTNAME=` in the Dockerfile does not
+      # survive that: the runtime value wins. So the image's ENV was dead code
+      # whose comment claimed to prevent exactly the failure it could not prevent
+      # (Caddy reporting connection refused while the container looked healthy).
+      #
+      # Runtime `environment:` is what does win, so it is set here. `0.0.0.0`
+      # rather than the default: binding to the container's own hostname resolves
+      # to a single address on the bridge network and is fragile across alias and
+      # IPv6 setups.
+      HOSTNAME: "0.0.0.0"
       # Server-side only. Read by the /api/v1 rewrite in next.config.ts, so the
       # browser never sees it and it is the internal Compose service name, not a
       # public URL. Setting it to the public address here would create a routing
@@ -279,6 +329,15 @@ services:
     healthcheck:
       # Caddy's own admin endpoint is disabled in the Caddyfile, so this asks the
       # public listener for the edge health route instead.
+      #
+      # The literal `127.0.0.1` is load-bearing, and it is not incidental. Caddy
+      # matches on the Host header *minus the port*, so a probe using
+      # `localhost` would match the `{$SITE_ADDRESS}` site block rather than the
+      # `:80` one, get the HTTPS redirect, and then fail the TLS handshake against
+      # a certificate issued for the site name — leaving the container reporting
+      # "health: starting" forever while the site serves traffic perfectly. That
+      # is not hypothetical; it is the failure the Caddyfile comment records, and
+      # `127.0.0.1` is what avoids it. Do not "tidy" this to `localhost`.
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80/healthz"]
       interval: 30s
       timeout: 5s

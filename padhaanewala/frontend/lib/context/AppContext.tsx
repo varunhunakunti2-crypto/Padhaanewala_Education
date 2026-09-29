@@ -13,10 +13,14 @@ import {
 import type { AdmissionEnquiry, MockTestResult, NotificationItem, Review, StudentProfile } from "@/lib/types";
 import {
   authApi,
+  broadcastSignOut,
   clearAuth,
   fetchMyRoles,
   getAccessToken,
   hasAdminRole,
+  purgeLegacyTokenStorage,
+  refreshAccessToken,
+  subscribeToAccessToken,
 } from "@/lib/api";
 import {
   fetchSavedColleges,
@@ -168,7 +172,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const refreshRoles = useCallback(async () => {
     if (typeof window === "undefined") return;
-    if (!window.localStorage.getItem("cp_access_token")) {
+    // Phase 3.6: the access token is in memory, not in storage, so presence is
+    // now an in-process question. Reading `localStorage` here is what would have
+    // reintroduced the very coupling this change removes.
+    if (!getAccessToken()) {
       setRoles([]);
       setRolesReady(true);
       return;
@@ -178,6 +185,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    // Phase 3.6: remove the tokens earlier builds left in local storage. For
+    // anyone who signed in before this change this is the step that actually
+    // deletes the readable copy, rather than merely ceasing to write a new one.
+    purgeLegacyTokenStorage();
+
     // Hydrate persisted state from localStorage on first mount only.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setSavedColleges(load("cp_saved", []));
@@ -193,14 +205,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setTestHistory(load("cp_test_history", []));
     setNotifications(load("cp_notifications", []));
     setReviews(load("cp_reviews", []));
-    const hasToken = Boolean(window.localStorage.getItem("cp_access_token"));
-    setIsAuthenticated(hasToken);
-    setAuthReady(true);
-    if (hasToken) {
-      void refreshRoles();
-    } else {
-      setRolesReady(true);
-    }
 
     const savedTheme = typeof window !== "undefined" ? localStorage.getItem("cp_theme") : null;
     const isDark = savedTheme
@@ -214,6 +218,46 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
 
     hydrated.current = true;
+
+    // Phase 3.6: the session is no longer something that can be read back out of
+    // storage, so "am I signed in?" is a question for the server. The HttpOnly
+    // refresh cookie is the durable half of the session and survives the reload;
+    // this exchanges it for an access token held in memory.
+    //
+    // `authReady` is set in both branches, and only after the exchange resolves,
+    // so a consumer gating on it never sees a signed-out flash. It is
+    // deliberately *not* set before the await: setting it early would let
+    // RequireAuth redirect a signed-in user to /login for the duration of one
+    // same-origin request.
+    void (async () => {
+      const token = await refreshAccessToken();
+      if (token) {
+        setIsAuthenticated(true);
+        await refreshRoles();
+      } else {
+        setIsAuthenticated(false);
+        setRoles([]);
+        setRolesReady(true);
+      }
+      setAuthReady(true);
+    })();
+  }, [refreshRoles]);
+
+  // A sibling tab signing in, signing out, or having its token rotated should be
+  // reflected here without a reload. Without this, signing out on one tab left
+  // the others showing a signed-in UI whose every request 401'd.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    return subscribeToAccessToken((token) => {
+      if (token) {
+        setIsAuthenticated(true);
+        void refreshRoles();
+      } else if (hydrated.current) {
+        setIsAuthenticated(false);
+        setRoles([]);
+        setRolesReady(true);
+      }
+    });
   }, [refreshRoles]);
 
   const toggleDarkMode = useCallback(() => {
@@ -564,6 +608,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // local credentials. Best-effort: a network failure must not block sign-out.
     void authApi.logout().catch(() => undefined);
     clearAuth();
+    // Tell the other tabs. The refresh family is revoked server-side, so their
+    // in-memory access tokens are already dead — this stops them rendering a
+    // signed-in UI whose every request 401s until the user notices.
+    broadcastSignOut();
     setIsAuthenticated(false);
     setRoles([]);
     setRolesReady(true);

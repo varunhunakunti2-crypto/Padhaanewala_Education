@@ -1,6 +1,5 @@
 import { Metadata } from "next";
 import { AIChat } from "@/components/ai/AIChat";
-import { BETA_NOINDEX } from "@/lib/nav";
 
 export const metadata: Metadata = {
   title: "Ask Padhaanewala AI",
@@ -11,7 +10,9 @@ export const metadata: Metadata = {
     description:
       "Get instant answers about courses, colleges, scholarships and entrance exams from Padhaanewala AI.",
   },
-  ...BETA_NOINDEX,
+  // No `BETA_NOINDEX`. This route is advertised again — header "More" menu,
+  // footer, sitemap, and the floating FAB on every page — so a `noindex` here
+  // would contradict the links pointing at it.
 };
 
 export default function AskAiPage() {
