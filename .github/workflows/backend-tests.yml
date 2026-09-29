@@ -29,7 +29,9 @@ defaults:
 
 jobs:
   pytest:
-    name: pytest (postgresql ${{ matrix.postgres }})
+    # Both dependencies are named because both are exercised: PostgreSQL by the
+    # catalog tests, Redis by the live rate-limiter tests.
+    name: pytest (postgresql ${{ matrix.postgres }} + redis 7)
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -57,10 +59,32 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20
+      # The rate limiter is the only thing throttling /api/v1/auth, and it fails
+      # *closed* there, so its behaviour is security-relevant. `conftest.py`
+      # stubs Redis suite-wide to keep a developer's outcome independent of
+      # whether a container is up -- which is right for the other 440 tests and
+      # wrong for this one, because every limiter test would otherwise run
+      # against a Python dict and the properties that need a real server
+      # (atomicity under concurrency, a counter shared between processes, the
+      # Lua script being accepted at all) would go unverified. The live tests
+      # skip when no Redis answers, so without this service they would skip in
+      # CI too and the gap would stay open invisibly.
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
 
     env:
       DATABASE_URL: postgresql+psycopg2://padhaanewala:ci_password_123@localhost:5432/padhaanewala_ci
       PADHAANEWALA_SCHEMA: test_suite
+      # Database 15 is the scratch database `test_ratelimit_redis_live.py` uses
+      # for its rate-limit keys, kept clear of the application's own database.
+      REDIS_URL: redis://localhost:6379/15
       # R3.3/R3.4 are assertions about how a deployment is *configured*, so CI
       # has to supply a compliant configuration: two distinct signing secrets
       # and an access-token lifetime inside the 60-minute containment window
@@ -100,6 +124,25 @@ jobs:
 
       - name: Run the test suite
         run: pytest --junitxml=pytest-report.xml
+
+      # A skipped live test is not a pass. These are the only tests that touch a
+      # real Redis, so if the service did not come up the job would still be
+      # green with the rate limiter's atomicity and cross-process behaviour
+      # unverified — which is BUG-07 reopened behind a green tick. pytest exits
+      # 0 on a full skip, so the skip count is asserted explicitly.
+      - name: The live Redis tests ran rather than skipped
+        run: pytest tests/test_ratelimit_redis_live.py -v -rs
+      - name: Fail if the live Redis tests skipped
+        if: always()
+        run: |
+          summary="$(pytest tests/test_ratelimit_redis_live.py -q -rs 2>&1 | tail -1)"
+          echo "$summary"
+          case "$summary" in
+            *" skipped"*)
+              echo "::error::The live Redis tests skipped, so the rate limiter's real behaviour is unverified. Check the redis service in this job."
+              exit 1
+              ;;
+          esac
 
       - name: Upload test report
         if: always()
