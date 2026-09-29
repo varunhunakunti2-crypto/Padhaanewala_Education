@@ -118,6 +118,105 @@ def _register_admin() -> dict:
     return admin
 
 
+def test_college_accreditation_nba_round_trips_on_both_verbs():
+    """`accreditation_nba` was editable in the admin UI and not in the API.
+
+    The column and `CollegeDetailResponse` both existed, and the college admin
+    form offered an "NBA accredited" control — but the field was absent from
+    both `CollegeCreate` and `CollegeUpdate`. Pydantic drops undeclared keys, so
+    `PUT /colleges/{ref}` answered 200 and left the column untouched. An admin
+    set the value, saw "Saved", and the record disagreed with the screen.
+
+    Silent success with nothing behind it is the shared shape of BUG-01, BUG-05
+    and BUG-09, so this asserts the round trip rather than the schema alone: a
+    field that only exists in a `model_fields` listing is exactly the gap that
+    went unnoticed the first time.
+    """
+    admin = _register_admin()
+    headers = _auth_headers(admin["access_token"])
+    name = f"Accred College {uuid.uuid4().hex[:6]}"
+
+    created = client.post(
+        "/api/v1/colleges",
+        json={
+            "name": name,
+            "college_type": "Institute",
+            "ownership": "Private",
+            "accreditation_nba": True,
+        },
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["accreditation_nba"] is True
+    college_id = created.json()["id"]
+
+    try:
+        toggled = client.put(
+            f"/api/v1/colleges/{college_id}",
+            json={"accreditation_nba": False},
+            headers=headers,
+        )
+        assert toggled.status_code == 200, toggled.text
+        assert toggled.json()["accreditation_nba"] is False
+
+        # An explicit null must clear it, not be ignored.
+        cleared = client.put(
+            f"/api/v1/colleges/{college_id}",
+            json={"accreditation_nba": None},
+            headers=headers,
+        )
+        assert cleared.status_code == 200, cleared.text
+        assert cleared.json()["accreditation_nba"] is None
+
+        # And a later read must agree, so a stale response object cannot hide it.
+        assert client.get(f"/api/v1/colleges/{college_id}").json()["accreditation_nba"] is None
+    finally:
+        _cleanup_college(college_id)
+
+
+def test_college_update_omitted_keys_are_left_alone():
+    """`exclude_unset=True` is the whole reason the edit form prefills.
+
+    A key that is absent is untouched; a key present as `null` is cleared. An
+    admin form that opened blank and sent every field would therefore wipe the
+    record while returning 200. The edit dialog fetches the record first and
+    keeps Save disabled until it arrives; this pins the server half of that
+    contract so it cannot be "simplified" into a full overwrite.
+    """
+    admin = _register_admin()
+    headers = _auth_headers(admin["access_token"])
+    name = f"Partial College {uuid.uuid4().hex[:6]}"
+
+    created = client.post(
+        "/api/v1/colleges",
+        json={
+            "name": name,
+            "college_type": "Institute",
+            "ownership": "Private",
+            "website": "https://example.invalid",
+            "overview": "Original overview.",
+            "established_year": 1994,
+        },
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    college_id = created.json()["id"]
+
+    try:
+        updated = client.put(
+            f"/api/v1/colleges/{college_id}",
+            json={"overview": "Edited overview."},
+            headers=headers,
+        )
+        assert updated.status_code == 200, updated.text
+        body = updated.json()
+        assert body["overview"] == "Edited overview."
+        assert body["website"] == "https://example.invalid"
+        assert body["established_year"] == 1994
+    finally:
+        _cleanup_college(college_id)
+
+
 def test_exam_crud():
     admin = _register_admin()
     headers = _auth_headers(admin["access_token"])

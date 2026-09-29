@@ -8,6 +8,7 @@ import {
   ENDPOINT_PAGE_SIZES,
   pageSizeFor,
 } from "@/lib/api-server";
+import { CATALOG_PAGE_SIZE } from "@/lib/api";
 
 /**
  * BUG-05, made structural.
@@ -165,5 +166,50 @@ describe("page-size contract between frontend and backend", () => {
     // the routes BUG-05 actually broke and the ones most likely to be retightened.
     expect(ENDPOINT_PAGE_SIZES["/blogs"]).toBeLessThanOrEqual(50);
     expect(ENDPOINT_PAGE_SIZES["/blog-categories"]).toBeLessThanOrEqual(50);
+  });
+});
+
+/**
+ * The admin catalogue walk had the same defect, on the same endpoint, and the
+ * contract test above did not catch it.
+ *
+ * `CollegesSection` asked for `GET /colleges?limit=1000` against a route capped
+ * at 100. That is a 422, and `useAdminResource` turns any thrown error into its
+ * error state — so the panel rendered "Could not reach the colleges API" on
+ * every single load. A page-size bug presented as a backend outage, and the
+ * contract test was green throughout because the broken call site lived in a
+ * client component, not in `ENDPOINT_PAGE_SIZES`.
+ *
+ * So the second dimension of the contract: the size the *admin client* sends is
+ * held against the same real `le=` bounds, by path.
+ */
+describe("admin catalogue walk stays inside the backend's own caps", () => {
+  /** Exactly the paths `adminApi.colleges/universities/courses` walk. */
+  const ADMIN_WALKED_PATHS = ["/colleges", "/universities", "/courses"] as const;
+
+  it("covers every endpoint the admin client actually walks", () => {
+    // Not vacuous: if a route is added to the walk and not here, the loop below
+    // is silently not checking it. Stated explicitly so the list has to be kept
+    // honest by whoever adds a fourth walk.
+    expect(ADMIN_WALKED_PATHS.length).toBeGreaterThan(0);
+    for (const path of ADMIN_WALKED_PATHS) {
+      expect(boundFor(path), `no backend route found for ${path}`).toBeDefined();
+    }
+  });
+
+  it("never sends a page size larger than the backend caps that path at", () => {
+    for (const path of ADMIN_WALKED_PATHS) {
+      const le = boundFor(path);
+      if (le === undefined) continue;
+      expect(CATALOG_PAGE_SIZE, `${path} asks for ${CATALOG_PAGE_SIZE} but the backend caps limit at ${le}`).toBeLessThanOrEqual(le);
+    }
+  });
+
+  it("does not exceed the tightest cap among the routes it walks", () => {
+    const caps = ADMIN_WALKED_PATHS.map((p) => boundFor(p)).filter(
+      (le): le is number => le !== undefined,
+    );
+    expect(caps.length).toBe(ADMIN_WALKED_PATHS.length);
+    expect(CATALOG_PAGE_SIZE).toBeLessThanOrEqual(Math.min(...caps));
   });
 });

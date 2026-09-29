@@ -285,6 +285,7 @@ def create_college(payload: CollegeCreate, db: Session = Depends(get_db)):
         phone=payload.phone,
         established_year=payload.established_year,
         accreditation_naac=payload.accreditation_naac,
+        accreditation_nba=payload.accreditation_nba,
         overview=payload.overview,
         facilities=payload.facilities,
         has_hostel=payload.has_hostel,

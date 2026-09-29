@@ -167,6 +167,10 @@ class CollegeCreate(BaseModel):
     phone: str | None = None
     established_year: int | None = None
     accreditation_naac: str | None = None
+    # Was missing from both request schemas while the column and the response
+    # model both existed, so the admin form's NBA control sent a key that
+    # Pydantic dropped: the PUT answered 200 and the value never changed.
+    accreditation_nba: bool | None = None
     overview: str | None = None
     facilities: dict[str, Any] | None = None
     has_hostel: bool | None = None
@@ -191,6 +195,7 @@ class CollegeUpdate(BaseModel):
     phone: str | None = None
     established_year: int | None = None
     accreditation_naac: str | None = None
+    accreditation_nba: bool | None = None
     overview: str | None = None
     facilities: dict[str, Any] | None = None
     has_hostel: bool | None = None

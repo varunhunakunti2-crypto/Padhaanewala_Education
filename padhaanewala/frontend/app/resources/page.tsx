@@ -22,8 +22,10 @@ export const metadata: Metadata = {
 
 /**
  * Mock tests, the AI college predictor and the AI assistant were three of these
- * six tiles. All three are de-listed in `lib/nav.ts`, so the grid is rebuilt
- * from routes that are actually supported.
+ * six tiles. The predictor is still de-listed in `lib/nav.ts`, so the grid is
+ * rebuilt from routes that are actually supported. It stays at six tiles to keep
+ * the `lg:grid-cols-3` rows even; `/ask-ai` and `/mock-tests` are both live and
+ * linked from the header's "More" menu and the footer instead.
  */
 const HUBS = [
   { title: "Entrance Exams", desc: "Registration dates, patterns and official links for all major exams.", href: "/exams", icon: CalendarDays, tone: "from-purple-600 to-blue-600" },

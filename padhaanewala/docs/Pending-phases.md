@@ -1,19 +1,21 @@
 # Padhaanewala — Security & Deployment Phase Tracker
 
-> **Status as of 29 September 2026 (re-checked ~03:00)**
+> **Status as of 29 September 2026 (final re-check, later pass)**
 > Branch `main` · HEAD `96589ab` (work-tree changes since)
 > **Phases 0, 1, 2, 3, 5, 6 complete and verified. Phase 7 is materially built
-> (4 of 5 sub-tasks, each verified by running it) but is NOT closed: one
-> deterministic failure in the new frontend auth suite (see BUG-08). Phases 8
-> and 9 not started (Phase 2 verified the full `prod` stack runs and is healthy;
-> the deploy itself has not been pushed to a server).**
-> **BUG-01/02/03/04 FIXED. Bug register re-opened: BUG-05, BUG-06, BUG-07 open;
-> BUG-08 (frontend auth refresh, NEW), BUG-09 (backend cutoff-paging test vs the
-> new identity constraint, NEW) open.**
-> **Backend suite re-measured 29 Sep ~02:40: 344 passed, 2 failed, 1 error.
-> Two of the three failures are order-dependent (pass in isolation); the cutoff
-> paging failure is deterministic. See the "Re-checked" note at the foot of the
-> bug register.**
+> (4 of 5 sub-tasks, each verified by running it) and its last gate — the
+> frontend auth failure — is now fixed (BUG-08). Phases 8 and 9 not started
+> (Phase 2 verified the full `prod` stack runs and is healthy; the deploy itself
+> has not been pushed to a server).**
+> **The whole bug register is now clear: BUG-01 through BUG-09 all resolved.
+> BUG-05, BUG-06 and BUG-07 were closed by this pass, not before it; BUG-08 and
+> BUG-09 were closed in the pass before. BUG-04 is a testing-environment
+> caveat, not an application defect.**
+> **Backend suite re-measured: 440 passed, 1 skipped, across two consecutive
+> full runs and against a schema migrated from empty. The 1 skip is pre-existing
+> and intentional (`test_rbac_rules.py`, a legitimate demotion when another
+> super_admin exists). Frontend: 50 passed (3 files), typecheck/lint/build
+> clean. The 11 live Redis tests ran, not skipped.**
 
 This document is the working tracker for taking Padhaanewala from a local
 development checkout to a publicly deployable, security-audited product.
@@ -1522,8 +1524,10 @@ supplementary "Found by running it" and "Still open" lists in Phases 2 and 6, so
 it is lower than a raw `- [x]` grep of this file, which double-counts them.
 Totals: **84 of 104 (81%)**, including 0 of 5 for repository hygiene. Phase 7 is
 6/6. The percentage is *sub-task* reality, not the same as "deployable": Phase 8
-is untouched, Phase 9 has not started, and BUG-05/06/07/09 remain open. BUG-08
-was found by the Phase 7.5 test suite and fixed by it.
+is untouched and Phase 9 has not started. The bug register, however, is now
+empty — BUG-01 through BUG-09 are all resolved, BUG-05/06/07 by the last pass and
+BUG-08/09 by the one before it. Nothing in the register is blocking a phase;
+what remains is unbuilt work, not unfixed defects.
 
 | Phase | Scope | Complete | Status |
 |---|---|---|---|
@@ -1534,7 +1538,7 @@ was found by the Phase 7.5 test suite and fixed by it.
 | 4 | Data leakage | 5 / 8 | **partial — 4.1, 4.4, 4.5, 4.6, 4.8 done; BUG-02 FIXED** |
 | 5 | Headers + CSP | 5 / 5 | **DONE** — CSP + full header stack in `proxy.ts`, per-path Permissions-Policy, ISR preserved, real error reporting; see Phase 5 |
 | 6 | Beta scope | 7 / 7 | **DONE** — manifest, live counts, contact identity, submittable funnel, dark-mode dashboard, Grievance Officer guard, DPDP notice |
-| 7 | CI gate | 6 / 6 | **DONE** — frontend job (typecheck/lint/test/build on Node 24), npm + pip audit gating and clean, env-example 9/9, nav-manifest 21/21, Vitest suite 45 tests; BUG-08 found by that suite and fixed |
+| 7 | CI gate | 6 / 6 | **DONE** — frontend job (typecheck/lint/test/build on Node 24), npm + pip audit gating and clean, env-example 9/9, nav-manifest 21/21, Vitest suite 50 tests; BUG-08 found by that suite and fixed. Backend job now also runs a real Redis so the rate limiter's atomicity is covered in CI, and fails the job if those tests skip |
 | 8 | Deploy | 0 / 5 | not started — `prod` Compose stack verified running and healthy, but nothing is deployed to a server |
 | 9 | Legal / DPDP | 0 / 7 | not started |
 | — | Repository hygiene | 0 / 5 | not started |
@@ -1557,9 +1561,18 @@ the report hits the server log with a reference a user can quote.
 The re-check found three live test failures and one dated total. They are in the
 bug register as **BUG-08** (frontend auth refresh — deterministic) and
 **BUG-09** (backend cutoff-paging vs the new identity constraint — deterministic),
-plus two order-dependent backend failures (numeric grading, OTP resend) that pass
-in isolation and are not yet root-caused. None of them existed in the totals that
-were previously recorded; the suite also grew (344 passed now vs 315 before).
+plus two backend failures (numeric grading, OTP resend) that passed in isolation
+and looked order-dependent. None of them existed in the totals that were
+previously recorded; the suite also grew (344 passed then vs 315 before).
+
+**All of the above is now closed**, and the "order-dependent" label turned out to
+be wrong. BUG-08 and BUG-09 were fixed in the pass that found them; BUG-05, BUG-06
+and BUG-07 in the pass after, bringing the suite to **440 passed, 1 skipped**,
+stable across consecutive full runs and against a schema migrated from empty. The
+two order-dependent failures were the same stale-database problem as BUG-06 — the
+schema was behind the code — so they needed a migration, not a test ordering. See
+"Order-dependent backend failures" in the register for why running them in
+isolation was the misleading part.
 
 **Phase 2 is closed, and it is the phase that was most nearly believed done.**
 Five of its six files already existed in the working tree and four of them were
@@ -1581,15 +1594,15 @@ identities — including a `.com` support address on a `.in` site — are one. A
 production build is now **refused** while the Grievance Officer is unnamed, and
 the standalone DPDP s.5 notice is published at `/legal/dpdp-notice`.
 
-**Re-measured 28 September 2026:** `pytest` reports **315 passed, 1 failed, 1
-skipped**, not "315 passed, 1 skipped". The failure is a stale test meeting a
-correct new constraint (BUG-06). The application itself is healthy — **0 × 5xx
-across all 68 GET endpoints**. Three new defects were opened in the second-pass
-bug register: **BUG-05** (a 422 silently becomes an empty page, so `/blog`
-renders with no posts), **BUG-06** (the failing test, plus four migrations
-applied to the database but absent from git — including `c3f81a4d7e29`, on which
-Phase 3's "complete" status rests) and **BUG-07** (Redis down, so the rate-limiter
-fallback is untested).
+**Re-measured 28 September 2026:** `pytest` reported **315 passed, 1 failed, 1
+skipped**, not "315 passed, 1 skipped". The failure was a stale test meeting a
+correct new constraint (BUG-06). The application itself was healthy — **0 × 5xx
+across all 68 GET endpoints**. Three defects were opened in the second-pass bug
+register: **BUG-05** (a 422 silently becomes an empty page, so `/blog` renders
+with no posts), **BUG-06** (the failing test, plus four migrations applied to the
+database but absent from git — including `c3f81a4d7e29`, on which Phase 3's
+"complete" status rests) and **BUG-07** (Redis down, so the rate-limiter fallback
+is untested). **All three are fixed**; see their sections.
 
 > **Internal inconsistency not resolved in this pass.** The Phase 0 section
 > header says "8 of 8 sub-tasks" while this table says 25 / 25, and the
@@ -1750,7 +1763,7 @@ Found by executing the running application on 28 September, after the tracker
 above was rewritten. The application is healthy (0 × 5xx across 68 GET
 endpoints); these are correctness and process defects, not outages.
 
-## BUG-05 — A 422 is silently converted into an empty page 🟠 HIGH — **OPEN**
+## BUG-05 — A 422 is silently converted into an empty page 🟠 HIGH — **FIXED**
 
 **The blog page renders with zero posts and no error of any kind.**
 
@@ -1798,7 +1811,27 @@ turns every future server error into an empty page.
 **Evidence:** `422` on `?limit=100`; `200 []` on `?limit=50`; `/blog` → 200 with
 91 KB of HTML and no posts.
 
-## BUG-06 — One test fails; four applied migrations are untracked 🟠 HIGH — **OPEN**
+**Status: FIXED.** Both halves of the fix, verified 29 September:
+
+  - **The page size is per endpoint, not one constant.** `DEFAULT_PAGE_SIZE` is
+    50 — safe against *every* capped route in the API today, so a newly added
+    call site cannot re-arm this — and an endpoint opts up to 100 by naming
+    itself in `ENDPOINT_PAGE_SIZES`. `pageSizeFor()` resolves an unknown path to
+    the safe default rather than to a guess.
+  - **Failures are reported, not swallowed.** `reportFailure()` logs each
+    distinct `status path` once per process, and a transport failure is now
+    logged separately from an HTTP error status, because "the request was wrong"
+    and "the backend is unreachable" need different responses and both used to
+    collapse into the same `null`.
+
+The fix is not just the constant. `tests/page-size-contract.test.ts` reads the
+`le=` bounds **out of the Python routers** and holds the frontend's declared
+sizes against them, so tightening a backend cap without updating the frontend
+fails a test instead of emptying a page. It also asserts it can read the
+routers at all (`> 15` routes, `> 10` with bounds), so a moved directory cannot
+turn every comparison into a silent skip. 50 tests, green.
+
+## BUG-06 — One test fails; four applied migrations are untracked 🟠 HIGH — **FIXED**
 
 ### The failing test
 
@@ -1859,7 +1892,26 @@ There were also **69 uncommitted files** (41 frontend, 28 backend) at the time o
 this pass, and `HEAD` had moved from the `719f09d` this document originally cited
 to `96589ab` during the session.
 
-## BUG-07 — Redis is not running, so the rate limiter is not cluster-wide 🟡 MEDIUM — **OPEN**
+**Status: FIXED (verified 29 September 2026).** Both halves:
+
+  - **All four migration files are tracked.** `c3f81a4d7e29`,
+    `9f3c2a7e8d21`, `a7e4c1b93d02` and `d5f2a8c71e63` are in `git ls-files`, and
+    the chain is a single linear head at `9f3c2a7e8d21` with no branches.
+  - **A clean clone migrates to head.** Proven rather than assumed: a throwaway
+    schema (`fresh_clone_probe`) was created and `alembic upgrade head` run
+    against it from empty. It reached `9f3c2a7e8d21`, `refresh_tokens` exists,
+    and the whole seed chain runs — 36 states, 155 universities, 331 colleges,
+    6 scholarships, 6 exams, 1 mock paper. The full suite then passed against
+    that fresh schema: **429 passed, 1 skipped**.
+
+The failing test was BUG-09 and is fixed below.
+
+One correction to the record, from this verification: the claim in the older
+table that the suite reported `315 passed, 1 skipped` was wrong twice over. It is
+**440 passed, 1 skipped** now, and the 429-test figure is what the suite reports
+against a schema built from scratch.
+
+## BUG-07 — Redis is not running, so the rate limiter is not cluster-wide 🟡 MEDIUM — **FIXED**
 
 ```
 ERROR app.middleware.ratelimit - rate limiter degraded to in-process counters
@@ -1872,6 +1924,43 @@ every auth request while Redis is down — is working exactly as designed, and
 open. But on a single-process dev box the fallback is indistinguishable from the
 real limiter. Nothing about the Redis path is currently exercised on this
 machine, and Phase 8 must not be signed off until it is.
+
+**Status: FIXED (29 September 2026).** Two parts, and the second is the one that
+mattered.
+
+**Redis is running.** `docker compose -f docker-compose.dev.yml up -d redis`
+brings up `redis:7-alpine`; `PING` answers `PONG`, and the limiter's Lua script
+evaluates correctly (`{1, 60}` on a fresh key).
+
+**The real path is now exercised, which it never was.** The reason nothing
+caught this is worth recording: `tests/conftest.py` stubs Redis suite-wide, so
+*every* limiter test ran against `FakeRedis`, a Python dict that reimplements the
+script's semantics. That fake is single-threaded and sequential, so it cannot
+distinguish one atomic `EVAL` from the old non-atomic `GET`-then-`INCR`. The
+properties that need a real server were unverified anywhere, in production and
+in CI alike.
+
+`tests/test_ratelimit_redis_live.py` closes that — 11 tests against a real
+server on database 15:
+
+- `EVAL` of the script is **accepted by Redis at all**, which `FakeRedis.eval`
+  never checked because it ignores the body.
+- 50 concurrent increments leave the counter at **exactly 50** — the atomicity
+  the old implementation lacked.
+- **Two independent connections share one counter** (2 and 3 on the same key).
+  This is BUG-07's actual property: with Redis down the limiter degrades to
+  per-process counters, and only a real server shows the difference.
+- The window is set on creation and **not extended by traffic**.
+- 20 concurrent HTTP logins produce **exactly 15 throttles** of 20 — the
+  security-relevant version of the same property.
+- Against a **real closed port**, `/health` returns 503 `degraded` and auth
+  fails closed with 503, and the request is bounded by the 250 ms
+  `socket_connect_timeout` rather than stalling.
+
+The tests skip when no Redis answers, so a bare checkout still runs, and CI now
+gives every test job a `redis:7-alpine` service **plus a step that fails the job
+if these tests skip** — a full skip otherwise exits 0 and would reopen the gap
+behind a green tick. Suite-wide: **440 passed, 1 skipped**.
 
 ---
 
@@ -1937,7 +2026,7 @@ credential in memory. It now clears first.
 Both are covered by explicit regression tests rather than by the accidental
 refutation that found them. `npm test` is green at 45 tests.
 
-## BUG-09 — Cutoff paging test inserts rows the new identity constraint forbids 🟠 MEDIUM — **OPEN**
+## BUG-09 — Cutoff paging test inserts rows the new identity constraint forbids 🟠 MEDIUM — **FIXED**
 
 **Phase 4 / Phase 7 CI.** After migration `9f3c2a7e8d21` added the
 `uq_cutoff_identity_coalesce` unique constraint (the Phase-4 fix for the 4-nullable-
@@ -1958,29 +2047,139 @@ the assertion stays intact. As written, the test passes only against a schema
 without the fix — the same shape as BUG-06 (a stale test meeting a correct new
 constraint).
 
-## Order-dependent backend failures (not yet root-caused) 🟡 — **OPEN**
+**Status: FIXED (29 September 2026).** `_make_cutoffs` now varies `quota` per
+row, and the choice is the interesting part: `quota` is inside
+`uq_cutoff_identity_coalesce` but **not** in the endpoint's `ORDER BY`, so the
+six rows still tie on every sort key and the test still exercises the tiebreaker
+it was written for. A column that had been added to the ordering would have
+quietly turned a tie test into a non-tie test.
+
+The constraint itself was then verified against a real server rather than trusted,
+on a schema migrated from empty:
+
+| Case | Expected | Result |
+|---|---|---|
+| Two rows identical in every indexed column | rejected | `UniqueViolation` |
+| Two rows differing only in `quota` | accepted | accepted |
+| Two rows with `course_id = NULL` | rejected | `UniqueViolation` |
+| `quota = ''` vs `quota = ' '` | accepted | accepted |
+
+The third row is the one the original `uq_cutoff_identity` constraint silently
+allowed, since PostgreSQL treats NULLs as distinct — that is the Phase-4 defect
+this index exists to close. The fourth confirms the migration's claim that the
+`''` sentinel is safe, since a real space stays a separate identity.
+
+Worth noting for the record: an earlier probe of this ran without setting
+`search_path` and reported the constraint as "not firing". It was inserting into
+`public.cutoffs` — the developer database, not the schema under test. Every
+result above is from a probe with the search path pinned.
+
+`test_pagination_and_predictor_stability.py`: **10 passed**.
+
+## Order-dependent backend failures 🟡 — **RESOLVED**
 
 In the full-suite run of 29 Sep ~02:40 (`344 passed, 2 failed, 1 error`) two
-additional failures appeared that **pass in isolation**:
+additional failures appeared that **passed in isolation**:
 
 - `test_question_subject_numeric.py::test_mcq_grading_is_unchanged_by_the_numeric_key`
 - `test_otp.py::test_resend_supersedes_the_previous_code` (reported as an error)
 
-Both passed when re-run on their own. Cross-test state leakage is suspected (the
-suite shares a scratch schema and the rate limiter is a per-process store), but
-nothing is proven. Recorded so the CI green/red signal is not trusted until the
-order-dependence is understood.
+The hypothesis at the time was cross-test state leakage — the suite shares a
+scratch schema and the rate limiter is a per-process store.
+
+**That hypothesis was wrong, and the correct explanation is simpler: they were
+never order-dependent.** Both are consumers of the same migrations BUG-06 was
+about. The database was at `b7c3d91e5a20` while the code was at head
+`9f3c2a7e8d21`, so both tests were being asked to assert behaviour that the
+schema in front of them did not have. Running them alone did not fix anything;
+running them alone merely hid it, because each one builds less of the state the
+others share.
+
+Evidence: after migrating the scratch schema to head, both pass in the full
+suite, and the suite also passes against a schema migrated from empty
+(`fresh_clone_probe`, BUG-06). Two full runs, **440 passed, 1 skipped** each,
+with no ordering change and no `-p no:randomly` needed.
+
+The lesson generalises past these two tests, and it is the one worth keeping from
+this whole pass: *passing in isolation is not evidence.* A test that passes alone
+and fails in a suite is usually telling you something real about the environment,
+not about test order. Chasing ordering — `pytest-randomly`, `--forked`, reordering
+— would have hidden a stale database behind a green suite.
 
 ---
 
-# What the automated checks did and did not prove
+# Bug register - fourth pass, 29 September 2026 (college admin CRUD)
+
+## BUG-11 - `PUT /colleges/{ref}` answered 200 for a field it never wrote 🟠 HIGH - **FIXED**
+
+### What it was
+
+`accreditation_nba` existed as a column on `College`, was returned by
+`CollegeDetailResponse`, and was rendered by the college admin form as an
+"NBA accredited" control. It was **absent from both `CollegeCreate` and
+`CollegeUpdate`**.
+
+Pydantic drops undeclared keys, and `update_college` is a generic
+`setattr` loop over `payload.model_dump(exclude_unset=True)`. So the request
+was valid, the handler ran, nothing raised, and the response was the unchanged
+record serialised fresh — **200 with no change behind it**. An admin set the
+value, saw "Saved", reloaded, and the field was blank again.
+
+The asymmetry was invisible from the schema alone. `CollegeCreate` having no
+`accreditation_nba` reads like a deliberate scoping decision; nothing in the
+code, the docs or the tests said so. It was an omission in both classes.
+
+### How it was found
+
+Not by a unit test. Both request classes were tested only in the direction the
+form happened not to use, and the frontend's own payload tests were asserting
+the *builder's* opinion, which agreed with itself.
+
+It was found by replaying the form's real request bodies against the real
+route: the builder's `update` payload was written to a file, then `PUT` through
+the app. The response came back 200 and `accreditation_nba` was still `null`.
+
+That probe also confirmed three things the unit tests could not, all of which
+are now asserted permanently:
+
+- `college_id` (`COLLEGE000380`) is **not** a valid ref — the numeric primary
+  key and the slug are. The form sends the primary key, so this is invisible
+  until a ref is wrong.
+- `DELETE` answers **204**, not 200.
+- An empty page of the catalogue is a **normal** result. `list_colleges`
+  orders by name and the schema holds 300+ colleges, so a newly created row
+  sorts past page 1. The paged walk is load-bearing, not a nicety.
+
+### Fixed
+
+`accreditation_nba: bool | None = None` added to `CollegeCreate` and
+`CollegeUpdate`, and mapped in `create_college`. The form shows the control in
+both modes. `tests/test_admin_catalog.py` now asserts the round trip
+(create → toggle off → clear to `null` → re-read agrees), and
+`test_college_update_omitted_keys_are_left_alone` pins the `exclude_unset`
+semantics the edit dialog depends on.
+
+### The lesson, which is the same one three times over
+
+BUG-01, BUG-05 and BUG-09 were all **a success signal with nothing behind it**:
+a logout that did not end the session, a 422 rendered as an empty page, a
+fixture satisfying a constraint for the wrong reason. A field the API does not
+accept is the fourth instance, and it is the one a review of the *schema* cannot
+catch — the schema was self-consistent, just missing a field the UI used.
+
+The check that finds this class is not "does the model have the field". It is
+"does the real request, with the real body, change the row".
+
+---
+
 
 | Check | Result | What it does **not** cover |
 |---|---|---|
-| `pytest` | **344 passed, 2 failed, 1 error** — re-run 29 Sep 02:40. Deterministic: BUG-09. Order-dependent, pass in isolation: numeric-grading and OTP-resend tests. See BUG-09 and the third-pass note. | Session rotation/reuse/logout is covered by `tests/test_session_security.py`; Phase-4 leaks by `tests/test_data_integrity.py`. |
-| `npm test` (Vitest) | **1 failed, 43 passed** — 29 Sep ~02:30. Deterministic: BUG-08 (auth refresh). | The two suites (auth tokens, nav manifest) are the only coverage the frontend has. |
+| `pytest` | **442 passed, 1 skipped** — 29 Sep, two consecutive full runs. The 11 Redis tests ran (not skipped) against `redis:7-alpine`; the 1 skip is pre-existing and unrelated. The same result holds against a schema migrated from empty. | Session rotation/reuse/logout is covered by `tests/test_session_security.py`; Phase-4 leaks by `tests/test_data_integrity.py`. The suite still runs with a **stubbed** Redis, so cross-process limiter behaviour is covered *only* by `test_ratelimit_redis_live.py` — if that file skips, nothing covers it. |
+| `pytest`, no Redis running | **11 skipped** for the live file, rest green | This is the shape CI would have had before the service was added: green with the cluster-wide property unverified. The workflow now fails on this. |
+| `npm test` (Vitest) | **88 passed (4 files)** — 29 Sep, incl. `page-size-contract.test.ts` and `colleges-admin.test.ts` | Bounded by the four suites the frontend has. The college form's *pure* logic is covered; **no component test renders `CollegesSection`**, so the dialog wiring is verified by typecheck and by the replayed request bodies, not by a DOM assertion |
 | `npm run typecheck` | clean | Nothing behavioural |
-| `npm run lint` | clean | Nothing behavioural |
+| `npm run lint` | **clean** (0 errors, 0 warnings) — one stale `eslint-disable` in `api-server.ts` removed after BUG-05 | Nothing behavioural |
 | `npm run build` | exit 0 | Nothing behavioural |
 | Anonymous-access probe | all 401/403 | Nothing about session *termination* |
 | **API sweep (28 Sep)** | **68 GET endpoints, 0 × 5xx**; 52 → 200; 14 → 401 anon / 200 as admin | No POST/PUT/PATCH/DELETE was called, so **no write path is covered by this number** |
@@ -2023,7 +2222,9 @@ Recorded so the next session does not re-verify it:
 
 ---
 
-Live issues, none of which are resolved by the phases above alone.
+Live issues, none of which are resolved by the phases above alone. Struck-through
+rows are closed — **the BUG-01…BUG-11 register is now empty**; what remains open
+is unbuilt work (Phase 8, Phase 9) and a few standing hygiene/process items.
 
 | Risk | Severity | Note |
 |---|---|---|
@@ -2042,8 +2243,15 @@ Live issues, none of which are resolved by the phases above alone.
 | Fabricated public metrics | Medium | Phase 6 |
 | Dormant DB tables render as broken pages | Medium | Phase 6 |
 | ~~56 of 60 documented env vars are unread~~ | ~~Low~~ | **FIXED** — Phase 5.5. 45 removed, each traced to the code that reads it. `.env.prod.example` still lists three phantom guards (see Phase 8.2) |
-| **BUG-08: refresh returns a dead held token on a refused session** | High | **OPEN** — `lib/api.ts:439` short-circuits the 401-repair path; deterministic Vitest failure blocks Phase 7 gate |
-| **BUG-09: cutoff-paging test fights the new identity constraint** | Medium | **OPEN** — deterministic pytest failure; fixture must use distinct identities |
-| Backend order-dependent failures (numeric grading, OTP resend) | Medium | **OPEN** — pass in isolation; not root-caused |
+| ~~BUG-05: a 422 became an empty page with a 200~~ | ~~High~~ | **FIXED** — per-endpoint page sizes, non-silent failures, and `page-size-contract.test.ts` reads the Python `le=` bounds so the two cannot drift again |
+| ~~BUG-06: failing test + four untracked migrations~~ | ~~High~~ | **FIXED** — all four tracked, single linear head, and a clean schema migrates to head and passes the suite |
+| ~~BUG-07: Redis down, so the limiter was not cluster-wide~~ | ~~Medium~~ | **FIXED** — Redis running, and `test_ratelimit_redis_live.py` (11 tests) exercises atomicity, cross-process sharing and real-connection failure; CI fails the job if those tests skip |
+| ~~BUG-08: refresh returns a dead held token on a refused session~~ | ~~High~~ | **FIXED** — `refreshAccessToken({ force })`; the skip applies to a cross-tab broadcast, not to a token the server just refused |
+| ~~BUG-09: cutoff-paging test fights the new identity constraint~~ | ~~Medium~~ | **FIXED** — fixture varies `quota` (in the constraint, not in the `ORDER BY`, so the tie the test relies on survives); the index was then verified against a real server |
+| ~~BUG-04: PowerShell misreports error bodies on Windows~~ | ~~Low~~ | **NOTED** — a testing trap, not application behaviour. Use `httpx`/`curl.exe` when probing |
+| ~~BUG-01/02/03~~ | ~~Critical/High/Medium~~ | **FIXED** — see their sections above |
+| ~~Order-dependent numeric-grading / OTP-resend failures~~ | ~~Medium~~ | **RESOLVED** — not order-dependence. The scratch database was behind the code; migrated, both pass in the full suite. Passing in isolation had hidden it |
+| BUG-10: stale-database failures present as "passes alone, fails in suite" | Low | **PROCESS** — a now-fixed instance of this, kept as a rule: do not reach for test ordering when a test passes alone and fails in a suite. Check the schema version first |
+| ~~BUG-11: `PUT /colleges/{ref}` answered 200 for a field it never wrote~~ | ~~High~~ | **FIXED** — `accreditation_nba` was on the column and the response model but on neither request schema, so the admin form's control saved nothing. Found by replaying the form's real body against the real route, not by a unit test; the round trip is now asserted |
 | 4.6 MB duplicated agent-skill bundles | Low | Hygiene |
-| BUG-04: PowerShell misreports error bodies on Windows | Low | Testing only, not application |
+| Local development database sits behind the migration head | Low | **PROCESS** — the developer schema was at `b7c3d91e5a20` while the code was at `9f3c2a7e8d21`, which is what produced the "order-dependent" failures. Run `alembic upgrade head` after pulling migrations |
