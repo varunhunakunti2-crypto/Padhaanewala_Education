@@ -645,6 +645,12 @@ def _production_baseline(monkeypatch, **overrides) -> None:
     monkeypatch.setattr(settings, "SMS_PROVIDER", "msg91")
     monkeypatch.setattr(settings, "SMS_API_KEY", "a-real-msg91-key")
     monkeypatch.setattr(settings, "SMS_DLT_TEMPLATE_ID", "a-registered-dlt-template")
+    # The media guards are unrelated to anything asserted below, so they have to
+    # be neutral here. The test process sets MEDIA_ROOT=var/test-media, which the
+    # production relative-root guard refuses — and it runs *before* the delivery
+    # checks, so every assertion in this module would be testing the wrong thing.
+    monkeypatch.setattr(settings, "MEDIA_ROOT", "/var/lib/padhaanewala/media")
+    monkeypatch.setattr(settings, "MEDIA_URL_PREFIX", "/api/v1/media/files")
     for name, value in overrides.items():
         monkeypatch.setattr(settings, name, value)
 

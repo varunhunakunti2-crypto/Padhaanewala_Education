@@ -8,7 +8,7 @@ import {
   ENDPOINT_PAGE_SIZES,
   pageSizeFor,
 } from "@/lib/api-server";
-import { CATALOG_PAGE_SIZE } from "@/lib/api";
+import { BLOG_PAGE_SIZE, CATALOG_PAGE_SIZE } from "@/lib/api";
 
 /**
  * BUG-05, made structural.
@@ -184,8 +184,29 @@ describe("page-size contract between frontend and backend", () => {
  * held against the same real `le=` bounds, by path.
  */
 describe("admin catalogue walk stays inside the backend's own caps", () => {
-  /** Exactly the paths `adminApi.colleges/universities/courses` walk. */
-  const ADMIN_WALKED_PATHS = ["/colleges", "/universities", "/courses"] as const;
+  /**
+   * Every path `adminApi` walks with `fetchAllPages`.
+   *
+   * Was three entries — `/colleges`, `/universities`, `/courses` — which is
+   * exactly the gap: the courses, scholarships, exams, blogs and FAQs panels all
+   * asked for `limit=1000`, `limit=200` or nothing at all and all got a 422
+   * rendered as "Could not reach the API". The contract was green the whole time
+   * because the list only recorded the walks that had already been fixed.
+   */
+  const ADMIN_WALKED_PATHS = [
+    "/colleges",
+    "/universities",
+    "/courses",
+    "/scholarships",
+    "/exams",
+    "/faqs",
+  ] as const;
+
+  /**
+   * The two routes that cap at 50 rather than 100, and are therefore walked with
+   * `BLOG_PAGE_SIZE` instead of `CATALOG_PAGE_SIZE`.
+   */
+  const ADMIN_TIGHT_PATHS = ["/blogs", "/blog-categories"] as const;
 
   it("covers every endpoint the admin client actually walks", () => {
     // Not vacuous: if a route is added to the walk and not here, the loop below
@@ -212,4 +233,71 @@ describe("admin catalogue walk stays inside the backend's own caps", () => {
     expect(caps.length).toBe(ADMIN_WALKED_PATHS.length);
     expect(CATALOG_PAGE_SIZE).toBeLessThanOrEqual(Math.min(...caps));
   });
+
+  it("walks the 50-capped blog routes with a page size inside their own cap", () => {
+    // `BLOG_PAGE_SIZE` exists for exactly this: `CATALOG_PAGE_SIZE` is 100, and
+    // asking for 100 here is the same 422 that emptied the public article grid.
+    for (const path of ADMIN_TIGHT_PATHS) {
+      const le = boundFor(path);
+      expect(le, `no backend route found for ${path}`).toBeDefined();
+      expect(BLOG_PAGE_SIZE, `${path} asks for ${BLOG_PAGE_SIZE} but the backend caps limit at ${le}`).toBeLessThanOrEqual(le!);
+    }
+  });
 });
+
+/**
+ * No admin panel may hard-code a `limit` above the cap, whatever the cap is.
+ *
+ * The four panels this replaced each built their own query string — `?limit=1000`,
+ * `?limit=200`, or none at all — and each one failed the same way. Checking the
+ * *sections* rather than the walks is the belt to that braces: a panel that
+ * reaches for `apiFetch` with a hand-written `limit` is the exact regression this
+ * suite exists to catch, and the walks are all `adminApi` methods now, so any
+ * remaining literal in a section file is new.
+ */
+describe("no admin section hand-writes a page size", () => {
+  const SECTIONS_DIR = resolve(import.meta.dirname, "../frontend/components/admin/sections");
+
+  /**
+   * Strips comments before scanning.
+   *
+   * Several of these panels document the exact `?limit=1000` they used to send, so
+   * a raw text scan fails on the file that fixed the bug. Matching the source
+   * *including* its prose would make the check impossible to satisfy without
+   * deleting the explanation of what went wrong.
+   */
+  function withoutComments(source: string): string {
+    return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+  }
+
+  function sectionSources(): { file: string; source: string }[] {
+    return readdirSync(SECTIONS_DIR)
+      .filter((f) => f.endsWith(".tsx"))
+      .map((f) => ({
+        file: f,
+        source: withoutComments(readFileSync(join(SECTIONS_DIR, f), "utf8")),
+      }));
+  }
+
+  it("finds the section files it is checking", () => {
+    expect(sectionSources().length).toBeGreaterThan(10);
+  });
+
+  it("can actually strip comments, so the scan below is not trivially empty", () => {
+    // Guards the guard: if the stripper stopped matching, this file would go on
+    // reporting offenders and someone would "fix" it by deleting the notes.
+    const stripped = withoutComments('const a = 1; // limit=999\n/* limit=888 */ const b = 2;');
+    expect(stripped).not.toContain("limit=");
+    expect(stripped).toContain("const a = 1;");
+    expect(stripped).toContain("const b = 2;");
+  });
+
+  it("contains no `limit=` query parameter in any admin section", () => {
+    const offenders = sectionSources().filter((f) => /[?&]limit=/.test(f.source));
+    expect(
+      offenders.map((f) => f.file),
+      "an admin panel is building its own page size; use the adminApi walk instead",
+    ).toEqual([]);
+  });
+});
+

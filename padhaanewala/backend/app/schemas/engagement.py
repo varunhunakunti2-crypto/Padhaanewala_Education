@@ -92,3 +92,19 @@ class AssignLeadRequest(BaseModel):
 
 class SetFollowUpRequest(BaseModel):
     follow_up_date: date | None = None
+
+
+class CounsellorListItem(BaseModel):
+    """A counsellor the admin console can hand a lead to.
+
+    ``active_leads`` is the load the round-robin balancer in
+    ``services.lead_handoff`` minimises, and the number the assign dropdown
+    shows so an admin can see who is already full before committing.
+    """
+
+    id: int
+    name: str
+    specialization: str | None
+    max_leads: int
+    is_active: bool
+    active_leads: int

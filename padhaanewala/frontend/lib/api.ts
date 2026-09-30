@@ -503,13 +503,35 @@ export async function refreshAccessToken(options: { force?: boolean } = {}): Pro
   return refreshPromise;
 }
 
+/**
+ * True for bodies whose Content-Type the runtime already knows.
+ *
+ * `Blob` and `File` cover `FormData` too, since a `FormData` is not an instance
+ * of either and needs its own case. `typeof` guards keep this safe to call
+ * during server rendering, where only `FormData` and `URLSearchParams` are
+ * defined on the Node globals but neither is reached in practice.
+ */
+function bodyCarriesItsOwnContentType(body: BodyInit | null | undefined): boolean {
+  if (typeof FormData !== "undefined" && body instanceof FormData) return true;
+  if (typeof URLSearchParams !== "undefined" && body instanceof URLSearchParams) return true;
+  if (typeof Blob !== "undefined" && body instanceof Blob) return true;
+  return body instanceof ArrayBuffer || ArrayBuffer.isView(body);
+}
+
 async function apiFetchImpl<T>(
   path: string,
   init: RequestInit,
   retriesLeft: number,
 ): Promise<T> {
   const headers = new Headers(init.headers);
-  if (init.body && !headers.has("Content-Type")) {
+  // `application/json` is only correct for a body the caller serialised itself.
+  // A `FormData` body has to be left alone: the browser derives
+  // `multipart/form-data; boundary=…` from the body, so a hand-set Content-Type
+  // here either drops the boundary (Starlette cannot parse the parts, and the
+  // upload 422s) or makes it look for a part named after the media type.
+  // `URLSearchParams` and `Blob` are in the same position and are covered by the
+  // same check rather than one caller at a time.
+  if (init.body && !headers.has("Content-Type") && !bodyCarriesItsOwnContentType(init.body)) {
     headers.set("Content-Type", "application/json");
   }
   const token = getAccessToken();
@@ -603,6 +625,16 @@ export const authApi = {
 
 /** Roles that may open the admin console. Mirrors the backend `require_role` gates. */
 export const ADMIN_ROLES = ["admin", "super_admin"] as const;
+
+/**
+ * Mirrors `CONTENT_ROLES` in `backend/app/roles.py` — `ADMIN_ROLES` plus
+ * `content_manager`.
+ *
+ * Gates `POST /media/upload`, `PUT /media/{id}` and `DELETE /media/{id}`. Kept
+ * separate from `ADMIN_ROLES` because the two are genuinely different sets: a
+ * content manager may upload a college logo without being able to edit colleges.
+ */
+export const CONTENT_ROLES = [...ADMIN_ROLES, "content_manager"] as const;
 
 export function hasAdminRole(roles: readonly string[]): boolean {
   return ADMIN_ROLES.some((r) => roles.includes(r));
@@ -869,6 +901,187 @@ export interface AdminEnquiry {
   source: string | null;
 }
 
+/** One row of `GET /api/v1/leads` — `LeadListItem` on the backend. */
+export interface AdminLead {
+  id: number;
+  name: string;
+  mobile: string;
+  email: string | null;
+  course_name: string | null;
+  college_name: string | null;
+  state_name: string | null;
+  city: string | null;
+  qualification: string | null;
+  message: string | null;
+  source: string | null;
+  status: string;
+  /** Display name, or null when the lead has overflowed to the admins. */
+  assigned_counsellor: string | null;
+  follow_up_date: string | null;
+  created_at: string;
+}
+
+export interface AdminLeadNote {
+  id: number;
+  note: string;
+  created_at: string;
+}
+
+export interface AdminLeadStatusEvent {
+  id: number;
+  old_status: string | null;
+  new_status: string;
+  created_at: string;
+}
+
+/** `GET /api/v1/leads/{id}` — `LeadDetailResponse`: the list row plus its trail. */
+export interface AdminLeadDetail extends AdminLead {
+  notes: AdminLeadNote[];
+  status_history: AdminLeadStatusEvent[];
+}
+
+/** `GET /api/v1/counsellors` — the assign dropdown's roster. */
+export interface AdminCounsellor {
+  id: number;
+  name: string;
+  specialization: string | null;
+  max_leads: number;
+  is_active: boolean;
+  /** Open leads already on this counsellor, against the same rule the round-robin uses. */
+  active_leads: number;
+}
+
+/** The backend's `LEAD_STATUSES`. Kept in step with `schemas/engagement.py`. */
+export const LEAD_STATUSES = [
+  "new",
+  "contacted",
+  "qualified",
+  "proposal",
+  "won",
+  "lost",
+  "closed",
+] as const;
+
+export type LeadStatus = (typeof LEAD_STATUSES)[number];
+
+/* ----------------------------- Question bank ----------------------------- */
+
+/**
+ * The server's `QuestionType` enum. `mcq` and `numeric` are auto-graded; `essay`
+ * is never auto-graded and is routed to manual review, which is what keeps a
+ * descriptive question scoreable at all.
+ *
+ * `ALL_QUESTION_TYPES` in `backend/app/question_types.py` is the source of truth
+ * -- a value outside this list is rejected by the DB CHECK constraint, not just
+ * by the API, so a typo here would not be caught until a 500.
+ */
+export const QUESTION_TYPES = ["mcq", "numeric", "essay"] as const;
+
+export type QuestionType = (typeof QUESTION_TYPES)[number];
+
+/**
+ * A question, as the paper-scoped write routes return it.
+ *
+ * Mirrors `AdminQuestionResponse` in `backend/app/schemas/catalog.py`. Kept
+ * separate from the bank row below because the two endpoints genuinely differ:
+ * the nested POST/PUT routes know only the question, and typed their return as
+ * the bank row would promise `paper_name`/`paper_slug` that never arrive. The
+ * editor does not read them back -- it re-fetches the bank after a save -- but a
+ * type that lies is worse than no type, because the mistake surfaces later, in
+ * whichever component finally trusts it.
+ */
+export interface AdminQuestion {
+  id: number;
+  question_text: string;
+  question_type: string;
+  options: string[] | null;
+  /**
+   * The key for an `mcq`, and it must be one of `options` -- an `mcq` whose key
+   * is not among its options is accepted by every storage layer and then marks
+   * every submission wrong. See `lib/question-form.ts`.
+   */
+  correct_answer: string | null;
+  marks: string;
+  negative_marks: string;
+  difficulty: string;
+  explanation: string | null;
+  sort_order: number;
+  is_active: boolean;
+  subject: string | null;
+  topic: string | null;
+  /** The answer key for a `numeric` question, separate from `correct_answer`. */
+  numeric_answer: string | null;
+  /** Absolute margin: correct when |given - key| <= tolerance. */
+  tolerance: string;
+}
+
+/** A question as the cross-paper bank sees it: the above, plus its paper. */
+export interface AdminQuestionListItem extends AdminQuestion {
+  /**
+   * The owning paper. Present on every bank row because the write path is
+   * `/mock-tests/{ref}/questions` -- a bank row without it cannot be edited.
+   */
+  mock_test_id: number;
+  paper_name: string;
+  paper_slug: string;
+}
+
+export interface AdminQuestionPaper {
+  mock_test_id: number;
+  name: string;
+  slug: string;
+  question_count: number;
+}
+
+/**
+ * Filter values, computed by the server from the rows that exist.
+ *
+ * Subjects and topics are authored content, not configuration. Hardcoding them
+ * in this file means every new paper has to be remembered here, and until
+ * someone remembers, the dropdown offers a subject that matches nothing and
+ * reads as a broken control.
+ */
+export interface AdminQuestionFacets {
+  subjects: string[];
+  topics: string[];
+  difficulties: string[];
+  question_types: string[];
+  papers: AdminQuestionPaper[];
+}
+
+/**
+ * Body for the question create/update routes.
+ *
+ * Mirrors `TestQuestionCreate` / `TestQuestionUpdate`. Note that the *update*
+ * route uses `exclude_unset=True`, so a key that is absent leaves the column
+ * alone while a key sent as `null` clears it -- `lib/question-form.ts` builds
+ * this object deliberately rather than spreading a form state.
+ */
+export interface QuestionPayload {
+  question_text: string;
+  question_type: QuestionType;
+  options: string[] | null;
+  correct_answer: string | null;
+  subject: string | null;
+  topic: string | null;
+  numeric_answer: string | null;
+  tolerance: string;
+  marks: string;
+  negative_marks: string;
+  difficulty: string;
+  explanation: string | null;
+  sort_order: number;
+}
+
+/**
+ * `TestQuestionUpdate` is `QuestionPayload` plus `is_active`. Separate rather
+ * than optional because the two routes have genuinely different rules: create
+ * has no `is_active` field, and a body carrying one is silently ignored.
+ */
+export interface QuestionUpdatePayload extends QuestionPayload {
+  is_active: boolean;
+}
+
 export interface AdminNotification {
   id: number;
   title: string;
@@ -911,13 +1124,6 @@ export interface AdminUniversity {
   type: string;
 }
 
-export interface AdminCourse {
-  id: number;
-  name: string;
-  degree: string | null;
-  category: string | null;
-}
-
 /**
  * Page size for the admin catalogue walk.
  *
@@ -930,6 +1136,16 @@ export interface AdminCourse {
  * `tests/page-size-contract.test.ts`.
  */
 export const CATALOG_PAGE_SIZE = 100;
+
+/**
+ * `GET /blogs` and `GET /blog-categories` cap `limit` at 50, not 100.
+ *
+ * Separate from `CATALOG_PAGE_SIZE` rather than derived from it, because a
+ * walk that asked for 100 here would 422 and `fetchAllPages` would throw — the
+ * exact BUG-05 shape. `tests/page-size-contract.test.ts` reads the real `le=`
+ * bounds out of the Python routers and holds this number against them.
+ */
+export const BLOG_PAGE_SIZE = 50;
 
 /** Enough to cover the seeded catalogue with room to spare, and no more. */
 const MAX_CATALOG_ROWS = 5000;
@@ -995,6 +1211,141 @@ export interface AdminUpdateUserPayload {
   role_ids?: number[];
 }
 
+/**
+ * `MediaResponse` from `backend/app/schemas/content.py`.
+ *
+ * `url` is `MEDIA_URL_PREFIX/{id}` — a same-origin `/api/v1/media/files/{id}`
+ * path, so it renders through the existing rewrite with no `next.config` remote
+ * pattern and no absolute origin. `file_type` and `file_size` are nullable
+ * because a registry row (one inserted with an external URL rather than an
+ * upload) has neither.
+ */
+export interface AdminMedia {
+  id: number;
+  url: string;
+  file_name: string | null;
+  file_type: string | null;
+  file_size: number | null;
+  alt_text: string | null;
+  entity_type: string | null;
+  entity_id: number | null;
+  image_type: string | null;
+  display_order: number;
+  is_active: boolean;
+  created_at: string;
+}
+
+/**
+ * `CourseResponse` from `backend/app/schemas/catalog.py`.
+ *
+ * Note what is **not** here: `is_active`. The list schema omits it entirely, so
+ * the old courses table rendered a Status column that read a field the response
+ * never carried and showed "Inactive" for every row in the catalogue.
+ */
+export interface AdminCourse {
+  id: number;
+  name: string;
+  slug: string;
+  degree: string | null;
+  duration: string | null;
+  category: string | null;
+}
+
+/** `CourseDetailResponse` — the list row plus the three long-text columns. */
+export interface AdminCourseDetail extends AdminCourse {
+  overview: string | null;
+  eligibility: string | null;
+  career_information: string | null;
+  college_count: number;
+}
+
+/** `ExamResponse`. */
+export interface AdminExam {
+  id: number;
+  name: string;
+  slug: string;
+  conducting_authority: string;
+  exam_type: string;
+  eligibility: string | null;
+  application_start_date: string | null;
+  application_deadline: string | null;
+  exam_date: string | null;
+  admit_card_date: string | null;
+  result_date: string | null;
+  official_website: string | null;
+  official_notification: string | null;
+  /**
+   * JSON columns, and typed loosely on purpose. The schema says `dict | None` and
+   * `list | None`; the frontend's older `ApiExam` claimed `string[]` and a
+   * `{question, answer}[]`, neither of which the backend guarantees. `unknown`
+   * means a caller has to look before it renders, which is the honest position.
+   */
+  syllabus: unknown;
+  faqs: unknown;
+  is_active: boolean;
+}
+
+/** `ScholarshipResponse`. */
+export interface AdminScholarship {
+  id: number;
+  name: string;
+  slug: string;
+  provider: string;
+  ownership: string;
+  eligibility: string | null;
+  state_id: number | null;
+  state_name: string | null;
+  course: string | null;
+  category: string | null;
+  income_criteria: string | null;
+  /** A `String(255)`, not a number — see `lib/scholarship-form.ts`. */
+  amount: string | null;
+  application_deadline: string | null;
+  documents_required: unknown;
+  application_procedure: string | null;
+  official_website: string | null;
+  verification_status: string;
+  last_verified_date: string | null;
+  next_verification_date: string | null;
+  is_active: boolean;
+}
+
+/** `BlogResponse`. */
+export interface AdminBlogDetail extends AdminBlog {
+  content: string;
+  excerpt: string | null;
+  featured_image_url: string | null;
+  category_id: number | null;
+  author_name: string | null;
+  is_featured: boolean;
+  meta_title: string | null;
+  meta_description: string | null;
+  canonical_url: string | null;
+  updated_at: string;
+}
+
+/** `BlogCategoryResponse`. */
+export interface AdminBlogCategory {
+  id: number;
+  name: string;
+  slug: string;
+  is_active: boolean;
+  blog_count: number;
+}
+
+/** `FAQResponse`. */
+export interface AdminFaq {
+  id: number;
+  question: string;
+  /** `str | None` in the schema; the older `ApiFaq` typed it as `string`. */
+  answer: string | null;
+  entity_type: string;
+  entity_id: number;
+  display_order: number;
+  is_active: boolean;
+  created_at: string;
+}
+
 export const adminApi = {
   users: (params = "") => apiFetch<AdminUser[]>(`/users${params}`),
 
@@ -1013,12 +1364,86 @@ export const adminApi = {
 
   enquiries: () => apiFetch<AdminEnquiry[]>("/enquiries"),
 
-  leads: (params = "") => apiFetch<AdminEnquiry[]>(`/leads${params}`),
+  leads: (params = "") => apiFetch<AdminLead[]>(`/leads${params}`),
+
+  /** `null` in `params` unsets the assignment, matching the backend's own rule. */
+  assignLead: (enquiryId: number, counsellorId: number | null) =>
+    apiFetch<AdminLeadDetail>(`/leads/${enquiryId}/assign`, {
+      method: "PATCH",
+      body: JSON.stringify({ counsellor_id: counsellorId }),
+    }),
+
+  getLead: (enquiryId: number) => apiFetch<AdminLeadDetail>(`/leads/${enquiryId}`),
+
+  addLeadNote: (enquiryId: number, note: string) =>
+    apiFetch<AdminLeadNote>(`/leads/${enquiryId}/notes`, {
+      method: "POST",
+      body: JSON.stringify({ note }),
+    }),
+
+  /** `null` clears the follow-up date. */
+  setLeadFollowUp: (enquiryId: number, followUpDate: string | null) =>
+    apiFetch<AdminLeadDetail>(`/leads/${enquiryId}/follow-up`, {
+      method: "PATCH",
+      body: JSON.stringify({ follow_up_date: followUpDate }),
+    }),
 
   updateLeadStatus: (enquiryId: number, status: string) =>
-    apiFetch<AdminEnquiry>(`/leads/${enquiryId}/status`, {
+    apiFetch<AdminLeadDetail>(`/leads/${enquiryId}/status`, {
       method: "PATCH",
       body: JSON.stringify({ status }),
+    }),
+
+  /** Admin-only roster for the assign dropdown; 403s for a counsellor. */
+  counsellors: () => apiFetch<AdminCounsellor[]>("/counsellors"),
+
+  /**
+   * The cross-paper question bank, walked to completion.
+   *
+   * Always a `fetchAllPages` walk, filtered or not. The route caps `limit` at
+   * 100, so a single page would be a truncated bank that looks complete — and
+   * the page size is deliberately not written here or in the panel:
+   * `tests/page-size-contract.test.ts` fails if an admin section hand-writes
+   * `limit=`, because that is how the college panel came to send `?limit=1000`,
+   * 422, and render as an empty catalogue.
+   */
+  questions: (params = "") =>
+    fetchAllPages<AdminQuestionListItem>(params ? `/questions?${params}` : "/questions"),
+
+  /** What is in the bank, for the filter dropdowns. Never hardcoded. */
+  questionFacets: () => apiFetch<AdminQuestionFacets>("/questions/facets"),
+
+  /**
+   * Question writes are nested under the paper and have always been.
+   * `{ref}` accepts an id or a slug, which is what `paper_slug` on each bank row
+   * is for.
+   */
+  createQuestion: (paperRef: string | number, payload: QuestionPayload) =>
+    apiFetch<AdminQuestion>(`/mock-tests/${paperRef}/questions`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  /**
+   * `PUT`, not `PATCH`: the route is a full replace and uses
+   * `exclude_unset=True`, so a field absent from the body is left alone while a
+   * field sent as `null` clears the column. The form sends every field it owns
+   * on purpose -- see `lib/question-form.ts`.
+   */
+  updateQuestion: (
+    paperRef: string | number,
+    questionId: number,
+    payload: QuestionUpdatePayload,
+  ) =>
+    apiFetch<AdminQuestion>(`/mock-tests/${paperRef}/questions/${questionId}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+
+  /** Soft delete. Drops the question from the paper, keeps every attempt's answer. */
+  deleteQuestion: (paperRef: string | number, questionId: number) =>
+    apiFetch<void>(`/mock-tests/${paperRef}/questions/${questionId}`, {
+      method: "DELETE",
     }),
 
   banners: () => apiFetch<AdminBanner[]>("/banners"),
@@ -1031,7 +1456,59 @@ export const adminApi = {
 
   deleteBanner: (id: number) => apiFetch<void>(`/banners/${id}`, { method: "DELETE" }),
 
-  blogs: (params = "") => apiFetch<AdminBlog[]>(`/blogs${params}`),
+  /**
+   * One page of published posts, or of drafts when the caller asks and holds a
+   * content role.
+   *
+   * `list_blogs` returns **published only** unless both conditions hold: the
+   * caller is in `CONTENT_ROLES` *and* a `status` parameter is present. So this
+   * raw single-page call is kept for narrow uses, and {@link adminApi.blogs} is
+   * what the admin panels call.
+   */
+  blogsPage: (params = "") => apiFetch<AdminBlog[]>(`/blogs${params}`),
+
+  /**
+   * Every article, drafts included.
+   *
+   * The old call was `GET /blogs` with no `status`, which took the route's
+   * `else` branch and returned published posts only. The panel was titled
+   * "Published articles" and every draft in the database was unreachable — not
+   * unlistable, unreachable: `GET /blogs/{ref}` also filters on
+   * `status == "published"`, so a draft could not be opened for editing either.
+   * Both statuses are therefore walked explicitly and merged.
+   *
+   * A caller **without** a content role still gets published-only, whatever
+   * `status` it sends — the gate is on the server and cannot be widened here.
+   */
+  async blogs(): Promise<AdminBlogDetail[]> {
+    const [drafts, published] = await Promise.all([
+      fetchAllPages<AdminBlogDetail>("/blogs?status=draft", BLOG_PAGE_SIZE),
+      fetchAllPages<AdminBlogDetail>("/blogs?status=published", BLOG_PAGE_SIZE),
+    ]);
+    return [...drafts, ...published];
+  },
+
+  /**
+   * The raw row for the edit form.
+   *
+   * Safe only for a **published** post: `get_blog` is the public read and
+   * filters `status == "published"`, so a draft is a 404. The blog panel
+   * therefore prefills from the table row — `GET /blogs` returns `content` for
+   * every row it returns — and does not call this. It exists for the one case
+   * that genuinely needs a fresh read: a published post whose content is long
+   * enough that the panel holds a truncated copy.
+   */
+  blog: (ref: string | number) => apiFetch<AdminBlogDetail>(`/blogs/${ref}`),
+
+  createBlog: (payload: Record<string, unknown>) =>
+    apiFetch<AdminBlogDetail>("/blogs", { method: "POST", body: JSON.stringify(payload) }),
+
+  updateBlog: (ref: string | number, payload: Record<string, unknown>) =>
+    apiFetch<AdminBlogDetail>(`/blogs/${ref}`, { method: "PUT", body: JSON.stringify(payload) }),
+
+  deleteBlog: (ref: string | number) => apiFetch<void>(`/blogs/${ref}`, { method: "DELETE" }),
+
+  blogCategories: () => fetchAllPages<AdminBlogCategory>("/blog-categories", BLOG_PAGE_SIZE),
 
   /* ------------------------------- Colleges ------------------------------- */
 
@@ -1082,6 +1559,12 @@ export const adminApi = {
 
   universities: () => fetchAllPages<AdminUniversity>("/universities"),
 
+  /**
+   * The course list, shared by the college form's course picker, the media
+   * entity picker and the courses panel. It lives with the other reference
+   * lookups because two of the three callers are not the courses panel; the
+   * courses panel's own read is `adminApi.course(ref)` below.
+   */
   courses: () => fetchAllPages<AdminCourse>("/courses"),
 
   notifications: () => apiFetch<AdminNotification[]>("/notifications"),
@@ -1093,9 +1576,111 @@ export const adminApi = {
 
   mockTests: () => apiFetch<unknown[]>("/mock-tests/admin/all"),
 
-  media: () => apiFetch<unknown[]>("/media"),
+  /**
+   * The whole library, walked to completion.
+   *
+   * Was a single unpaginated call, which returned 50 rows and called that the
+   * library — the route defaults to `limit=50` and caps at 100, so `fetchAllPages`
+   * is the difference between "every asset" and "the first fifty".
+   */
+  media: () => fetchAllPages<AdminMedia>("/media"),
 
-  faqs: () => apiFetch<unknown[]>("/faqs"),
+  /**
+   * `POST /media/upload`. The body is `FormData` and must stay one — see the
+   * `bodyCarriesItsOwnContentType` note in `apiFetchImpl`. `MediaCreate` (the
+   * JSON route) is deliberately not exposed here: it writes a row with no file
+   * behind it, which is the orphaned-record case `upload_media` exists to avoid.
+   */
+  uploadMedia: (body: FormData) =>
+    apiFetch<AdminMedia>("/media/upload", { method: "POST", body }),
+
+  /**
+   * Metadata only — this route does not replace the stored bytes, so a claim in
+   * this panel that it can swap the image file would be false.
+   */
+  updateMedia: (id: number, payload: { alt_text?: string | null; image_type?: string | null; display_order?: number; is_active?: boolean }) =>
+    apiFetch<AdminMedia>(`/media/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
+
+  /** Removes the row and, for an uploaded file, the bytes on disk with it. */
+  deleteMedia: (id: number) => apiFetch<void>(`/media/${id}`, { method: "DELETE" }),
+
+  faqs: () => fetchAllPages<AdminFaq>("/faqs"),
+
+  /** `GET /faqs/{faq_id}` takes a plain integer. */
+  faq: (id: number) => apiFetch<AdminFaq>(`/faqs/${id}`),
+
+  createFaq: (payload: Record<string, unknown>) =>
+    apiFetch<AdminFaq>("/faqs", { method: "POST", body: JSON.stringify(payload) }),
+
+  /**
+   * `FAQUpdate` has no `entity_type` or `entity_id`, so the attachment cannot be
+   * changed after creation — see `lib/faq-form.ts`. The payload type is a plain
+   * record, so nothing stops a caller sending the pair and getting a silent
+   * no-op; the form builder is the thing that keeps it out.
+   */
+  updateFaq: (id: number, payload: Record<string, unknown>) =>
+    apiFetch<AdminFaq>(`/faqs/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
+
+  deleteFaq: (id: number) => apiFetch<void>(`/faqs/${id}`, { method: "DELETE" }),
+
+  /* ------------------------------------------------------------------ *
+   * Courses, scholarships, exams
+   *
+   * These three routers share a shape: `GET ""` (offset-paginated, `le=100`), a
+   * by-ref `GET`, and `POST` / `PUT` / `DELETE` behind role gates that differ per
+   * verb. The `*_ref` path parameter is resolved as an integer when the segment
+   * is all digits and as a slug otherwise, so these take the numeric id — see
+   * `rowRefFor` in `lib/form-parts.ts`.
+   *
+   * Every `PUT` here applies `model_dump(exclude_unset=True)`, which is what makes
+   * the deliberate field omissions in each form module safe: an absent key leaves
+   * the column alone, and only a key that is *sent* can clear it.
+   *
+   * The three lists all cap `limit` at 100. The panels used to ask for 1000 and
+   * 200 respectively, which is a 422 — and `useAdminResource` turns any thrown
+   * error into "Could not reach the API", so those tables showed a connection
+   * error rather than a page-size bug. See `lib/form-parts.ts` for the
+   * `is_active` omission these three share.
+   * ------------------------------------------------------------------ */
+
+  course: (ref: string | number) => apiFetch<AdminCourseDetail>(`/courses/${ref}`),
+
+  createCourse: (payload: Record<string, unknown>) =>
+    apiFetch<AdminCourseDetail>("/courses", { method: "POST", body: JSON.stringify(payload) }),
+
+  updateCourse: (ref: string | number, payload: Record<string, unknown>) =>
+    apiFetch<AdminCourseDetail>(`/courses/${ref}`, { method: "PUT", body: JSON.stringify(payload) }),
+
+  deleteCourse: (ref: string | number) => apiFetch<void>(`/courses/${ref}`, { method: "DELETE" }),
+
+  courseCategories: () => apiFetch<string[]>("/courses/categories"),
+
+  scholarships: () => fetchAllPages<AdminScholarship>("/scholarships"),
+
+  scholarship: (ref: string | number) => apiFetch<AdminScholarship>(`/scholarships/${ref}`),
+
+  createScholarship: (payload: Record<string, unknown>) =>
+    apiFetch<AdminScholarship>("/scholarships", { method: "POST", body: JSON.stringify(payload) }),
+
+  updateScholarship: (ref: string | number, payload: Record<string, unknown>) =>
+    apiFetch<AdminScholarship>(`/scholarships/${ref}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+
+  deleteScholarship: (ref: string | number) => apiFetch<void>(`/scholarships/${ref}`, { method: "DELETE" }),
+
+  exams: () => fetchAllPages<AdminExam>("/exams"),
+
+  exam: (ref: string | number) => apiFetch<AdminExam>(`/exams/${ref}`),
+
+  createExam: (payload: Record<string, unknown>) =>
+    apiFetch<AdminExam>("/exams", { method: "POST", body: JSON.stringify(payload) }),
+
+  updateExam: (ref: string | number, payload: Record<string, unknown>) =>
+    apiFetch<AdminExam>(`/exams/${ref}`, { method: "PUT", body: JSON.stringify(payload) }),
+
+  deleteExam: (ref: string | number) => apiFetch<void>(`/exams/${ref}`, { method: "DELETE" }),
 };
 
 /** True when an error is simply "you don't have the role for this". */
