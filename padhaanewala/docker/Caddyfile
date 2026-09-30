@@ -1,0 +1,136 @@
+# Padhaanewala — edge.
+#
+# Topology, and the two properties that follow from it:
+#
+#   Internet ──:443──> Caddy (automatic TLS)
+#                      ├── /*          → frontend:3000  (Next.js standalone)
+#                      └── /api/v1/*   → frontend:3000  → backend:8000
+#
+# 1. The backend port is never published. `next.config.ts` proxies /api/v1 to it,
+#    so the browser is always same-origin. That is what makes the HttpOnly
+#    refresh cookie work, and it means CORS is irrelevant to external traffic.
+# 2. Caddy is the only process with a route to the internet, so the server
+#    banner is stripped here, but the security headers are written by the
+#    application (`frontend/proxy.ts`) — see the comment in the header block.
+{
+	# Let's Encrypt/ZeroSSL certificates over HTTP-01. Caddy solves the challenge
+	# on 80 before the 443 listener is available, which is why both ports are
+	# published even though only HTTPS is served.
+	email {$ACME_EMAIL}
+
+	# Do not advertise the Caddy version. It is free reconnaissance, and there is
+	# no cost to hiding it.
+	admin off
+}
+
+# Plain HTTP exists only to redirect and to answer the ACME challenge. Nothing is
+# served from it.
+:80 {
+	# Not `redir` — that would also redirect the ACME challenge and break issuance
+	# for a domain whose DNS is not yet pointed at this host. The challenge path is
+	# answered, everything else is redirected to the origin form.
+	@acme path /.well-known/acme-challenge/*
+	handle @acme {
+		respond 200
+	}
+
+	# The edge health check is answered here over plain HTTP rather than being
+	# redirected. Two reasons, and the second is the one that actually bit:
+	#
+	#   * a monitor probing over HTTP wants a 200, not a redirect chain into a TLS
+	#     handshake; and
+	#   * following the redirect to https://<ip>/ fails outright, because the
+	#     certificate is issued for the site *name*, not for 127.0.0.1. That is
+	#     what left the container permanently at "health: starting" while the
+	#     site itself served traffic perfectly.
+	handle /healthz {
+		respond "ok" 200
+	}
+
+	handle {
+		redir https://{host}{uri} permanent
+	}
+}
+
+{$SITE_ADDRESS:padhaanewala.in} {
+	encode zstd gzip
+
+	# --- Security headers -------------------------------------------------
+	#
+	# Only the two that belong at the edge, and each for a specific reason.
+	#
+	# HSTS is set here *as well as* in the application (`frontend/proxy.ts`,
+	# Phase 5.2). The duplication is deliberate and is the one header worth
+	# having twice, because it is the one header that must not depend on the
+	# application being up and correct: a 500 from a bad deploy, or a route that
+	# crashes before the proxy runs, is precisely when a browser should be
+	# recording that this host is HTTPS-only. It also covers the responses Caddy
+	# generates itself and never forwards — `/healthz` and the redirect on :80.
+	# Browsers take the strictest HSTS they are given and the two values are
+	# identical, so there is nothing to intersect.
+	#
+	# What is deliberately NOT set here: Content-Security-Policy, X-Frame-Options,
+	# X-Content-Type-Options, Referrer-Policy, Permissions-Policy. The
+	# application is the single source of truth for all five, and for
+	# Permissions-Policy it has to be: a blanket `camera=()` at the edge would
+	# veto the `camera=(self)` the app grants to `/mock-tests`, because the
+	# browser intersects every policy it receives and the most restrictive wins.
+	# Two sources for *that* header is how the intersection gets broken.
+	header {
+		# Hides the server banner. Also stripped application-side by
+		# `poweredByHeader: false`; here because this is the only layer that
+		# sees Caddy's own responses too.
+		-Server
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	}
+
+	# --- Health, for the load balancer and for uptime monitoring ------------
+	#
+	# Served by Caddy itself, not proxied. If it were proxied to the frontend it
+	# would fail whenever the frontend is the thing that is down, which is
+	# exactly when a health endpoint is needed. Phase 8.5 builds alerting on this.
+	handle /healthz {
+		respond "ok" 200
+	}
+
+	# The application's own health check, which verifies a real `SELECT 1`
+	# round trip and reports the latency.
+	#
+	# Routed straight to the backend rather than through the frontend, because
+	# `next.config.ts` only rewrites `/api/v1/*` and FastAPI serves this at the
+	# application root. Without this line `/health` reaches Next, which has no
+	# such route, and returns 404 — a load balancer would then restart a
+	# perfectly healthy container forever.
+	#
+	# The only backend path Caddy exposes directly. The rest of the API goes
+	# through the frontend rewrite, which is what keeps the browser same-origin.
+	handle /health {
+		reverse_proxy backend:8000
+	}
+
+	# --- API ---------------------------------------------------------------
+	#
+	# Routed to the *frontend*, not the backend. `next.config.ts` rewrites
+	# /api/v1 to the backend internally, and the browser therefore only ever
+	# talks to this origin — one less hop, and the reason the refresh cookie can
+	# be SameSite=strict.
+	handle /api/v1/* {
+		reverse_proxy frontend:3000
+	}
+
+	# --- Everything else ---------------------------------------------------
+	handle {
+		reverse_proxy frontend:3000
+	}
+
+	log {
+		output stdout
+		format json
+		# Query strings can contain a one-time email-verification or
+		# password-reset token, because /verify-email and /reset-password are
+		# front-end routes that read `?token=`. Logging them verbatim writes
+		# bearer credentials into a log file that Phase 9.5 will want to be able
+		# to delete.
+		level INFO
+	}
+}

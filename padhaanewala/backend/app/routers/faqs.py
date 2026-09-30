@@ -9,13 +9,16 @@ from app.schemas.content import FAQCreate, FAQResponse, FAQUpdate
 
 router = APIRouter(prefix="/api/v1/faqs", tags=["faqs"])
 
-CONTENT_ROLES = ("admin", "super_admin", "content_manager")
-
+from app.roles import CONTENT_ROLES
 
 @router.get("", response_model=list[FAQResponse])
 def list_faqs(
     entity_type: str | None = Query(None, max_length=50),
     entity_id: int | None = None,
+    # No `limit` existed here, so the whole table was returned regardless of what
+    # the caller asked for. See the same note in `universities.list_universities`.
+    limit: int = Query(100, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
 ):
     query = select(FAQ).where(FAQ.is_active)
@@ -25,8 +28,9 @@ def list_faqs(
         query = query.where(FAQ.entity_id == entity_id)
     return db.scalars(
         query.order_by(FAQ.entity_type, FAQ.entity_id, FAQ.display_order)
+        .limit(limit)
+        .offset(offset)
     ).all()
-
 
 @router.get("/{faq_id}", response_model=FAQResponse)
 def get_faq(faq_id: int, db: Session = Depends(get_db)):
@@ -34,7 +38,6 @@ def get_faq(faq_id: int, db: Session = Depends(get_db)):
     if faq is None or not faq.is_active:
         raise HTTPException(status_code=404, detail="FAQ not found")
     return faq
-
 
 @router.post(
     "",
@@ -48,7 +51,6 @@ def create_faq(payload: FAQCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(faq)
     return faq
-
 
 @router.put(
     "/{faq_id}",
@@ -66,7 +68,6 @@ def update_faq(
     db.commit()
     db.refresh(faq)
     return faq
-
 
 @router.delete(
     "/{faq_id}",

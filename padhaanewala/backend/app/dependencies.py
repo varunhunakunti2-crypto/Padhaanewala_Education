@@ -1,6 +1,6 @@
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose.exceptions import ExpiredSignatureError, JWTError
+from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -24,7 +24,13 @@ def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token has expired",
         )
-    except JWTError:
+    # `InvalidTokenError` is PyJWT's base class for every token failure, the
+    # direct counterpart to python-jose's `JWTError`. It replaced `JWTError` in
+    # Phase 7.2, when python-jose was dropped to remove the unpatchable
+    # `ecdsa` advisory — see app/utils/security.py. The ordering matters:
+    # `ExpiredSignatureError` subclasses it, so it has to be caught first or
+    # every expired token would be reported as "Invalid token".
+    except InvalidTokenError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token",
@@ -69,9 +75,16 @@ def get_optional_current_user(
 
 
 def require_role(*allowed_roles: str):
+    # Fail closed (R4.1). An empty allowlist is always a programming error, never
+    # "allow everyone". Raising here turns a silent authorization bypass into an
+    # import-time crash, which no reviewer can miss.
+    if not allowed_roles:
+        raise RuntimeError("require_role() called with no roles")
+
+    allowed = frozenset(allowed_roles)
+
     def checker(user: User = Depends(get_current_user)) -> User:
-        user_roles = get_current_user_roles(user)
-        if not allowed_roles or set(allowed_roles) & user_roles:
+        if allowed & get_current_user_roles(user):
             return user
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

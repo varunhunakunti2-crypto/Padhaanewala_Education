@@ -69,7 +69,13 @@ class College(Base):
     university: Mapped["University | None"] = relationship(back_populates="colleges")
     state: Mapped["State | None"] = relationship(back_populates="colleges")
     district: Mapped["District | None"] = relationship(back_populates="colleges")
+    # `passive_deletes=True`: on `DELETE`, rely on the database FK CASCADE
+    # instead of letting the ORM load these rows and null their FK. CollegeCourse
+    # and Review have NOT NULL college_id, so the ORM default of "null the child
+    # then let the DB cascade" fails with a NotNullViolation on every delete.
     college_courses: Mapped[list["CollegeCourse"]] = relationship(
-        back_populates="college"
+        back_populates="college", passive_deletes=True
     )
-    reviews: Mapped[list["Review"]] = relationship(back_populates="college")
+    reviews: Mapped[list["Review"]] = relationship(
+        back_populates="college", passive_deletes=True
+    )

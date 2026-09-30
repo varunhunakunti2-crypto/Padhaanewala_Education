@@ -1,12 +1,24 @@
-import re
+﻿import re
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
-from app.dependencies import require_role
-from app.models import College, CollegeCourse, Course
+from app.dependencies import get_optional_current_user, require_role
+from app.models import (
+    College,
+    CollegeCourse,
+    Course,
+    Cutoff,
+    District,
+    NIRFRanking,
+    OtherRanking,
+    PlacementRecord,
+    SeatMatrix,
+    User,
+)
+from app.roles import ADMIN_ROLES, CONTENT_ROLES, SUPER_ADMIN_ROLES
 from app.schemas.catalog import (
     CollegeCourseResponse,
     CollegeCreate,
@@ -16,8 +28,16 @@ from app.schemas.catalog import (
     CourseResponse,
     SearchResult,
 )
+from app.utils import audit
 
 router = APIRouter(prefix="/api/v1/colleges", tags=["colleges"])
+
+
+def _can_view_inactive(user: User | None) -> bool:
+    """Only roles that can edit catalog rows may see unpublished ones."""
+    if user is None:
+        return False
+    return bool(set(CONTENT_ROLES) & {role.name for role in user.roles})
 
 
 def _slugify(text: str) -> str:
@@ -47,7 +67,7 @@ def list_colleges(
     state_id: int | None = None,
     course_id: int | None = None,
     featured: bool | None = None,
-    limit: int = 50,
+    limit: int = Query(50, ge=1, le=100),
     offset: int = 0,
     db: Session = Depends(get_db),
 ):
@@ -110,7 +130,23 @@ def search(
 
 
 @router.get("/{college_ref}/courses", response_model=list[CollegeCourseResponse])
-def get_college_courses(college_ref: str, db: Session = Depends(get_db)):
+def get_college_courses(
+    college_ref: str,
+    course_id: int | None = None,
+    q: str | None = None,
+    # `include_inactive` used to be a plain public query param, so
+    # `?include_inactive=true` exposed draft fees/intake to anonymous callers.
+    # It is now only honoured for callers who could edit the row anyway.
+    include_inactive: bool = False,
+    user: User | None = Depends(get_optional_current_user),
+    db: Session = Depends(get_db),
+):
+    if include_inactive and not _can_view_inactive(user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="include_inactive requires admin permissions",
+        )
+
     college = db.scalar(
         select(College).where(
             College.is_active,
@@ -124,11 +160,26 @@ def get_college_courses(college_ref: str, db: Session = Depends(get_db)):
     if college is None:
         raise HTTPException(status_code=404, detail="College not found")
 
-    college_courses = db.scalars(
+    conditions = [CollegeCourse.college_id == college.id]
+    if not include_inactive:
+        conditions.append(CollegeCourse.is_active.is_(True))
+    if course_id is not None:
+        conditions.append(CollegeCourse.course_id == course_id)
+
+    query = (
         select(CollegeCourse)
         .options(selectinload(CollegeCourse.course))
-        .where(CollegeCourse.college_id == college.id, CollegeCourse.is_active)
-    ).all()
+        .where(*conditions)
+    )
+    if q is not None:
+        term = f"%{q.strip()}%"
+        query = (
+            query.join(Course, Course.id == CollegeCourse.course_id)
+            .where(Course.name.ilike(term))
+            .distinct()
+        )
+
+    college_courses = db.scalars(query.order_by(CollegeCourse.id)).all()
     return [
         CollegeCourseResponse(
             id=cc.id,
@@ -204,7 +255,7 @@ def get_college(college_ref: str, db: Session = Depends(get_db)):
     "",
     response_model=CollegeDetailResponse,
     status_code=201,
-    dependencies=[Depends(require_role("admin", "super_admin"))],
+    dependencies=[Depends(require_role(*ADMIN_ROLES))],
 )
 def create_college(payload: CollegeCreate, db: Session = Depends(get_db)):
     slug = _slugify(payload.name)
@@ -234,6 +285,7 @@ def create_college(payload: CollegeCreate, db: Session = Depends(get_db)):
         phone=payload.phone,
         established_year=payload.established_year,
         accreditation_naac=payload.accreditation_naac,
+        accreditation_nba=payload.accreditation_nba,
         overview=payload.overview,
         facilities=payload.facilities,
         has_hostel=payload.has_hostel,
@@ -263,7 +315,7 @@ def create_college(payload: CollegeCreate, db: Session = Depends(get_db)):
 @router.put(
     "/{college_ref}",
     response_model=CollegeDetailResponse,
-    dependencies=[Depends(require_role("admin", "super_admin"))],
+    dependencies=[Depends(require_role(*ADMIN_ROLES))],
 )
 def update_college(
     college_ref: str, payload: CollegeUpdate, db: Session = Depends(get_db)
@@ -280,6 +332,15 @@ def update_college(
         college.slug = slug
     for field, value in data.items():
         setattr(college, field, value)
+    if (
+        "state_id" in data
+        and data["state_id"] is not None
+        and college.district_id is not None
+        and "district_id" not in data
+    ):
+        district = db.get(District, college.district_id)
+        if district is None or district.state_id != college.state_id:
+            college.district_id = None
     db.commit()
     db.refresh(college)
     return _get_detail(college, db)
@@ -288,14 +349,55 @@ def update_college(
 @router.delete(
     "/{college_ref}",
     status_code=204,
-    dependencies=[Depends(require_role("super_admin"))],
 )
-def delete_college(college_ref: str, db: Session = Depends(get_db)):
+def delete_college(
+    college_ref: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(*SUPER_ADMIN_ROLES)),
+):
     college = _find_college(db, college_ref)
     if college is None:
         raise HTTPException(status_code=404, detail="College not found")
+
+    # 4.4/4.5 — the most destructive endpoint in the app. Record who did it,
+    # from where, and exactly how many dependent rows the cascade is about to
+    # destroy — after the commit that number is unrecoverable.
+    cascading = {
+        "cutoffs": _count_for(db, Cutoff, college.id),
+        "placements": _count_for(db, PlacementRecord, college.id),
+        "nirf_rankings": _count_for(db, NIRFRanking, college.id),
+        "other_rankings": _count_for(db, OtherRanking, college.id),
+        "seat_matrix": _count_for(db, SeatMatrix, college.id),
+        "college_courses": _count_for(db, CollegeCourse, college.id),
+    }
+    audit.record(
+        db,
+        request=request,
+        action="delete_college",
+        entity_type="college",
+        entity_id=college.id,
+        actor=user,
+        old_value={
+            "slug": college.slug,
+            "name": college.name,
+            "cascading_rows": cascading,
+        },
+    )
     db.delete(college)
     db.commit()
+
+
+def _count_for(db: Session, model, college_id: int) -> int:
+    """How many rows of `model` reference this college and would cascade away."""
+    return (
+        db.scalar(
+            select(func.count())
+            .select_from(model)
+            .where(model.college_id == college_id)
+        )
+        or 0
+    )
 
 
 def _find_college(db: Session, ref: str) -> College | None:

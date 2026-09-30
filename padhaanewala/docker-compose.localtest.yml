@@ -1,0 +1,60 @@
+# Padhaanewala — local verification of the PRODUCTION topology.
+#
+#   docker compose -f docker-compose.prod.yml -f docker-compose.localtest.yml \
+#     --env-file .env.localtest up -d
+#
+# Brings up the same five services, with the same wiring, as production. The only
+# things it changes are the two that cannot run on a laptop:
+#
+#   * the host-side port numbers, so the verification stack does not fight a
+#     local dev server or IIS for 80/443; and
+#   * the project name, so its volumes can never attach to the real ones.
+#
+# There is deliberately **no Caddyfile override**. An earlier draft of this file
+# mounted a `Caddyfile.localtest` with `tls internal`, on the assumption that a
+# public CA could not issue for `localhost`. That assumption was wrong: Caddy
+# already special-cases `localhost`, `.localhost` and `*.localhost` and issues
+# from its own internal CA automatically, so the real docker/Caddyfile works
+# unmodified. The duplicate was deleted rather than kept, because two Caddyfiles
+# that are meant to stay in step are a drift risk with no upside — and the whole
+# point of this exercise is to test the file that actually ships.
+#
+# What this genuinely verifies, and what it does not:
+#
+#   Verifies: both images build; the entrypoint's migrations and seeds run on
+#   first boot; the backend's production config guards accept a real
+#   configuration and refuse a placeholder; only Caddy publishes a port; the
+#   browser-origin path /api/v1 -> Next rewrite -> FastAPI works; the Host header
+#   the rewrite produces is accepted; the security header stack reaches the
+#   client; HSTS is present; the catalogue is served from the containerised
+#   database; and a lead can be submitted end to end.
+#
+#   Does NOT verify: a real ACME issuance from a public CA, a publicly trusted
+#   chain, the real domain, DNS, or anything about a VPS. Those are Phase 8. Read
+#   Phase 8's evidence as "deployed and measured", not as "expected to work".
+#
+#   Also NOT verified: real email or SMS delivery. The env file below carries
+#   shape-valid but non-functional provider credentials, because the production
+#   guards refuse `console` — correctly, since it silently discards every OTP.
+#   Sending is Phase 8.
+
+name: padhaanewala-localtest
+
+services:
+  caddy:
+    # `!override` is required and is not decoration. Compose *appends* list-valued
+    # keys when merging files rather than replacing them, so a plain `ports:`
+    # here would leave Caddy holding both the production mapping
+    # (80:80, 443:443) and this one (18080:80, 18443:443). The result is a bind
+    # failure — and the first draft of this file made exactly that mistake, then
+    # a second time on 8080, which is also commonly occupied. Neither failure
+    # points at Caddy; both read as "port is already allocated", which is a very
+    # confusing way to learn that a file merge is additive.
+    #
+    # These are deliberately high and deliberately not 80/443: a developer
+    # machine is likely to already have something on the low ports, and the
+    # verification stack must not be what displaces it.
+    ports: !override
+      - "18080:80"
+      - "18443:443"
+      - "18443:443/udp"

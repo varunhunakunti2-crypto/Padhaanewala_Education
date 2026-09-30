@@ -38,7 +38,14 @@ dist/
 .htmlcov/
 .coverage
 .coverage.*
+pytest-report.xml
+junit.xml
 *.log
+# uvicorn/npm stdout+stderr captures. `*.log` does not match these, and a
+# stderr capture can contain a SQLAlchemy error whose message embeds the
+# connection string and credentials.
+*.err
+*.out
 
 # ============================================================================
 # IDE / OS

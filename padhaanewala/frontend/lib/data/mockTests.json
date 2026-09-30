@@ -1,0 +1,1225 @@
+{
+  "$schema": "padhaanewala/mock-tests@1",
+  "note": "Canonical mock-test content. Read by the backend seed script (backend/scripts/seed_mock_tests.py) and imported by the frontend (frontend/lib/data/mockTests.ts). questionType must be one of app.question_types.QuestionType: mcq | numeric | essay.",
+  "papers": [
+    {
+      "slug": "jee-main-hardcore-mock-paper-2-2026",
+      "title": "Hardcore JEE Mock Test — Paper 2",
+      "examLabel": "JEE Main",
+      "examSlug": "jee-main",
+      "examRef": "joint-entrance-examination-main",
+      "subject": null,
+      "difficulty": "hard",
+      "durationMinutes": 180,
+      "attemptsAllowed": 1,
+      "marksPerCorrect": 4,
+      "marksPerWrong": 1,
+      "resultVisibility": "immediate",
+      "testType": "standard",
+      "description": "Full-length JEE Main 2026 pattern paper: 75 questions across Physics, Chemistry and Mathematics — 20 MCQs plus 5 numerical-value questions per subject. Advanced conceptual difficulty, timed 3 hours, with detailed solutions.",
+      "instructions": null,
+      "questions": [
+        {
+          "ref": "hp2-q1",
+          "subject": "Physics",
+          "topic": "Physics",
+          "text": "A photon of energy 5 eV ejects electrons from a metal of work function 2 eV. The stopping potential is:",
+          "type": "mcq",
+          "options": [
+            "2 V",
+            "3 V",
+            "5 V",
+            "7 V"
+          ],
+          "correctIndex": 1,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "Kmax = 5 − 2 = 3 eV = eVs, hence Vs = 3 V."
+        },
+        {
+          "ref": "hp2-q2",
+          "subject": "Physics",
+          "topic": "Physics",
+          "text": "In a series LCR circuit at resonance, the impedance is:",
+          "type": "mcq",
+          "options": [
+            "R",
+            "√(R² + X_L²)",
+            "X_L − X_C",
+            "0"
+          ],
+          "correctIndex": 0,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "At resonance X_L = X_C, so the net reactance is zero and Z = R."
+        },
+        {
+          "ref": "hp2-q3",
+          "subject": "Physics",
+          "topic": "Physics",
+          "text": "A uniform rod of length L and mass M is hinged at one end and released from rest from the horizontal. Its angular speed when it becomes vertical is:",
+          "type": "mcq",
+          "options": [
+            "√(g/L)",
+            "√(2g/L)",
+            "√(3g/L)",
+            "√(6g/L)"
+          ],
+          "correctIndex": 2,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "Loss of COM potential energy MgL/2 = (1/2)Iω² with I = ML²/3, so ω² = 3g/L."
+        },
+        {
+          "ref": "hp2-q4",
+          "subject": "Physics",
+          "topic": "Physics",
+          "text": "A simple pendulum has time period T at a place where g is known. If its length is increased by 44%, the percentage increase in T is approximately:",
+          "type": "mcq",
+          "options": [
+            "20%",
+            "44%",
+            "48.8%",
+            "10%"
+          ],
+          "correctIndex": 0,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "T ∝ √L, so T′/T = √1.44 = 1.2 — a 20% increase."
+        },
+        {
+          "ref": "hp2-q5",
+          "subject": "Physics",
+          "topic": "Physics",
+          "text": "A charged particle enters a uniform magnetic field perpendicular to its velocity. If its kinetic energy is quadrupled, its radius becomes:",
+          "type": "mcq",
+          "options": [
+            "unchanged",
+            "doubled",
+            "quadrupled",
+            "halved"
+          ],
+          "correctIndex": 1,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "r = p/(qB) and p ∝ √K, so r ∝ √K. Four times K gives twice r."
+        },
+        {
+          "ref": "hp2-q6",
+          "subject": "Physics",
+          "topic": "Physics",
+          "text": "A particle of mass m moving with speed v collides elastically head-on with a stationary particle of mass 3m. The speed of the incident particle after collision is:",
+          "type": "mcq",
+          "options": [
+            "v/2",
+            "v/3",
+            "−v/2",
+            "−v/3"
+          ],
+          "correctIndex": 2,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "For an elastic 1D collision, v₁′ = (m₁−m₂)/(m₁+m₂)·v = (m−3m)/(4m)·v = −v/2."
+        },
+        {
+          "ref": "hp2-q7",
+          "subject": "Physics",
+          "topic": "Physics",
+          "text": "A wire of resistance R is stretched uniformly to twice its original length without change of volume. Its new resistance is:",
+          "type": "mcq",
+          "options": [
+            "R/2",
+            "R",
+            "2R",
+            "4R"
+          ],
+          "correctIndex": 3,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "Volume is constant, so the area halves: R′ = ρ(2L)/(A/2) = 4R."
+        },
+        {
+          "ref": "hp2-q8",
+          "subject": "Physics",
+          "topic": "Physics",
+          "text": "A satellite is moved from a circular orbit of radius R to another circular orbit of radius 4R around Earth. The ratio of its orbital speeds is:",
+          "type": "mcq",
+          "options": [
+            "1:2",
+            "2:1",
+            "1:4",
+            "4:1"
+          ],
+          "correctIndex": 1,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "Orbital speed v = √(GM/r), so v_R / v_4R = 2, i.e. 2:1."
+        },
+        {
+          "ref": "hp2-q9",
+          "subject": "Physics",
+          "topic": "Physics",
+          "text": "A liquid rises to height h in a capillary of radius r. If the capillary radius is doubled and surface tension is unchanged, the new rise is:",
+          "type": "mcq",
+          "options": [
+            "h/4",
+            "h/2",
+            "2h",
+            "4h"
+          ],
+          "correctIndex": 1,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "Capillary rise h = 2T cosθ/(ρ g r), hence h ∝ 1/r."
+        },
+        {
+          "ref": "hp2-q10",
+          "subject": "Physics",
+          "topic": "Physics",
+          "text": "A block of mass m is on a rough horizontal surface (coefficient μ). A horizontal force F is applied. The block is just about to move when F = μmg. If the same force is instead applied at an angle θ above the horizontal, the least force required to start motion is:",
+          "type": "mcq",
+          "options": [
+            "μmg",
+            "μmg/(1 − μ sinθ)",
+            "μmg/(cosθ + μ sinθ)",
+            "μmg/(cosθ − μ sinθ)"
+          ],
+          "correctIndex": 2,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "At limiting motion F cosθ = μ(mg − F sinθ), so F(cosθ + μ sinθ) = μmg and F = μmg/(cosθ + μ sinθ)."
+        },
+        {
+          "ref": "hp2-q11",
+          "subject": "Physics",
+          "topic": "Physics",
+          "text": "In Young's double-slit experiment, if both slit separation and wavelength are doubled, fringe width becomes:",
+          "type": "mcq",
+          "options": [
+            "half",
+            "unchanged",
+            "double",
+            "four times"
+          ],
+          "correctIndex": 1,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "Fringe width β = λD/d; doubling both λ and d leaves β unchanged."
+        },
+        {
+          "ref": "hp2-q12",
+          "subject": "Physics",
+          "topic": "Physics",
+          "text": "A coil of N turns and area A rotates with angular speed ω in uniform magnetic field B. The maximum induced emf is:",
+          "type": "mcq",
+          "options": [
+            "NBA",
+            "NBAω",
+            "BAω/N",
+            "NB/Aω"
+          ],
+          "correctIndex": 1,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "Flux = NAB cos ωt, so the maximum induced emf is NABω."
+        },
+        {
+          "ref": "hp2-q13",
+          "subject": "Physics",
+          "topic": "Physics",
+          "text": "For a p-n junction diode under forward bias, the depletion-layer width:",
+          "type": "mcq",
+          "options": [
+            "increases",
+            "decreases",
+            "remains exactly constant",
+            "becomes infinite"
+          ],
+          "correctIndex": 1,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "Forward bias lowers the barrier potential and narrows the depletion region."
+        },
+        {
+          "ref": "hp2-q14",
+          "subject": "Physics",
+          "topic": "Physics",
+          "text": "Two charges +q and +4q are separated by distance d. The electric field is zero at a point between them. Its distance from +q is:",
+          "type": "mcq",
+          "options": [
+            "d/2",
+            "d/3",
+            "d/4",
+            "2d/3"
+          ],
+          "correctIndex": 1,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "q/x² = 4q/(d−x)². Taking positive roots, d−x = 2x, so x = d/3."
+        },
+        {
+          "ref": "hp2-q15",
+          "subject": "Physics",
+          "topic": "Physics",
+          "text": "One mole of an ideal monatomic gas expands adiabatically until its volume doubles. If initial temperature is T, the final temperature is:",
+          "type": "mcq",
+          "options": [
+            "T/2",
+            "T/2^(2/3)",
+            "T/2^(5/3)",
+            "2T"
+          ],
+          "correctIndex": 1,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "TV^(γ−1) = constant with γ = 5/3, so T₂/T₁ = (V₁/V₂)^(2/3) = 2^(−2/3)."
+        },
+        {
+          "ref": "hp2-q16",
+          "subject": "Physics",
+          "topic": "Physics",
+          "text": "A small block slides from rest down a smooth track through a vertical height h and enters a rough horizontal patch of length L with coefficient μ. It stops exactly at the far end. The required height is:",
+          "type": "mcq",
+          "options": [
+            "μL",
+            "2μL",
+            "μL/2",
+            "L/(2μ)"
+          ],
+          "correctIndex": 0,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "At the bottom the potential energy lost is mgh and the rough patch removes μmgL, so mgh = μmgL and h = μL."
+        },
+        {
+          "ref": "hp2-q17",
+          "subject": "Physics",
+          "topic": "Physics",
+          "text": "A particle moves on the x-axis with x(t) = t³ − 6t² + 9t (SI units). The total distance travelled during 0 ≤ t ≤ 4 s is:",
+          "type": "mcq",
+          "options": [
+            "4 m",
+            "8 m",
+            "12 m",
+            "16 m"
+          ],
+          "correctIndex": 2,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "v = 3(t−1)(t−3), so turning points are t = 1 and 3. x(0) = 0, x(1) = 4, x(3) = 0, x(4) = 4, giving a total distance of 4 + 4 + 4 = 12 m."
+        },
+        {
+          "ref": "hp2-q18",
+          "subject": "Physics",
+          "topic": "Physics",
+          "text": "A convex lens of focal length 20 cm forms a real image at 60 cm from the lens. The object distance is:",
+          "type": "mcq",
+          "options": [
+            "15 cm",
+            "20 cm",
+            "30 cm",
+            "40 cm"
+          ],
+          "correctIndex": 2,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "1/f = 1/v + 1/u, so 1/20 = 1/60 + 1/u, giving u = 30 cm."
+        },
+        {
+          "ref": "hp2-q19",
+          "subject": "Physics",
+          "topic": "Physics",
+          "text": "Two masses m and 2m are connected by a light string over a frictionless pulley. The tension in the string is:",
+          "type": "mcq",
+          "options": [
+            "2mg/3",
+            "4mg/3",
+            "3mg/2",
+            "2mg"
+          ],
+          "correctIndex": 1,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "Acceleration a = (2m−m)g/(3m) = g/3. For m, T − mg = ma, so T = 4mg/3."
+        },
+        {
+          "ref": "hp2-q20",
+          "subject": "Physics",
+          "topic": "Physics",
+          "text": "A capacitor C charged to potential V is connected in parallel to an uncharged capacitor 2C. The final common potential is:",
+          "type": "mcq",
+          "options": [
+            "V/2",
+            "V/3",
+            "2V/3",
+            "V"
+          ],
+          "correctIndex": 1,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "Charge conservation: CV = (3C)V_f, so V_f = V/3."
+        },
+        {
+          "ref": "hp2-q21",
+          "subject": "Physics",
+          "topic": "Physics",
+          "text": "A particle executes SHM with amplitude 5 cm and angular frequency 4 rad/s. Find its maximum speed in cm/s.",
+          "type": "numeric",
+          "options": [],
+          "correctIndex": -1,
+          "numericAnswer": 20,
+          "tolerance": 0,
+          "explanation": "v_max = ωA = 4 × 5 = 20 cm/s."
+        },
+        {
+          "ref": "hp2-q22",
+          "subject": "Physics",
+          "topic": "Physics",
+          "text": "A body is projected vertically upward with speed 30 m/s. Take g = 10 m/s². Find the maximum height in metres.",
+          "type": "numeric",
+          "options": [],
+          "correctIndex": -1,
+          "numericAnswer": 45,
+          "tolerance": 0,
+          "explanation": "H = u²/(2g) = 900/20 = 45 m."
+        },
+        {
+          "ref": "hp2-q23",
+          "subject": "Physics",
+          "topic": "Physics",
+          "text": "A 10 μF capacitor is charged to 100 V. Its stored energy, expressed in mJ, is:",
+          "type": "numeric",
+          "options": [],
+          "correctIndex": -1,
+          "numericAnswer": 50,
+          "tolerance": 0,
+          "explanation": "U = ½CV² = 0.5 × 10 × 10⁻⁶ × 10⁴ = 0.05 J = 50 mJ."
+        },
+        {
+          "ref": "hp2-q24",
+          "subject": "Physics",
+          "topic": "Physics",
+          "text": "A 2 kg block moving at 6 m/s collides and sticks to a 1 kg block at rest. Find the common speed in m/s.",
+          "type": "numeric",
+          "options": [],
+          "correctIndex": -1,
+          "numericAnswer": 4,
+          "tolerance": 0,
+          "explanation": "Momentum conservation: 2 × 6 = 3v, so v = 4 m/s."
+        },
+        {
+          "ref": "hp2-q25",
+          "subject": "Physics",
+          "topic": "Physics",
+          "text": "An electron is accelerated through a potential difference of 100 V. Using e = 1.6 × 10⁻¹⁹ C, its kinetic energy in eV is numerically:",
+          "type": "numeric",
+          "options": [],
+          "correctIndex": -1,
+          "numericAnswer": 100,
+          "tolerance": 0,
+          "explanation": "An electron gaining energy through a potential difference of 100 V gains 100 eV."
+        },
+        {
+          "ref": "hp2-q26",
+          "subject": "Chemistry",
+          "topic": "Chemistry",
+          "text": "Which carbocation is most stabilized by hyperconjugation?",
+          "type": "mcq",
+          "options": [
+            "CH3+",
+            "CH3CH2+",
+            "(CH3)2CH+",
+            "(CH3)3C+"
+          ],
+          "correctIndex": 3,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "More alkyl groups provide more hyperconjugative structures, so the tert-butyl carbocation is the most stabilized of these."
+        },
+        {
+          "ref": "hp2-q27",
+          "subject": "Chemistry",
+          "topic": "Chemistry",
+          "text": "The conjugate base of H2PO4⁻ is:",
+          "type": "mcq",
+          "options": [
+            "H3PO4",
+            "HPO4²−",
+            "PO4³−",
+            "OH−"
+          ],
+          "correctIndex": 1,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "Removal of one proton from H2PO4⁻ gives HPO4²−."
+        },
+        {
+          "ref": "hp2-q28",
+          "subject": "Chemistry",
+          "topic": "Chemistry",
+          "text": "The number of atoms in one face-centred cubic unit cell effectively belonging to the unit cell is:",
+          "type": "mcq",
+          "options": [
+            "1",
+            "2",
+            "4",
+            "6"
+          ],
+          "correctIndex": 2,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "The 8 corners contribute 1 atom and the 6 faces contribute 3 atoms, for a total of 4."
+        },
+        {
+          "ref": "hp2-q29",
+          "subject": "Chemistry",
+          "topic": "Chemistry",
+          "text": "For a reaction with rate law r = k[A]²[B], if [A] is doubled and [B] is halved, the rate changes by:",
+          "type": "mcq",
+          "options": [
+            "2 times",
+            "4 times",
+            "8 times",
+            "unchanged"
+          ],
+          "correctIndex": 0,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "Rate factor = 2² × ½ = 2."
+        },
+        {
+          "ref": "hp2-q30",
+          "subject": "Chemistry",
+          "topic": "Chemistry",
+          "text": "10 g of CaCO3 (M = 100 g mol⁻¹) is heated completely. The volume of CO2 at STP is approximately:",
+          "type": "mcq",
+          "options": [
+            "1.12 L",
+            "2.24 L",
+            "4.48 L",
+            "22.4 L"
+          ],
+          "correctIndex": 1,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "n(CaCO3) = 0.1 mol, giving 0.1 mol CO2. At STP, V = 2.24 L."
+        },
+        {
+          "ref": "hp2-q31",
+          "subject": "Chemistry",
+          "topic": "Chemistry",
+          "text": "Which oxide is amphoteric?",
+          "type": "mcq",
+          "options": [
+            "Na2O",
+            "MgO",
+            "Al2O3",
+            "SO3"
+          ],
+          "correctIndex": 2,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "Al2O3 reacts with both acids and strong bases."
+        },
+        {
+          "ref": "hp2-q32",
+          "subject": "Chemistry",
+          "topic": "Chemistry",
+          "text": "At equilibrium, increasing pressure for N2(g) + 3H2(g) ⇌ 2NH3(g) shifts equilibrium:",
+          "type": "mcq",
+          "options": [
+            "left",
+            "right",
+            "no change",
+            "first left then right"
+          ],
+          "correctIndex": 1,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "Pressure favours the side with fewer gas moles: 2 versus 4."
+        },
+        {
+          "ref": "hp2-q33",
+          "subject": "Chemistry",
+          "topic": "Chemistry",
+          "text": "The oxidation state of chromium in Cr2O7²− is:",
+          "type": "mcq",
+          "options": [
+            "+3",
+            "+4",
+            "+6",
+            "+7"
+          ],
+          "correctIndex": 2,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "2x + 7(−2) = −2 gives 2x = 12, so x = +6."
+        },
+        {
+          "ref": "hp2-q34",
+          "subject": "Chemistry",
+          "topic": "Chemistry",
+          "text": "Which reagent converts a primary alcohol to an aldehyde without significant over-oxidation?",
+          "type": "mcq",
+          "options": [
+            "PCC",
+            "KMnO4/H+",
+            "K2Cr2O7/H+ (excess)",
+            "NaBH4"
+          ],
+          "correctIndex": 0,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "PCC oxidizes primary alcohols selectively to aldehydes under anhydrous conditions."
+        },
+        {
+          "ref": "hp2-q35",
+          "subject": "Chemistry",
+          "topic": "Chemistry",
+          "text": "Which complex is expected to be diamagnetic?",
+          "type": "mcq",
+          "options": [
+            "[FeF6]3−",
+            "[Fe(CN)6]4−",
+            "[CoF6]3−",
+            "[NiCl4]2−"
+          ],
+          "correctIndex": 1,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "[Fe(CN)6]4− has Fe2+, d6 with strong-field CN−, giving low-spin t2g6 with all electrons paired."
+        },
+        {
+          "ref": "hp2-q36",
+          "subject": "Chemistry",
+          "topic": "Chemistry",
+          "text": "Which compound gives a positive iodoform test?",
+          "type": "mcq",
+          "options": [
+            "Methanol",
+            "Ethanol",
+            "Propanal",
+            "Benzaldehyde"
+          ],
+          "correctIndex": 1,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "Ethanol is oxidized to ethanal, which contains the CH3CO− unit required for the iodoform reaction."
+        },
+        {
+          "ref": "hp2-q37",
+          "subject": "Chemistry",
+          "topic": "Chemistry",
+          "text": "The standard cell potential for a galvanic cell is positive when:",
+          "type": "mcq",
+          "options": [
+            "ΔG° > 0",
+            "E°cell < 0",
+            "ΔG° < 0",
+            "K < 1 necessarily"
+          ],
+          "correctIndex": 2,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "ΔG° = −nFE°cell. A spontaneous standard reaction has ΔG° < 0 and E°cell > 0."
+        },
+        {
+          "ref": "hp2-q38",
+          "subject": "Chemistry",
+          "topic": "Chemistry",
+          "text": "Which species has the largest bond order according to molecular orbital theory?",
+          "type": "mcq",
+          "options": [
+            "O2",
+            "O2+",
+            "O2−",
+            "O2²−"
+          ],
+          "correctIndex": 1,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "Removing an electron from an antibonding π* orbital raises the bond order: O2 = 2, O2+ = 2.5, O2− = 1.5, O2²− = 1."
+        },
+        {
+          "ref": "hp2-q39",
+          "subject": "Chemistry",
+          "topic": "Chemistry",
+          "text": "The major product of propene with HBr in the absence of peroxide is:",
+          "type": "mcq",
+          "options": [
+            "1-bromopropane",
+            "2-bromopropane",
+            "propanol",
+            "allyl bromide"
+          ],
+          "correctIndex": 1,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "Electrophilic addition follows Markovnikov orientation, giving 2-bromopropane."
+        },
+        {
+          "ref": "hp2-q40",
+          "subject": "Chemistry",
+          "topic": "Chemistry",
+          "text": "Among BF3, NH3, H2O and CH4, the molecule with zero dipole moment is:",
+          "type": "mcq",
+          "options": [
+            "BF3",
+            "NH3",
+            "H2O",
+            "CH4"
+          ],
+          "correctIndex": 0,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "BF3 is trigonal planar and symmetric, so the bond dipoles cancel."
+        },
+        {
+          "ref": "hp2-q41",
+          "subject": "Chemistry",
+          "topic": "Chemistry",
+          "text": "Aniline is less basic than cyclohexylamine mainly because in aniline:",
+          "type": "mcq",
+          "options": [
+            "N is sp3",
+            "lone pair is delocalized into benzene ring",
+            "N is positively charged",
+            "no lone pair exists"
+          ],
+          "correctIndex": 1,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "The nitrogen lone pair participates in resonance with the aromatic ring, reducing its availability for protonation."
+        },
+        {
+          "ref": "hp2-q42",
+          "subject": "Chemistry",
+          "topic": "Chemistry",
+          "text": "A buffer contains equal concentrations of CH3COOH and CH3COONa. If Ka = 1.8 × 10⁻⁵, the pH is closest to:",
+          "type": "mcq",
+          "options": [
+            "4.74",
+            "5.74",
+            "2.74",
+            "9.26"
+          ],
+          "correctIndex": 0,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "Henderson-Hasselbalch: pH = pKa + log 1 = pKa = −log(1.8 × 10⁻⁵) = 4.74."
+        },
+        {
+          "ref": "hp2-q43",
+          "subject": "Chemistry",
+          "topic": "Chemistry",
+          "text": "Which polymer is formed by condensation polymerization?",
+          "type": "mcq",
+          "options": [
+            "Polyethene",
+            "PVC",
+            "Teflon",
+            "Nylon-6,6"
+          ],
+          "correctIndex": 3,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "Nylon-6,6 forms from a diamine and a diacid with elimination of small molecules, so it is a condensation polymer."
+        },
+        {
+          "ref": "hp2-q44",
+          "subject": "Chemistry",
+          "topic": "Chemistry",
+          "text": "For an ideal solution obeying Raoult's law, the partial vapour pressure of component A is:",
+          "type": "mcq",
+          "options": [
+            "xA P°A",
+            "P°A / xA",
+            "xB P°A",
+            "P°A + P°B"
+          ],
+          "correctIndex": 0,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "Raoult's law: p_A = x_A P°_A."
+        },
+        {
+          "ref": "hp2-q45",
+          "subject": "Chemistry",
+          "topic": "Chemistry",
+          "text": "A first-order reaction has half-life 20 min. The time required for 87.5% completion is:",
+          "type": "mcq",
+          "options": [
+            "40 min",
+            "60 min",
+            "80 min",
+            "100 min"
+          ],
+          "correctIndex": 1,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "12.5% remains = 1/8 = (1/2)³, so three half-lives = 60 min."
+        },
+        {
+          "ref": "hp2-q46",
+          "subject": "Chemistry",
+          "topic": "Chemistry",
+          "text": "How many stereoisomers are possible for a molecule with two independent chiral centres and no meso form?",
+          "type": "numeric",
+          "options": [],
+          "correctIndex": -1,
+          "numericAnswer": 4,
+          "tolerance": 0,
+          "explanation": "For n = 2 independent centres the maximum is 2ⁿ = 4."
+        },
+        {
+          "ref": "hp2-q47",
+          "subject": "Chemistry",
+          "topic": "Chemistry",
+          "text": "How many moles of electrons are required to reduce 1 mol of MnO4⁻ to Mn2+ in acidic medium?",
+          "type": "numeric",
+          "options": [],
+          "correctIndex": -1,
+          "numericAnswer": 5,
+          "tolerance": 0,
+          "explanation": "Mn(+7) to Mn(+2) requires 5 electrons per Mn."
+        },
+        {
+          "ref": "hp2-q48",
+          "subject": "Chemistry",
+          "topic": "Chemistry",
+          "text": "For a first-order reaction, if k = 0.0231 min⁻¹, its half-life in minutes is approximately:",
+          "type": "numeric",
+          "options": [],
+          "correctIndex": -1,
+          "numericAnswer": 30,
+          "tolerance": 0,
+          "explanation": "t₁/₂ = 0.693/k ≈ 30 min."
+        },
+        {
+          "ref": "hp2-q49",
+          "subject": "Chemistry",
+          "topic": "Chemistry",
+          "text": "One mole of an ideal gas expands reversibly and isothermally from 10 L to 20 L at 300 K. Using R = 8.314 J mol⁻¹ K⁻¹, the work in J is approximately 1729. Find the nearest integer.",
+          "type": "numeric",
+          "options": [],
+          "correctIndex": -1,
+          "numericAnswer": 1729,
+          "tolerance": 0,
+          "explanation": "W = nRT ln(V₂/V₁) = 8.314 × 300 × ln 2 ≈ 1728.9 J."
+        },
+        {
+          "ref": "hp2-q50",
+          "subject": "Chemistry",
+          "topic": "Chemistry",
+          "text": "The pH of 0.001 M HCl at 25°C is:",
+          "type": "numeric",
+          "options": [],
+          "correctIndex": -1,
+          "numericAnswer": 3,
+          "tolerance": 0,
+          "explanation": "A strong acid fully dissociates, so [H⁺] = 10⁻³ M."
+        },
+        {
+          "ref": "hp2-q51",
+          "subject": "Mathematics",
+          "topic": "Mathematics",
+          "text": "The minimum value of x + 1/x for x > 0 is:",
+          "type": "mcq",
+          "options": [
+            "0",
+            "1",
+            "2",
+            "4"
+          ],
+          "correctIndex": 2,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "By AM-GM, x + 1/x ≥ 2, with equality at x = 1."
+        },
+        {
+          "ref": "hp2-q52",
+          "subject": "Mathematics",
+          "topic": "Mathematics",
+          "text": "The general solution of dy/dx = 2x(1 + y) is:",
+          "type": "mcq",
+          "options": [
+            "1 + y = Ce^(x²)",
+            "1 + y = Ce^(2x)",
+            "y = Ce^(x²)",
+            "y + 1 = Cx²"
+          ],
+          "correctIndex": 0,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "dy/(1 + y) = 2x dx, so ln|1 + y| = x² + C, giving 1 + y = Ce^(x²)."
+        },
+        {
+          "ref": "hp2-q53",
+          "subject": "Mathematics",
+          "topic": "Mathematics",
+          "text": "The distance between the parallel lines 3x + 4y − 7 = 0 and 3x + 4y + 8 = 0 is:",
+          "type": "mcq",
+          "options": [
+            "1",
+            "2",
+            "3",
+            "5"
+          ],
+          "correctIndex": 2,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "Distance = |8 − (−7)|/√(9 + 16) = 15/5 = 3."
+        },
+        {
+          "ref": "hp2-q54",
+          "subject": "Mathematics",
+          "topic": "Mathematics",
+          "text": "The sum to infinity of 3 + 1 + 1/3 + … is:",
+          "type": "mcq",
+          "options": [
+            "9/2",
+            "4",
+            "3",
+            "6"
+          ],
+          "correctIndex": 0,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "Geometric series with a = 3 and r = 1/3: S = 3/(1 − 1/3) = 9/2."
+        },
+        {
+          "ref": "hp2-q55",
+          "subject": "Mathematics",
+          "topic": "Mathematics",
+          "text": "∫₀¹ x/(1 + x²) dx equals:",
+          "type": "mcq",
+          "options": [
+            "ln 2",
+            "(1/2) ln 2",
+            "1/2",
+            "1"
+          ],
+          "correctIndex": 1,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "Let u = 1 + x², so du = 2x dx. The integral is ½ ln(1 + x²) evaluated from 0 to 1 = (1/2) ln 2."
+        },
+        {
+          "ref": "hp2-q56",
+          "subject": "Mathematics",
+          "topic": "Mathematics",
+          "text": "lim(x→0) [sin x − x cos x]/x³ equals:",
+          "type": "mcq",
+          "options": [
+            "1/3",
+            "1/2",
+            "1",
+            "0"
+          ],
+          "correctIndex": 0,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "Using expansions, sin x − x cos x = (x − x³/6) − (x − x³/2) + … = x³/3 + …, so the limit is 1/3."
+        },
+        {
+          "ref": "hp2-q57",
+          "subject": "Mathematics",
+          "topic": "Mathematics",
+          "text": "The equation of the tangent to x² + y² = 25 at (3, 4) is:",
+          "type": "mcq",
+          "options": [
+            "3x + 4y = 25",
+            "4x + 3y = 25",
+            "3x − 4y = 25",
+            "x + y = 7"
+          ],
+          "correctIndex": 0,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "For x² + y² = a² the tangent at (x₁, y₁) is xx₁ + yy₁ = a², giving 3x + 4y = 25."
+        },
+        {
+          "ref": "hp2-q58",
+          "subject": "Mathematics",
+          "topic": "Mathematics",
+          "text": "If the roots of x² − 6x + k = 0 are in the ratio 1:2, then k equals:",
+          "type": "mcq",
+          "options": [
+            "6",
+            "8",
+            "9",
+            "12"
+          ],
+          "correctIndex": 1,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "The roots are a and 2a, so 3a = 6 and a = 2. Their product is 2a² = 8, hence k = 8."
+        },
+        {
+          "ref": "hp2-q59",
+          "subject": "Mathematics",
+          "topic": "Mathematics",
+          "text": "How many 5-digit numbers can be formed from digits 0,1,2,3,4,5 without repetition and divisible by 5?",
+          "type": "mcq",
+          "options": [
+            "180",
+            "216",
+            "240",
+            "300"
+          ],
+          "correctIndex": 1,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "The last digit must be 0 or 5. If it is 0, the other four positions give 5P4 = 120. If it is 5, the leading digit has 4 choices (1–4) and the remaining four positions give 4P4 = 24, so 96. Total 216."
+        },
+        {
+          "ref": "hp2-q60",
+          "subject": "Mathematics",
+          "topic": "Mathematics",
+          "text": "If z satisfies |z − 1| = |z + 1|, then z lies on:",
+          "type": "mcq",
+          "options": [
+            "x-axis",
+            "y-axis",
+            "circle |z| = 1",
+            "line y = x"
+          ],
+          "correctIndex": 1,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "Equidistance from (1, 0) and (−1, 0) gives x = 0, the imaginary axis."
+        },
+        {
+          "ref": "hp2-q61",
+          "subject": "Mathematics",
+          "topic": "Mathematics",
+          "text": "The angle between vectors a = (1, 1, 0) and b = (1, 0, 1) is:",
+          "type": "mcq",
+          "options": [
+            "cos⁻¹(1/2)",
+            "cos⁻¹(1/3)",
+            "π/4",
+            "π/3"
+          ],
+          "correctIndex": 0,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "The dot product is 1 and each magnitude is √2, so cos θ = 1/2."
+        },
+        {
+          "ref": "hp2-q62",
+          "subject": "Mathematics",
+          "topic": "Mathematics",
+          "text": "The area enclosed between y = x and y = x² from x = 0 to 1 is:",
+          "type": "mcq",
+          "options": [
+            "1/3",
+            "1/6",
+            "1/2",
+            "2/3"
+          ],
+          "correctIndex": 1,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "Area = ∫₀¹ (x − x²) dx = 1/2 − 1/3 = 1/6."
+        },
+        {
+          "ref": "hp2-q63",
+          "subject": "Mathematics",
+          "topic": "Mathematics",
+          "text": "For f(x) = x³ − 3x, the local maximum value is:",
+          "type": "mcq",
+          "options": [
+            "−2",
+            "0",
+            "2",
+            "3"
+          ],
+          "correctIndex": 2,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "f′ = 3(x² − 1) gives critical points at ±1, and f″ = 6x, so x = −1 is a maximum with f(−1) = 2."
+        },
+        {
+          "ref": "hp2-q64",
+          "subject": "Mathematics",
+          "topic": "Mathematics",
+          "text": "The coefficient of x³ in (1 + x)⁸ is:",
+          "type": "mcq",
+          "options": [
+            "56",
+            "64",
+            "70",
+            "84"
+          ],
+          "correctIndex": 0,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "The coefficient is C(8, 3) = 56."
+        },
+        {
+          "ref": "hp2-q65",
+          "subject": "Mathematics",
+          "topic": "Mathematics",
+          "text": "The shortest distance between the skew lines r = (1,0,0) + λ(1,1,0) and r = (0,1,1) + μ(1,0,1) is:",
+          "type": "mcq",
+          "options": [
+            "1/√3",
+            "1",
+            "√3",
+            "3"
+          ],
+          "correctIndex": 2,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "Distance = |(b − a)·(d₁ × d₂)| / |d₁ × d₂|. Here b − a = (−1, 1, 1) and d₁ × d₂ = (1, −1, −1), whose magnitude is √3, with a dot product of −3. So the distance is 3/√3 = √3."
+        },
+        {
+          "ref": "hp2-q66",
+          "subject": "Mathematics",
+          "topic": "Mathematics",
+          "text": "A fair coin is tossed 6 times. Probability of exactly 3 heads is:",
+          "type": "mcq",
+          "options": [
+            "5/16",
+            "15/64",
+            "5/32",
+            "1/2"
+          ],
+          "correctIndex": 0,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "P = C(6,3)/2⁶ = 20/64 = 5/16."
+        },
+        {
+          "ref": "hp2-q67",
+          "subject": "Mathematics",
+          "topic": "Mathematics",
+          "text": "The number of solutions of tan x = √3 in 0 ≤ x ≤ 2π is:",
+          "type": "mcq",
+          "options": [
+            "1",
+            "2",
+            "3",
+            "4"
+          ],
+          "correctIndex": 1,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "x = π/3 + nπ, which in [0, 2π] gives x = π/3 and 4π/3 — two solutions."
+        },
+        {
+          "ref": "hp2-q68",
+          "subject": "Mathematics",
+          "topic": "Mathematics",
+          "text": "The number of real roots of x⁴ − 5x² + 4 = 0 is:",
+          "type": "mcq",
+          "options": [
+            "2",
+            "3",
+            "4",
+            "0"
+          ],
+          "correctIndex": 2,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "Let y = x²: y² − 5y + 4 = (y − 1)(y − 4), so x = ±1, ±2 — four real roots."
+        },
+        {
+          "ref": "hp2-q69",
+          "subject": "Mathematics",
+          "topic": "Mathematics",
+          "text": "If A is a 2×2 matrix with det A = −2, then det(3A) equals:",
+          "type": "mcq",
+          "options": [
+            "−6",
+            "−18",
+            "6",
+            "18"
+          ],
+          "correctIndex": 1,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "For a 2×2 matrix det(3A) = 3² det A = 9(−2) = −18."
+        },
+        {
+          "ref": "hp2-q70",
+          "subject": "Mathematics",
+          "topic": "Mathematics",
+          "text": "The principal value of sin⁻¹(sin 5π/6) is:",
+          "type": "mcq",
+          "options": [
+            "5π/6",
+            "π/6",
+            "−π/6",
+            "2π/3"
+          ],
+          "correctIndex": 1,
+          "numericAnswer": null,
+          "tolerance": 0,
+          "explanation": "The principal range of sin⁻¹ is [−π/2, π/2]. Since sin(5π/6) = 1/2, the answer is π/6."
+        },
+        {
+          "ref": "hp2-q71",
+          "subject": "Mathematics",
+          "topic": "Mathematics",
+          "text": "The number of diagonals in a polygon is 35. Find the number of sides.",
+          "type": "numeric",
+          "options": [],
+          "correctIndex": -1,
+          "numericAnswer": 10,
+          "tolerance": 0,
+          "explanation": "n(n − 3)/2 = 35 gives n² − 3n − 70 = 0, so n = 10."
+        },
+        {
+          "ref": "hp2-q72",
+          "subject": "Mathematics",
+          "topic": "Mathematics",
+          "text": "The sum of the first 20 positive integers that are divisible by 3 is:",
+          "type": "numeric",
+          "options": [],
+          "correctIndex": -1,
+          "numericAnswer": 630,
+          "tolerance": 0,
+          "explanation": "3(1 + 2 + … + 20) = 3 × 210 = 630."
+        },
+        {
+          "ref": "hp2-q73",
+          "subject": "Mathematics",
+          "topic": "Mathematics",
+          "text": "If ∫₀^a 2x dx = 9 for a > 0, find a.",
+          "type": "numeric",
+          "options": [],
+          "correctIndex": -1,
+          "numericAnswer": 3,
+          "tolerance": 0,
+          "explanation": "∫₀^a 2x dx = a² = 9, hence a = 3."
+        },
+        {
+          "ref": "hp2-q74",
+          "subject": "Mathematics",
+          "topic": "Mathematics",
+          "text": "The number of real solutions of |x − 1| + |x + 1| = 4 is:",
+          "type": "numeric",
+          "options": [],
+          "correctIndex": -1,
+          "numericAnswer": 2,
+          "tolerance": 0,
+          "explanation": "For |x| ≥ 1 the expression is 2|x| = 4, so x = ±2; for |x| < 1 it equals 2, which gives no solutions."
+        },
+        {
+          "ref": "hp2-q75",
+          "subject": "Mathematics",
+          "topic": "Mathematics",
+          "text": "If the determinant |1 1 1; 1 2 3; 1 3 6| equals N, find N.",
+          "type": "numeric",
+          "options": [],
+          "correctIndex": -1,
+          "numericAnswer": 1,
+          "tolerance": 0,
+          "explanation": "Expanding: 1(12 − 9) − 1(6 − 3) + 1(3 − 2) = 3 − 3 + 1 = 1."
+        }
+      ]
+    }
+  ]
+}

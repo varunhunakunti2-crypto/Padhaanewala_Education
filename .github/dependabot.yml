@@ -1,0 +1,46 @@
+version: 2
+
+# Next.js moved to a pre-announced monthly security release cadence in 2026
+# (16.3.3 on 25 Aug 2026 fixed two CRITICAL unauthenticated RCEs; 16.3.6 on
+# 22 Sep 2026 fixed another; 16.3.7 is scheduled for 30 Sep 2026 with nine
+# vulnerabilities including one critical). `package.json` pins `next` to an
+# exact version on purpose, so nothing upgrades itself. These two ecosystems
+# must never fall behind on security patches.
+updates:
+  - package-ecosystem: npm
+    directory: /padhaanewala/frontend
+    schedule:
+      interval: daily
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      # Keep the framework, its SWC helpers and the ESLint integration in step.
+      # Bumping one without the others has broken builds before.
+      next-framework:
+        patterns:
+          - "next"
+          - "@next/*"
+          - "eslint-config-next"
+          - "eslint-plugin-next"
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: pip
+    directory: /padhaanewala/backend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      # requirements.txt is a fully-pinned freeze including transitive deps
+      # (cryptography, cffi, pycparser), so they must move together or the
+      # pinned set is left internally inconsistent.
+      python-freeze:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch

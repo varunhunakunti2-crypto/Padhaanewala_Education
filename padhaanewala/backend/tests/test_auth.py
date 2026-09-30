@@ -69,13 +69,22 @@ def admin():
 def test_health():
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+
+    # The endpoint now verifies PostgreSQL instead of returning a constant, so it
+    # reports a checks map and a measurement timestamp. `test_health.py` covers the
+    # failure path; this asserts the healthy shape.
+    body = response.json()
+    assert body["status"] == "ok"
+    assert body["checks"]["database"]["ok"] is True
+    assert body["checked_at"]
 
 
 def test_register_success(registered):
     assert registered["token_type"] == "bearer"
     assert registered["access_token"]
-    assert registered["refresh_token"]
+    # Phase 3: the refresh credential travels as an HttpOnly cookie, never in a
+    # body any script in the origin can read.
+    assert registered["refresh_token"] is None
 
 
 def test_register_duplicate_email(registered):
@@ -187,10 +196,9 @@ def test_change_password_wrong_current(registered):
 
 
 def test_refresh(registered):
-    response = client.post(
-        "/api/v1/auth/refresh",
-        json={"refresh_token": registered["refresh_token"]},
-    )
+    # Phase 3: the shared TestClient carries the HttpOnly cookie set at
+    # registration, so refresh reads it and rotates it.
+    response = client.post("/api/v1/auth/refresh", json={})
     assert response.status_code == 200
     assert response.json()["access_token"]
 
@@ -204,10 +212,7 @@ def test_refresh_invalid_token():
 
 
 def test_logout(registered):
-    response = client.post(
-        "/api/v1/auth/logout",
-        json={"refresh_token": registered["refresh_token"]},
-    )
+    response = client.post("/api/v1/auth/logout", json={})
     assert response.status_code == 200
     assert response.json()["success"] is True
 
@@ -258,13 +263,22 @@ def test_get_roles_requires_auth():
     assert response.status_code == 401
 
 
-def test_get_roles(registered):
+def test_get_roles_forbidden_for_student(registered):
+    """`GET /roles` hands out the ids `PATCH /users/{id}` accepts, so it is
+    admin-only. A student reads their own roles from `/users/me/roles`."""
     _assign_roles(registered["email"], ["student"])
     headers = {"Authorization": f"Bearer {registered['access_token']}"}
     response = client.get("/api/v1/roles", headers=headers)
-    assert response.status_code == 200
+    assert response.status_code == 403
+
+
+def test_get_roles_allowed_for_admin(admin):
+    headers = {"Authorization": f"Bearer {admin['access_token']}"}
+    response = client.get("/api/v1/roles", headers=headers)
+    assert response.status_code == 200, response.text
     names = [r["name"] for r in response.json()]
     assert "student" in names
+    assert "super_admin" in names
 
 
 def test_admin_list_users_forbidden_for_student(registered):
@@ -282,10 +296,28 @@ def test_admin_list_users_missing_token():
 def test_admin_list_users(admin, registered):
     _assign_roles(registered["email"], ["student"])
     headers = {"Authorization": f"Bearer {admin['access_token']}"}
-    response = client.get("/api/v1/users", headers=headers)
-    assert response.status_code == 200
-    emails = [u["email"] for u in response.json()]
-    assert registered["email"] in emails
+
+    # The listing is capped at 50 per page and ordered by id, so a brand new user
+    # is on the *last* page once the suite has created more than 50 of them.
+    # Walking the pages keeps this asserting what it means to assert -- that an
+    # admin's listing includes every user -- rather than depending on how many
+    # users happen to exist by the time this runs.
+    seen: list[str] = []
+    offset = 0
+    while True:
+        response = client.get(
+            "/api/v1/users",
+            params={"limit": 50, "offset": offset},
+            headers=headers,
+        )
+        assert response.status_code == 200, response.text
+        page = response.json()
+        seen.extend(user["email"] for user in page)
+        if len(page) < 50:
+            break
+        offset += 50
+
+    assert registered["email"] in seen
 
 
 def test_admin_list_users_search(admin, registered):

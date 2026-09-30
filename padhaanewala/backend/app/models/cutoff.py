@@ -1,7 +1,17 @@
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String, UniqueConstraint
+from sqlalchemy import (
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -10,6 +20,10 @@ from app.database import Base
 class Cutoff(Base):
     __tablename__ = "cutoffs"
     __table_args__ = (
+        # The legacy identity constraint. Kept for downgrade compatibility; it
+        # cannot fire when any of its nullable columns is NULL (PostgreSQL
+        # treats NULLs as distinct), which is exactly the duplicate case that
+        # skews the predictor. The COALESCE index below is the real guard.
         UniqueConstraint(
             "college_id",
             "course_id",
@@ -20,6 +34,18 @@ class Cutoff(Base):
             "quota",
             "category",
             name="uq_cutoff_identity",
+        ),
+        # Phase 4: functional unique index that collapses NULLs to unreachable
+        # sentinels (ids start at 1; text columns are never the empty string),
+        # so a duplicate cutoff row can no longer slip through on NULLs.
+        Index(
+            "uq_cutoff_identity_coalesce",
+            text(
+                "COALESCE(college_id, 0), COALESCE(course_id, 0), "
+                "COALESCE(branch, ''), exam_name, year, "
+                "COALESCE(\"round\", ''), COALESCE(quota, ''), category"
+            ),
+            unique=True,
         ),
     )
 

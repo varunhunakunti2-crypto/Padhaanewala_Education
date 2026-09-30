@@ -1,18 +1,20 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
 from app.dependencies import get_current_user, require_role
-from app.models import AuditLog, College, Course, Review, User
+from app.models import College, Course, Review, User
 from app.schemas.content import (
     ReviewCreate,
     ReviewModerate,
     ReviewResponse,
     ReviewUpdate,
 )
+from app.roles import ADMIN_ROLES, CONTENT_ROLES
+from app.utils import audit
 
 router = APIRouter(prefix="/api/v1/reviews", tags=["reviews"])
 
@@ -82,7 +84,7 @@ def list_reviews_for_college(
 def moderation_queue(
     status: str = Query("submitted", pattern="^(submitted|approved|rejected)$"),
     db: Session = Depends(get_db),
-    _: User = Depends(require_role("admin", "super_admin", "content_manager")),
+    _: User = Depends(require_role(*CONTENT_ROLES)),
 ):
     reviews = db.scalars(
         select(Review)
@@ -164,8 +166,9 @@ def update_my_review(
 def moderate_review(
     review_id: int,
     payload: ReviewModerate,
+    request: Request,
     db: Session = Depends(get_db),
-    moderator: User = Depends(require_role("admin", "super_admin", "content_manager")),
+    moderator: User = Depends(require_role(*CONTENT_ROLES)),
 ):
     review = db.get(Review, review_id)
     if review is None:
@@ -179,15 +182,15 @@ def moderate_review(
     if payload.status == "approved":
         review.is_verified = True
 
-    db.add(
-        AuditLog(
-            user_id=moderator.id,
-            action="moderate_review",
-            entity_type="review",
-            entity_id=review.id,
-            old_value={"status": old_status},
-            new_value={"status": payload.status},
-        )
+    audit.record(
+        db,
+        request=request,
+        action="moderate_review",
+        entity_type="review",
+        entity_id=review.id,
+        actor=moderator,
+        old_value={"status": old_status},
+        new_value={"status": payload.status, "moderation_notes": payload.moderation_notes},
     )
     db.commit()
     _recalc_rating(db, review.college_id)
@@ -200,7 +203,7 @@ def moderate_review(
 def delete_review(
     review_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role("admin", "super_admin")),
+    user: User = Depends(require_role(*ADMIN_ROLES)),
 ):
     review = db.get(Review, review_id)
     if review is None:

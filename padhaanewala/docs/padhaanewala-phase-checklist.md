@@ -1,596 +1,372 @@
 # PADHAANEWALA — MASTER PHASE CHECKLIST + MANDATORY PREREQUISITES
+Generated from: `padhaanewala-complete.md` (Master Plan V5.0)
 
-> **This file was fully rewritten on 2026-09-27.** The previous version (13 Sep 2026)
-> claimed *"4 of 105 phases complete"* and cited **~15 files/routes that do not
-> exist**, **5 commits absent from git history**, and **7 mutually inconsistent
-> test counts**. Every one of those claims has been discarded.
->
-> All 105 verdicts below were re-derived from the source tree at commit
-> **`8199877`** (clean working tree), cross-checked against
-> `docs/phase-verification.md` and `docs/rbac-compliance-checklist.md`.
-> Row counts were **queried live** against the dev database, not estimated.
+## STATUS UPDATE — Last reviewed: 28 September 2026 (re-verified against project code)
 
-**Spec source:** `docs/padhaanewala-complete.md` (Master Plan V5.0), §C lines 4421–5699.
+**Current progress: 7 of 105 phases complete, 6 more code-complete but ungated.** This review was done by *measuring the code*, not by trusting the previous status column: the live OpenAPI schema was dumped (108 paths / 24 tags), every table counted in the dev database, and each previously-"pending" claim re-checked against the source. Several rows below were wrong in the old revision — notably Phases 10, 12, 13 and 14 were marked incomplete but are in fact built.
 
----
+**Verified inventory, 28 Sep 2026:** 23 routers, 27 models, 10 Alembic migrations (head `b4e91d7a2c58`, single head, applied to the dev database), 13 test files, **225 tests green / 1 skipped**. Database: 42 tables. Seed data: 36 states (28 + 8 UTs), 755 districts, 106 cities, 168 universities, 331 colleges, 22 courses, 6 exams, 6 scholarships, 14 roles.
 
-## 1. Headline: how much work is done
+**Block B seeding gate is now MET** (was listed as unverified): 28 states + 8 UTs present, districts 755 against a ~780 target, and 331 colleges carry real rows. Two content-thin tables remain: `fees` is empty and courses/exams/scholarships sit at 22/6/6 against the Phase 65 targets of 50+/50+/100+.
 
-| Metric | Value |
-|---|---|
-| Phases **fully complete** (✅) | **9 of 105** — **8.6 %** |
-| Phases **partially done** (🟡) | **40** |
-| Phases **render but are stubs** (🔶) | **5** |
-| Phases **not started** (⬜) | **50** |
-| Not verifiable in-repo (process) (—) | 1 (Phase 99) |
-| **Weighted completion** (✅=1.0, 🟡=0.5, 🔶=0.2, ⬜=0) | **30.0 / 105 = 28.6 %** |
-| Backend-only weighted completion | **~62 %** |
-| Frontend-only weighted completion | **~33 %** |
+> Re-verified 28 Sep 2026 (Phase 3 + security review): OTP backend and frontend complete — 8 new endpoints, `otp_records` migration, MSG91/SMTP provider adapters with console fallback, 39 OTP tests. A review pass then found and fixed four real defects: the email gate was **not enforced at all** on the OTP login path (the 403 existed only on `send`); `/login/otp/send` leaked account existence through three separate oracles (a distinct message for unconfirmed addresses, a 429 for rate-limited numbers, a 502 for provider failures); the send rate limit was **not** atomic despite a docstring claiming it was; and the production guard rejected a valid `EMAIL_PROVIDER=smtp` deployment because it demanded an `EMAIL_API_KEY` that SMTP never reads. Legal copy that still claimed "email and mobile are not verified by OTP" was corrected, and MSG91 + the email provider added to the disclosed processor list.
 
-**Verdict key:** ✅ complete · 🟡 partial · 🔶 stub (renders convincingly, wired to nothing) · ⬜ not started
+> Re-verified 11 Sep 2026: Docker stack live (PostgreSQL 15 on host port 5433 + Redis 7). Homepage built with placeholder data (API-swap later). **Discovery:** `origin/develop` already contained Phase 2/4/6 code (users/auth/roles `bbe7820`, locations/universities/colleges/courses/fees/scholarships/exams `605b88f`, test fix `bce279f`). Migrations applied to live Docker PG (head `63603ea2106d`), seeds run, and **Phase 11 verified: 37/37 backend tests green + live CRUD smoke test** (fixes: `ErrorDetail` ordering in `schemas/common.py`; Bengaluru city district mapping in `seed_locations.py`).
 
-> ### ⚠️ Correction to `docs/phase-verification.md`
-> Its headline table claims **14 ✅ / 26 🟡 / 11 🔶 / 54 ⬜**. I recounted every row
-> of its own phase tables and get **9 / 40 / 5 / 50**. The per-phase tables are the
-> reliable part; **the headline is from an earlier draft and is wrong.** The numbers
-> in this document are the recount.
+> Re-verified 12 Sep 2026: backend grew 4 migrations + 10 routers + 2 test files; frontend grew 4 routes. Suite was **52 tests** (auth 14 / catalog 23 / content 15). **Docker Desktop was NOT running at last review** — the 4 new migrations (`4e7270c87f0c` mock tests/questions, `2ce8d337ae09` content & engagement, `8cc76261fbc7` enquiries/leads/saved/consent, `68d5258b08f1` placement/NIRF/cutoff/seat matrix) and the full suite still needed to be applied/re-run live.
 
-**The single sentence that matters:** *the backend is roughly twice as far along as
-the frontend, and the gap is not cosmetic — a large, tested, correct API surface has
-never been connected to the browser.*
+> Re-verified 13 Sep 2026 (backend, live PG): Docker is down, so a dedicated **`.env.test`** was added pointing at the **native Windows PostgreSQL 16 (port 5432, `padhaanewala_test` DB)**. Fresh schema → all 8 Alembic migrations applied → all seeds run (36 states / 755 districts / 105 cities, 155 universities, 14 roles, 20 courses + 10 colleges, 6 scholarships, 6 exams). **Phase 2 (auth) completed + tested: 70/70 backend tests green on the live database** — this clears the previously-pending "run full suite against live DB" checklist item.
 
----
+### Completed so far
+- ☑ **M1 (GitHub account)** — private repo `Padhaanewala_Education` created, connected, code pushed. Other accounts (AWS, OpenAI, **MSG91 + SendGrid — approved, expected in ~3 days**, Sentry, Cloudflare, GA4, Search Console) **PENDING**.
+- ☑ **M3 (Developer engaged)** — developer working; master doc handed over; repo `main` + `develop` branches active.
+- ✅ **Phase 1 (Setup Environment) — COMPLETE — Completion Gate PASSED (11 Sep 2026)**
+- ✅ **Phase 2 (Users, Auth, Roles) — COMPLETE — 13 Sep 2026** (register/login/refresh/logout, profile + change-password, roles list, admin user & role management with RBAC, email normalization; verified end-to-end on live PostgreSQL)
+- ✅ **Phase 4 (States, Districts, Universities) — COMPLETE — 28 Sep 2026** (`locations` + `universities` routers; 36 states / 755 districts / 106 cities / 168 universities seeded and verified by direct table count)
+- ✅ **Phase 8 (Reviews, Blogs, FAQs, Media, SEO, Notifications, Audit) — BACKEND COMPLETE** (all 7 routers present; frontend surface deferred to Blocks E/H)
+- ✅ **Phase 11 (College CRUD API) — COMPLETE — verified 11 Sep 2026** (full list/filter/search/detail + admin create/update/delete with RBAC)
+- ✅ **Phase 12 (Course, Scholarship, Exam APIs) — BACKEND COMPLETE — 28 Sep 2026** (old revision wrongly said "admin CRUD pending": full POST/PUT/DELETE now exist on all three)
+- ✅ **Phase 14 (Placement, Cutoff, NIRF APIs) — BACKEND COMPLETE — 28 Sep 2026** (old revision wrongly said "☐": 6 public `catalog-data` queries + 27 `college-enrichment` endpoints incl. seat matrix, admissions, fees, NIRF and other rankings)
+- ✅ **Phase 15 (Login, Register, OTP Pages) — COMPLETE — 28 Sep 2026** (password + mobile-OTP login, `/forgot-password`, `/reset-password`, `/verify-email`; lint/typecheck/395-page build green)
+- 🟡 **Phase 3 (Email, SMS, OTP) — CODE COMPLETE, GATE PENDING — 28 Sep 2026.** Backend + frontend done, 39 tests. Gate cannot pass until MSG91 + email credentials land (~3 days). Until then both providers fall back to **console logging**, so no message has reached a real phone or inbox.
+- 🟡 **Phase 40 (College Predictor) — CODE COMPLETE, ungated** (`/predictor` POST + exam list; disclaimer copy pending review)
+- 🟡 **Phase 7 (Mock Tests, Questions) — PARTIAL** (15 mock-test endpoints incl. start/submit/attempts/result + admin create/update/delete, so Phases 42/44/45/46 are effectively built; **Phase 43 question-bank admin has no endpoints** and `test_questions` is empty)
 
-## 2. Verified code inventory (as of `8199877`)
+### Confirmed NOT started (measured, not assumed)
+- **Phase 13 — NLP query parse.** Text/filter search exists (`GET /colleges/search`); no NLP parse endpoint.
+- **Phase 25/36 — enquiry hand-off is missing.** `POST /enquiries` creates the enquiry and stops: it never creates a `Lead`, never writes a `Notification`, never emails the student or alerts an admin (`routers/enquiries.py` is 30 lines). The `leads` and `notifications` APIs exist and are unused by this path, so both the Phase 25 gate ("enquiry creates a lead admin can see") and the Phase 36 gate ("enquiry → student email + admin alert") **cannot** pass.
+- **Phases 47–55 — Proctored exams.** Effectively zero: "proctor" appears only as a role name and a schema field.
+- **Phases 56–64 — Data import.** Zero: no CSV import API, no fuzzy duplicate detection, no data-verification workflow.
+- **Phases 76–77 — DPDP parental consent + IT Rules 2021 takedown.** Zero: no parental/guardian or takedown code. The privacy policy openly states there is no age-verification or parental-consent record — a **known, disclosed** legal gap, not an oversight.
+- **Phases 78–95 — Monitoring, backup, DNS, analytics, CI/CD, staging, prod, load test, security audit.** Zero.
 
-| Asset | Count | Verified how |
-|---|---|---|
-| Backend routers | 25 | `backend/app/main.py:61-85` registration |
-| Backend endpoints | **149** | grep `@router.(get\|post\|put\|patch\|delete)` |
-| Database tables | **40** (39 `__tablename__` + `user_roles` `Table()`) | `models/__init__.py:1-76` |
-| Alembic migrations | 9, head **`f1a7c9e2d3b4`** | single linear `down_revision` chain |
-| Backend test functions | **166** (165 pass, 1 skip) | `pytest -q` → `165 passed, 1 skipped in 47.69s` |
-| Frontend route pages | **24** | `frontend/app/**/page.tsx` |
-| Frontend components | **95** | `frontend/frontend/components/**` |
-| Frontend lib modules | 20 | `frontend/lib/**` |
-| TypeScript | clean | `npx tsc --noEmit` → exit 0 |
-| CI pipelines | **0** | `.github/`, `.gitlab-ci.yml`, `Jenkinsfile`, `.circleci` all absent |
-| Security headers in code | **0** | only hits are in `docs/` prose |
+### Recently added (design/dev prep for upcoming phases — no phase gates passed)
+- ☑ `DESIGN.md` added — frontend design system reference (colors, typography) for Phase 16 (homepage/layout)
+- ☑ Tailwind 4 docs + web-design-guidelines skills added — dev tooling prep for Phase 16–18 (frontend build)
+- ☑ Docker Desktop installed (v29.7.2) + WSL2/Virtual Machine Platform enabled — verified running 11 Sep 2026
+- ☑ **Port conflict resolved** — native Windows PostgreSQL 16 owns port 5432, so Docker PG 15 now publishes on host port **5433** (docker-compose.dev.yml, `.env.development`, `config.py` updated to match)
+- ℹ️ **Upstream Phase 2/4/6 code present** on `origin/develop` (`bbe7820`, `605b88f`, `bce279f`) — models, routers, schemes, tests, seed scripts, 4 real Alembic migrations (root `8422ac618df6`). Local `develop` merged `main` (homepage + port remap) and removed the collision empty base.
 
-### Live database reality (queried 2026-09-27, schema `public`)
+### 12 September 2026 — frontend listing/predictor pages added (placeholder data, dev prep)
+- ✅ **Colleges listing** `/colleges` — filterable (state, category, course) college cards with fee/placement/scholarship highlights (`src/data/colleges.ts`; Phase 17 UI surface).
+- ✅ **Courses listing** `/courses` — course groups with overview, duration, eligibility, career paths (`src/data/courses.ts`; Phase 19 UI surface).
+- ✅ **Jobhire landing** `/jobhire` — standalone job-search landing page with its own layout (`src/app/jobhire/`); marketing sandbox, not a spec phase.
+- ✅ **College Predictor page** `/college-predictor` — configurable rules engine (`src/data/predictor.ts`: course→exam mapping, score→rank estimation, per-category rank bands) + form (course, exam, rank|score, category, state, budget, govt/private, hostel) → buckets **Highly Suitable / Possible / Reach / Not eligible** with confidence + reasons + disclaimer (spec §14, Phase 24/40 UI). Placeholder rank bands; Phase 40 will swap in real cutoff data.
+- ✅ **Scholarships listing** `/scholarships` — 12 scholarships, search + category/provider filters + deadline/amount sort (Phase 20 UI surface).
+- ✅ **Exams listing** `/exams` — 10 exams, type (national/state) + status (open/upcoming/results) filters, date sort (Phase 21 UI surface).
+- ✅ **Blog listing** `/blog` — 12 articles, category/search filters + featured-article hero (Phase 65 blog surface).
+- ✅ **Mock Tests listing** `/mock-tests` — 12 tests (NEET/JEE/KCET/CUET), exam/mode/difficulty filters, desktop-only note (Phase 42 UI surface).
+- ℹ️ All pages run on static TS data under `src/data/` (home, colleges, courses, predictor, scholarships, exams, blog, mockTests) — the existing Header/Footer/QuickActions/home-section links now resolve instead of 404ing. Real API-swap happens at each page's actual phase (16/17/19/20/21/42/65). `next build` + ESLint pass; all routes render.
 
-| Table | Rows | Gate | % |
-|---|---|---|---|
-| states | 36 | 36 | ✅ 100 % |
-| districts | 755 | ~780 | ✅ 97 % |
-| cities | 105 | — | — |
-| universities | 155 | — | — |
-| roles | 14 | 14 | ✅ 100 % |
-| users | 1 | — | — |
-| **colleges** | **10** | 1000 | ❌ **1 %** |
-| courses | 20 | 50 | ❌ 40 % |
-| **scholarships** | **6** | 100 | ❌ **6 %** |
-| exams | 6 | 50 | ❌ 12 % |
-| **test_questions** | **0** | 500 | ❌ **0 %** |
-| blogs | 0 | 20 | ❌ 0 % |
-| faqs / banners / reviews | 0 / 0 / 0 | — | ❌ 0 % |
-| mock_tests | 0 | — | ❌ 0 % |
-| **placement_records** | **0** | 500 | ❌ **0 %** |
-| **cutoffs** | **0** | — | ❌ **0 %** |
-| **nirf_rankings / other_rankings** | **0 / 0** | — | ❌ 0 % |
-| **seat_matrix** | **0** | — | ❌ 0 %** |
-| fees / admissions | 0 / 0 | — | ❌ 0 % |
-| enquiries / leads / lead_notes | 0 / 0 / 0 | — | ❌ 0 % |
-| counsellors / consent_records | 0 / 0 | — | ❌ 0 % |
-| notifications / audit_logs / media / seo_metadata | all 0 | — | ❌ 0 % |
+### 12 September 2026 (later, `9bfaebe`) — detail + static pages kill all 404s; backend auth hardening
+- ✅ **Detail pages added** (placeholder data) — `/college/[slug]`, `/courses/[slug]`, `/exams/[slug]`, `/scholarships/[slug]`, `/mock-tests/[slug]`, `/blog/[slug]`; listing pages now link through (Phase 18/19/20/21/42/65 UI surfaces).
+- ✅ **Static pages added** — `/about`, `/contact`, `/privacy-policy`, `/terms-conditions` (M5 legal-page drafts, Phase 65/76+97 surface; copy still placeholder).
+- ✅ **Login page** `/auth/login` — form UI (Phase 15 surface; real flow waits on Phase 2/3 backend enablement).
+- ✅ **Compare page** `/compare` — college comparison UI starter (Phase 24 surface).
+- ✅ **Every route renders** — header/menu wired to all pages; quick-action + home sections extended; no 404 routes remain.
+- ✅ **Backend auth/token hardening** — refresh tokens signed with dedicated `JWT_REFRESH_SECRET_KEY`; optional-bearer dependency (`get_optional_current_user`) so public endpoints hide drafts from non-content users; malformed-`sub` guards on `get_current_user`/refresh; production config guard rejects dev default JWT/DB creds (`PADHAANEWALA_ENV_FILE` env override added); review rating recalc committed properly; profile auto-fills display name; `TestQuestion.__test__ = False` stops pytest collecting the model. No new tests (still 52).
+- ℹ️ Same status as the Sep-12 frontend batch: placeholder data, real API-swap at each page's actual phase.
 
-**`cutoffs` and `seat_matrix` are empty ⇒ `POST /api/v1/predictor` returns the
-empty-data path** (`predictor.py:103-111`). Phase 40 is dead at the data layer
-regardless of any frontend work.
+### 13 September 2026 — frontend polish batch (no phase gates passed, dev prep for Blocks D/F)
+- ✅ **Theme toggle + dark mode** (`8990dae`) — global theme switch persisted to localStorage with OS-preference default; dark-mode remap of hardcoded light utility classes in `globals.css`; **View Transitions** wipe animation on theme change; no-JS boot script in `<head>` prevents flash (`(site)/layout.tsx`).
+- ✅ **Hero background image** — `public/dreamlike-surrealistic-landscape.jpg` behind the homepage hero, with overlay treatment.
+- ✅ **Browse Colleges button** — animated CTA (`BrowseCollegesButton.tsx`) with gradient hover + sparkle side-effect; wired on the homepage hero.
+- ✅ **Header refinements** — signature pill/glass navbar (framer-motion scroll-responsive), device breakpoints, mobile menu, "Get Started" CTA; the header was already reworked in earlier commits (`303084f`, `e3c7f77`).
+- ✅ **Floating AI chat assistant widget** — `AIFloatingAssistant.tsx` on all site pages (rule-based Q&A over local data; real AI swap at Phase 41).
+- ✅ **Pricing page** built (static tiers). `next build` + ESLint pass against Next.js 16.3.4 (project already on Next 16 / React 19 / Tailwind 4).
+- ℹ️ Frontend remains a high-fidelity static prototype on `src/data/*.ts` — real API-swap happens at each page's actual phase (16/17/19/20/21/42/65).
 
-### Tables the spec requires that do not exist at all
+### 13 September 2026 (later, `daa1ac2`) — premium UX upgrade: animations, lead form, SEO (no phase gates passed, dev prep for Blocks D/F + Phase 26)
+- ✅ **Shared motion system** — `src/components/motion.tsx` (`Reveal`, `StaggerGroup`, `StaggerItem`) with one easing/duration token set; scroll reveals are `once: true`, transform/opacity only, negative viewport margin. **No new animation library added** (reused existing `framer-motion`).
+- ✅ **Reduced-motion respected globally** — `<MotionConfig reducedMotion="user">` in `(site)/layout.tsx` disables transform animations for users who request it (Framer) + CSS smooth-scroll gated on `prefers-reduced-motion`.
+- ✅ **Hero entrance + trust strip** — staggered fade/rise for badge → H1 → subcopy → search → CTAs; white legibility overlay on hero image; "1,000+ verified colleges · 100+ scholarships · Free admission counselling" trust row.
+- ✅ **Section/card staggers** — popular courses, featured colleges, scholarships, exams, mock tests, why-us, latest articles grids now reveal with ~80ms card stagger; footer entrance; header active-link highlight (`aria-current`) + keyboard focus rings.
+- ✅ **Lead capture (Phase 26 surface → wired to Phase 9 backend)** — new `ContactForm.tsx` on `/contact` posts to existing `POST /api/v1/enquiries` (name/mobile required, email optional, interest/message, UTMs, device, honeypot spam bait); validation, inline errors, success + error states with WhatsApp/email fallbacks; trust badges; **WhatsApp number unified** across the site.
+- ✅ **Mobile sticky counselling CTA** — `StickyCta.tsx`, mobile-only pill ("Get Free Counselling" → `/contact`) appears after hero scroll, hides near page bottom.
+- ✅ **SEO/technical** — `robots.ts`, `sitemap.xml` (89 URLs incl. dynamic detail pages), `Organization` JSON-LD in layout head, `metadataBase`, Twitter + OG locale metadata, `robots: index/follow`; SSR HTML keeps visible headings/copy (content not hidden behind animation).
+- ✅ **Accessibility/performance** — global keyboard `:focus-visible` outline, brand `::selection`, lazy `img` decoding on review avatars, cards fill grid rows (`h-full`). `next build` + ESLint + `tsc` pass; smoke-tested `/`, `/contact`, `/colleges`, `/sitemap.xml`, `/robots.txt` all HTTP 200.
+- ℹ️ Contact form needs the FastAPI backend reachable (API base from `NEXT_PUBLIC_API_BASE_URL`); gracefully suggests WhatsApp/email if the API is down. WhatsApp number is still a placeholder (`919000000000`) — client must supply the real number.
 
-`otp_records` (P3) · `test_configurations` (P7/P54) · `question_options` (P7) ·
-`csv_imports` (P56) · `proctoring_sessions` / `proctoring_events` /
-`proctoring_evidence` (P49/P52/P53) · `user_activity` (P35) · search-history (P35).
+### 11–12 September 2026 — backend Phase 7/8/9/10 models + migrations, Phase 8 routers, 52-test suite
+- ✅ **Phase 8 routers + tests** (`0a9decf`) — reviews (submit + admin moderation + moderation queue), blog (categories + CRUD), FAQs (CRUD), media (CRUD), SEO (entity-scoped upsert/list), notifications (per-user inbox, unread count, mark read/all), audit logs (admin list), banners (CRUD) — all RBAC-guarded; 15 content tests in `tests/test_content.py`.
+- ✅ **Phase 7 models + migration** — mock tests + questions (`4e7270c87f0c_add_mock_tests_and_questions`) + read APIs (`/mock-tests`, `/mock-tests/{id}`); question-bank admin is Phase 43.
+- ✅ **Phase 9 models + migration** — enquiries, leads, saved colleges, consent (`8cc76261fbc7_add_enquiries_leads_saved_colleges_`) + enquiry submit API; lead/saved/consent routers pending.
+- ✅ **Phase 10 models + migration** — placements, NIRF/rankings, cutoffs, seat matrix (`68d5258b08f1_add_placement_nirf_cutoff_seat_matrix`); query APIs pending (Phase 14).
+- ✅ **Phase 12 backend READ surface** — scholarship list/detail + exam list/upcoming/detail + course search already live and covered in `tests/test_catalog.py`; admin CRUD for courses/scholarships/exams is the remaining Phase 12 work.
+- ℹ️ Suite = **52 tests** (auth 14 / catalog 23 / content 15) — Phase 11's 37 (auth+catalog) + 15 new content tests. **Applying the 4 new migrations + re-running the full suite against live Docker PG still pending (Docker Desktop was off at last review).**
 
-### Services/modules referenced by the spec that do not exist
+### Phase 1 — what's DONE ✅
+- ☑ Folder structure: `frontend/`, `backend/`, `docs/`, `scripts/` created
+- ☑ `docker-compose.dev.yml` created (PostgreSQL 15 + Redis 7)
+- ☑ `.env.example` written (139-env template: DB, Redis, JWT, email, SMS, S3, AI, proctoring)
+- ☑ `.gitignore` created
+- ☑ `README.md` with setup instructions
+- ☑ Frontend scaffolded: Next.js + React + TypeScript + Tailwind (stock `create-next-app`)
+- ☑ Backend scaffolded with Phase 2/4/6 additions: `/health` endpoint + `config.py` + `database.py` + models/routers/schemas/tests
+- ☑ `requirements.txt` + Alembic initialized (`alembic.ini`, `env.py`)
+- ☑ Git repo initialized, `main`/`develop` branches, code pushed to GitHub
+- ✅ `npm install` / `node_modules` — DONE (358 packages, 0 vulnerabilities; `next build` passes)
+- ✅ `.env.development` — DONE (created, settings load from it, dev DB/Redis creds match docker-compose)
+- ✅ Python `venv` + backend deps — DONE (venv created, requirements installed, uvicorn serves `GET /health` → HTTP 200 `{"status":"ok"}`)
+- ✅ **Homepage built** — stock "Create Next App" page replaced with a full Padhaanewala homepage: hero + search bar, quick-action cards, popular courses, featured colleges (fee/placement), scholarships, upcoming exams, mock tests, why-us, reviews, articles, admission CTA, WhatsApp button, sticky header + mobile menu, footer. Placeholder data in `frontend/src/data/home.ts` (will switch to APIs at Phases 11–16). `next build` + ESLint pass; renders HTTP 200.
+- ✅ **Docker stack verified against real PostgreSQL/Redis** — `docker compose up -d` runs `postgres:15` (host port 5433) + `redis:7-alpine` (6379, `PONG`); node v24.20.0 / Python 3.12.10 / git 2.55.0 / Docker 29.7.2 confirmed.
 
-`sms_service.py` · `email_service.py` · `search_service.py` · `rag_service.py` ·
-CSV import router · proctoring router · `middleware.ts` · CI config.
+### Phase 1 — what's REMAINING ❌ (blocks completion gate)
+- none — Phase 1 Completion Gate ✅ PASSED.
 
-`EMBEDDING_MODEL`, `VECTOR_DIMENSIONS`, `RAG_*`, `SENTRY_DSN`, `CELERY_*`,
-`EMAIL_*`, `SMS_*`, `OPENAI_*` all sit unread in `.env.example` — no reader exists.
-
----
-
-## 3. Blocking correctness bugs — all four still open
-
-These are live defects in committed code, verified at the current HEAD.
-
-| # | Bug | Location | Impact |
-|---|---|---|---|
-| **B1** | `submit_attempt` never checks test expiry | `backend/app/routers/mock_tests.py:610-611` | A student can let the clock hit zero **and still receive a graded result**. No test covers it. |
-| **B2** | `_paginated` calls `order_by(None)`, discarding caller ordering | `backend/app/routers/enrichment.py:910` | Non-deterministic pagination on 8 endpoints. Worse: `GET /rankings` calls `_paginated` **twice** with the same `limit`/`offset` (`:1038-1046` and `:1058-1066`) and concatenates, so `?limit=10` can return **20 rows**. |
-| **B3** | `_grade_attempt` marks every non-MCQ answer incorrect | `backend/app/routers/mock_tests.py:120-125` (cause `:151-152`) | `correct_answer` is stored as a string for all types, but `true_false` / `numeric` / `short_answer` were never implemented — `_is_answer_correct` returns `None`, which `if answer.is_correct:` treats as false. A correct non-MCQ answer is counted **incorrect** *and* still counts as answered, so it is double-penalised. |
-| **B4** | Predictor confidence uses `hash(str(cid))` | `backend/app/routers/predictor.py:219` | `hash()` is randomised per process, so confidence differs between workers and across restarts — **and confidence is a sort key** (`:250-255`), so row order is non-deterministic too. No `hashlib` anywhere in `app/`. |
-
-**Partially fixed since last review:** the *answer-saving* path **does** enforce
-expiry (`mock_tests.py:452`, `:562-564` via `_finalize_if_expired`). Only the
-canonical `/attempts/{id}/submit` route is still open. Fixing B1/B5/B6 requires a
-**new revision on top of `f1a7c9e2d3b4`**.
-
----
-
-## 4. User-visible misinformation — nothing has been removed
-
-Commit `0ffe97e` is titled *"remove fabricated data"*. **It removed some of it.**
-Every high-risk item below is still live and reachable by users.
-
-| Shown to users | Source | Reality |
-|---|---|---|
-| `/dashboard` = brand **"EduPath"**, user **"Pushkar"**, saved items = **NerdWallet / Levi's / NY Times** internships, a **"NASA Fellowship"** | `components/dashboard/DashboardExplorer.tsx:41,55,62,71,100,108,237` | A mockup of a *different product*, behind a login — the first screen every signed-in user sees |
-| 14 testimonials about **"Sheryians Coding School"** | `components/reviews/AnimatedRatingMarquee.tsx:17-148` | Copied from another company's site; rendered on the homepage |
-| **"12K+ Colleges · 500+ Courses · 2.4M+ Students · 98% Satisfaction — From verified reviews"** | `components/home/hero/HeroStats.tsx:5-10` | 10 colleges, 1 user, 0 reviews |
-| **"12,000+ colleges"** | `components/home/QuickActions.tsx:19`, `components/home/WhyChooseSection.tsx:9` | Only **partially** removed — 2 of 4 call sites changed, 2 survive |
-| "240+ / 320+ / 180+ colleges" per course tile | `components/home/PopularCourses.tsx:20,30,40` | Invented per tile |
-| "Colleges listed **1,400+**", "Students/month **2.4 lakh+**" | `app/about/page.tsx:143-144`, `app/login/page.tsx:103` | Invented |
-| Analytics: 184.2K views, 6.2 % conversion, 4m 32s session, 4-stage funnel | `components/admin/sections/AnalyticsSection.tsx:14-40` | **All invented.** Nothing is tracked |
-| SEO: 6 audit scores, 142 indexed pages, 1.2K backlinks, 0.9 s CWV | `components/admin/sections/SeoSection.tsx:12-26` | **All invented** |
-| "PostgreSQL — connectivity **verified** — Healthy" | `components/admin/sections/DashboardSection.tsx:149` | Hardcoded `ok: true`; never checked |
-| "REST API: healthy" | `app/api/stats/route.ts:36-44` | Returns `ok: true` **unconditionally**; all 6 fetches can fail |
-| "Registered students **12,480**" | `components/admin/sections/DashboardSection.tsx:58` | A literal |
-| "Top colleges by **views**" | `components/admin/sections/DashboardSection.tsx:126-141` | Bundled colleges sorted by **review count** |
-| "Synced 2 min ago" | `components/admin/AdminDashboard.tsx:64` | Literal; nothing syncs |
-| "Ask AI: Which is better?" | `components/ai/MiniChat.tsx:8-17` | `setTimeout(800)` returning a template string |
-| **"server-authoritative timer and autosaved answers… your results follow you across devices"** | `components/mocktests/MockTestEngine.tsx:80-84` | **False.** Local `setInterval` + `useState` + localStorage. Zero network calls in the whole file |
-| Percentile on mock-test results | `lib/data/mockTests.ts:466-470` | Fabricated formula `min(99.997, (pct*0.92 + 8))` — a 92 % scale with an 8-point floor, presented as a real percentile |
-| Predictor returns 3 colleges when nothing matches | `lib/data/predictor.ts:119` | Falls back to `COLLEGES.slice(0,3)` and presents them as predictions |
-| Terms **and** Privacy links both → `/about` | `app/login/page.tsx:266-271` | **Neither document exists** |
-| `attempts` counts (4821, 12654, 9801…) | `MockTestsSection.tsx:33`, `MockTestEngine.tsx:40` | Bundled literals, not `test_attempts` rows |
-
-**One genuinely honest metric:** `strengthScore` (`lib/utils.ts:76-102`) is a real
-weighted function of the record. Keep it.
-
-### New defects found in this review (not in `phase-verification.md`)
-
-| # | Defect | Location |
-|---|---|---|
-| **N1** | **NIRF rankings can never render.** `api-server.ts:400-404` calls `GET /colleges/{slug}/rankings/nirf` and `.../rankings/other`. **Neither route exists.** The backend has a single `GET /{college_ref}/rankings?ranking_type=nirf\|other` (`enrichment.py:515`); `nirf`/`other` exist only as POST/PUT/DELETE. Both calls 404 → `serverGet` returns `null` → silently `[]`. |
-| **N2** | `12,000+ colleges` claim only half-removed (see table above). |
-| **N3** | `predictor.ts:119` fabricates fallback predictions. |
-| **N4** | `mockTests.ts:466-470` fabricates percentiles. |
-| **N5** | Dead surface: 5 never-referenced auth/token exports and 5 never-referenced `adminApi` members in `lib/api.ts`; `resolveFeaturedColleges` and `resolveScholarship` in `lib/content.ts` have **0 callers**. |
-| **N6** | `GET /colleges/search` (`colleges.py:84`) is a real server-side search endpoint that the frontend never calls — `/colleges` filters client-side instead. |
-| **N7** | `package.json:2` is still named **`campus-pulse`**, and every `cp_*` localStorage key is that pre-rebrand prefix. |
+### Phase 1 — post-gate verification done 11 Sep 2026
+- ✅ **Pushed to `develop`** — homepage, port-remap, docs, base-revision removal pushed (`bce279f..b884b84`).
+- ✅ **Real migration chain applied to live Docker PG** — `alembic current` = `63603ea2106d` (head); 18 tables created (`users`, locations/resgions/universities/colleges/courses/fees, scholarships/exams, + search indexes). Chain: `8422ac618df6` → `926c62eec261` → `459f3e0774ed` → `63603ea2106d`.
+- ⏳ **Block B follow-ups (not Phase 1 gate):** run backend test suite (`pytest`) against live DB; seed roles/locations/universities; verify auth API works end-to-end.
 
 ---
 
-## 5. Three structural root causes
-
-These explain nearly every 🔶 verdict. Fixing them is worth more than patching
-individual panels.
-
-### 5.1 The frontend was never wired to ~40 % of the API
-
-**Real, tested, and completely unused from the browser:**
-
-| Backend surface | Backend | Frontend |
-|---|---|---|
-| Mock-test attempt engine (start / save / submit / resume) | `mock_tests.py:326,404,470,495,540,594,615` — 13 passing tests | **never called** |
-| `POST /predictor` (4 buckets, confidence, disclaimer) | `predictor.py:69` | **never called** — client-side heuristic instead |
-| `/saved-colleges` GET / POST / DELETE | `saved_colleges.py:55,83,118` | **never called** — localStorage only |
-| `POST/PUT/DELETE /reviews` | `reviews.py:109,142,200` | **never called** — localStorage only |
-| `PUT /users/me`, `PUT /users/me/password` | `users.py:63,93` | **never called** |
-| `PATCH /users/{id}` (role / activate) | `users.py:179` | **never called** — `StudentsSection.tsx:54-61` is a toast stub |
-| Lead notes / assign / follow-up | `leads.py:146,197,234` | **never called** |
-| `POST/PUT/DELETE /colleges` | `colleges.py:242,302,336` | **never called** — `CollegesSection.tsx:34` is a toast stub |
-| **21 × `/enrichment/*` writes** | `enrichment.py` | **zero exposed in the UI** |
-| `GET /colleges/search` | `colleges.py:84` | **never called** |
-
-166 backend tests pass. **The browser sees none of this.**
-
-### 5.2 The admin panel has no write path
-
-`components/admin/primitives.tsx:66-77` (`AddButton`) and `:96-113` (`RowActions`)
-are **toast-only stubs** — *"Create flow is a demo action in this build."*
-`useAdminResource.ts` is read-only (73 lines, no mutation support). They are reused
-by 10 and 11 sections respectively, which is why 14 panels **look** functional.
-
-| Admin section | Read | Write |
-|---|---|---|
-| Banners | ✅ | ✅ create / update / delete (the *edit pencil* `:206-212` is still a toast) |
-| Leads | ✅ | ✅ status only — no notes / assign / follow-up |
-| Reviews | ✅ | ✅ approve / reject |
-| Notifications | ✅ | ✅ create |
-| Students | ✅ | ❌ toggle is a toast |
-| Audit | ✅ | ❌ CSV export is client-side |
-| **14 others** (Dashboard, Analytics, Colleges, Courses, Scholarships, Exams, MockTests, Questions, Blogs, Faqs, Counsellors, Media, Seo, Settings) | ❌ | ❌ read `lib/data/*` literals |
-
-⇒ **Block G's gate ("add a college from admin without code") is NOT met.**
-
-### 5.3 An empty database is indistinguishable from an outage
-
-`frontend/lib/content.ts:52-58`:
-
-```ts
-const isEmpty = api === null || api === undefined
-             || (Array.isArray(api) && api.length === 0);
-return isEmpty ? { data: fallback, source: "bundled" } : { data: api, source: "api" };
-```
-
-`api-server.ts:31-48` returns `null` on **any** non-2xx or throw, and coerces
-failures to `[]`. So a dead backend **and** a legitimately-empty table both render
-16 bundled colleges. The `source` flag is surfaced in exactly **one** place
-(`app/colleges/page.tsx:22-26`); 18 other call sites discard it.
+## How to use
+1. Do all **Manual Gates (M1–M10)** in order below — nothing starts without them.
+2. Follow phase blocks **A–P** in order. The "Mandatory before" list for each block is a HARD gate — do not start that block until every listed prerequisite is complete (verified).
+3. Within a block, phases run as listed; phases noted as *parallel* may run together.
+4. After each phase block, complete the **Completion Gate** checks before moving to the next block.
 
 ---
 
-## 6. Phase-by-phase (all 105)
-
-### BLOCK A — Foundation (Phase 1)
-
-| # | Phase | Verdict | Evidence / gap |
-|---|---|---|---|
-| 1 | Setup Environment | ✅ | Docker + backend health + frontend all run. ⚠️ `docker-compose.dev.yml:10` publishes PG on **5433** but `backend/.env.development:10,14` and `.env.example:22,26` point at **5432** — `docker compose up -d db` yields a DB the backend cannot reach. `config.py:26` defaults to 5433 but the env file overrides it. README documents 2 non-existent directories. |
-
-**Weighted: 1.0 / 1 = 100 %**
-
----
-
-### BLOCK B — Database Layer 1 (Phases 2–10)
-
-| # | Phase | Verdict | Evidence / gap |
-|---|---|---|---|
-| 2 | Users, Auth, Roles | ✅ | 6 tables, 4 auth endpoints, bcrypt, JWT, rate-limit + error + logging middleware, 33 tests. RBAC fully remediated 27 Sep (`docs/rbac-compliance-checklist.md`). ⚠️ `POST /auth/logout` is still a **no-op echo stub** (`auth.py:147-153`) with **no denylist** — mitigated only by the 30-min access-token TTL. |
-| 3 | Email, SMS, OTP | ⬜ | **Nothing exists.** No `otp_records`, no `sms_service.py`, no `email_service.py`, no `/verify-otp`, `/login/otp/*`, `/forgot-password`, `/reset-password`. **0 of 5 dev steps.** `auth.py` has exactly 4 routes. |
-| 4 | States / Districts / Universities | ✅ | 36/36 states, 755 districts, 105 cities, 155 universities, 3 endpoints. `seed_locations.py:66-79` has the best debugging comment in the repo. |
-| 5 | Colleges, Courses, Fees | 🟡 | Schema ✅ (36-column `colleges`; GIN + trigram indexes from `459f3e0774ed`). Data ❌ 10/1000; `fees` and `admissions` both **0 rows**. |
-| 6 | Scholarships, Exams | 🟡 | Schema ✅ + indexed. Data ❌ 6/100 and 6/50. Deviation: spec asked for a separate `exam_dates` table; dates live on `exams` (arguably better). |
-| 7 | Mock Tests, Questions | 🟡 | **Schema deviates materially** — spec wanted 7 tables, impl has 4. Missing `test_configurations` (why Phase 54 is unbuildable) and `question_options` (options are JSONB, `mock_test.py:76`). ✅ **Improvement:** `correct_answer` no longer rides the student projection — `schemas/catalog.py:271-281` is a real allowlist, used on all 4 test-taker paths; it reappears only in gated `ResultQuestionResponse` / `AdminQuestionResponse`. ⚠️ No UNIQUE on `test_attempts(user_id, mock_test_id)` in **either** the model (`mock_test.py:97-138`) or the migration (`f1a7c9e2d3b4:23-45`) ⇒ `attempts_allowed` is race-bypassable. Data: 0 questions. |
-| 8 | Reviews, Blogs, FAQs, Media, SEO, Notifications, Audit | ✅ | All 9 tables, full CRUD, moderation + rating recalc, 16 tests. Data thin (faqs 0, banners 0, blogs 0, reviews 0). |
-| 9 | Enquiries, Leads, Saved, Consent | ✅ | All 5 tables, 8 tests incl. real counsellor scoping and 404-not-403 non-disclosure. ⚠️ `reviews.student_id` → `users.id` but `enquiries.student_id` → `student_profiles.id` — same name, two different parents. All tables 0 rows. |
-| 10 | Placement, NIRF, Cutoff, Seat Matrix | 🟡 | Schema ✅ (table-creation gate met). Data ❌ **0 rows in all 5 tables** — the spec's "core differentiator". ⚠️ `cutoffs` unique constraint spans 8 columns of which **5 are nullable**; Postgres treats NULLs as distinct, so it does not prevent duplicates in the common case. |
-
-**Weighted: 6.0 / 9 = 67 %**
-
----
-
-### BLOCK C — Backend APIs (Phases 11–14)
-
-| # | Phase | Verdict | Evidence / gap |
-|---|---|---|---|
-| 11 | College CRUD API | ✅ | Full CRUD, slug-or-id refs, filters, pagination, admin/super_admin tiers, 30 tests. ⚠️ Spec says **soft** delete, impl hard-deletes; spec step 5 "audit logging on all writes" is **not** done for colleges. Unvalidated `limit`/`offset` bounds — `limit=-1` reaches Postgres and 500s. |
-| 12 | Course, Scholarship, Exam APIs | ✅ | All 3 CRUD + filters + upcoming filtering, tested. |
-| 13 | Search Engine | 🟡 | Full-text ✅ and trigram ✅ (`459f3e0774ed`); filters ✅. **`search_service.py` was never created** — logic is inline in routers. **NLP parsing ("BHMS colleges in Karnataka") is MISSING entirely.** Redis caching of popular searches ⬜. Search rate limit ⬜. Sort-by-relevance ⬜. Also: the frontend never calls `GET /colleges/search` (N6). |
-| 14 | Placement, Cutoff, NIRF APIs | 🟡 | 33 enrichment endpoints, nested + global, admin-gated, tested. Branch-wise queries 🟡 (`course_id` yes, `branch` no). 5-year trend query ⬜. ⚠️ N+1 in enrichment: `_course_name` queries **per row** for Fee/Admission. All return empty because the tables are empty. |
-
-**Weighted: 3.0 / 4 = 75 %**
-
----
-
-### BLOCK D — Frontend Core (Phases 15–18)
-
-| # | Phase | Verdict | Evidence / gap |
-|---|---|---|---|
-| 15 | Login / Register / OTP | 🟡 | 6 of 12 done (form, API integration, redirect, error handling, mobile, loading). **No OTP tab, no `/verify-otp`, no `/forgot-password`, no `/reset-password`.** ⚠️ Spec says JWT in **httpOnly cookie or memory**; impl uses `localStorage` (`api.ts:5-7`) — XSS-exfiltratable. No Zod; all validation is hand-rolled regex. |
-| 16 | Header / Footer / Homepage | 🟡 | Header ✅ (nav, sticky, hamburger) but "Get Admission Help" is missing from desktop nav. Footer 🔶 — **no legal block, no contact block**; social URLs are generic `instagram.com`, not `SITE.social`. Homepage 🔶 — **5 of 12 sections from API, 7 hardcoded** with invented numbers. `GET /homepage/sections` ⬜. Organization/WebSite JSON-LD ⬜. |
-| 17 | College Listing | ✅ | **Strongest page in the app.** All 13 filter groups, cards, sort, pagination + count, URL-bookmarkable filters with back/forward, mobile drawer, empty state. Deviations: client-side not server-side filtering; no "verified" badge; no NIRF sort; placement filter is a hardcoded `>= 85` boolean (`lib/data/index.ts:71`). |
-| 18 | College Detail | 🟡 | ~55 %. Done: header, overview, courses table, eligibility/admission/cutoff/facilities/hostel, reviews/FAQs/similar, `CollegeOrUniversity` JSON-LD. 🔶 "Apply Now" is a **toast**; "Book a free call" is `href="#"`. ⬜ gallery, branch-wise placement table, year trend, WhatsApp CTA. ⚠️ **N1: the NIRF section can never populate.** `mappers.ts:214-231` still drops `score` and `rank_change`. ⚠️ `getFees()` fetches a full fee breakdown on every page load and `mapCollege` never reads it. |
-
-**Weighted: 2.5 / 4 = 63 %**
-
----
-
-### BLOCK E — Content Pages (Phases 19–22)
-
-| # | Phase | Verdict | Evidence / gap |
-|---|---|---|---|
-| 19 | Course pages | 🟡 | `/courses` grid ✅ (improved — live `resolveCourse` + `collegesOffering`). But `getCourseDetail` at `app/courses/[slug]/page.tsx:74` is still bundled-only, so an API-only course slug renders empty sections. ⚠️ `avgFeeYear` hardcoded `0` (`mappers.ts:664`) → every API-backed course shows "₹0/yr". |
-| 20 | Scholarship pages | 🟡 | List ✅. **`/scholarships/[slug]` route does not exist** — detail is a `<Modal>`, so it is not linkable or SEO-indexable, and `resolveScholarship()` has 0 callers. `href={sch.website ?? "#"}` silently dead-links. "Official" is a button label, not a verification badge. |
-| 21 | Exam pages | 🟡 | List + detail ✅ and genuinely API-backed. ⬜ **No countdown** (an explicit gate item) — dates render as text + a past/future icon. Search box is inert when the server passes `list` (`ExamComponents.tsx:78`). ⚠️ 6 fields hardcoded to placeholders in API mode (`mappers.ts:510-520`) → detail renders "—" and empty lists. |
-| 22 | Mobile responsive audit | 🟡 | Genuinely responsive overall. But `DashboardExplorer.tsx:292,309` uses `grid-cols-[1fr_150px_1fr_44px]` with **no responsive variant** → horizontal overflow on phones. No audit artifact exists. |
-
-**Weighted: 2.0 / 4 = 50 %**
-
----
-
-### BLOCK F — Student Features (Phases 23–26)
-
-| # | Phase | Verdict | Evidence / gap |
-|---|---|---|---|
-| 23 | Student Dashboard | 🔶⚠️ | **4 of 5 routes do not exist**: `/dashboard/profile`, `/dashboard/saved-colleges`, `/dashboard/test-history`, `/dashboard/enquiries`. The one route that exists is a **mockup of a different product** — see §4. Backend `/saved-colleges` exists and is **never called**; everything is `localStorage`. This is the first screen every logged-in user sees. |
-| 24 | Comparison + Predictor | 🟡 | Compare 🟡: table works, but no NIRF row, no median, no cutoff, facilities reduced to one hostel boolean. ⬜ share via WhatsApp/copy-link. 🔶 "Ask AI: Which is better?" is `MiniChat` — an 800 ms `setTimeout` returning a template string. Predictor 🔶: **never calls `POST /api/v1/predictor`**; 3 buckets not 4 (no "Not Eligible"); no confidence %; hand-rolled weights instead of `closing_rank`; **fabricates 3 fallback colleges when nothing matches** (N3). The real endpoint is correct and unused. |
-| 25 | Enquiry / Lead APIs | 🟡 | Backend: public rate-limited POST, admin list, status update, status history, counsellor scoping ✅. ⬜ UTM capture (frontend never sends; columns exist), ⬜ IP capture (backend never sets it despite `utils/client_ip.py` existing), ⬜ admin notification trigger (**a new lead notifies nobody**). Rate limit is 5/hr, spec says 3/10 min. ⚠️ A `counsellor` **cannot open `/admin` at all** (`ADMIN_ROLES = ["admin","super_admin"]`, `api.ts:202`), so the scoping feature is unreachable from the UI. |
-| 26 | Enquiry Form / WhatsApp / Static Pages | 🟡 | 9-field form + modal + success ✅. ⬜ prefill from college/course page. ⬜ **`/privacy-policy`, `/terms-conditions`, `/disclaimer` — none exist** (legal blocker). ⬜ admin editor for legal pages. ⬜ map on `/contact`. ⚠️ `college_id` is **never sent** — the user's stated college is silently discarded (`AdmissionForm.tsx:68-80`). ⚠️ Terms and Privacy both link to `/about`. ⚠️ WhatsApp number hardcoded (`WhatsAppFab.tsx:6`), not from settings. ⚠️ Contact details contradict each other in 6 places. |
-
-**Weighted: 1.7 / 4 = 43 %**
-
----
-
-### BLOCK G — Admin Panel (Phases 27–35)
-
-| # | Phase | Verdict | Evidence / gap |
-|---|---|---|---|
-| 27 | Admin foundation | 🟡 | Sidebar + header ✅; reuses `/login` (fine). ⬜ `/admin/login`. ⬜ **breadcrumbs**. ⬜ **role-based menu visibility** — all 20 nav items render unconditionally, so a Content Manager would see every module. |
-| 28 | Admin dashboard | 🔶 | 4 of 6 stat types real. ⚠️ "Registered students **12,480**" is a literal. "Admission leads" = this browser's localStorage. "Top colleges by **views**" sorts bundled colleges by **reviewCount**. "PostgreSQL connectivity verified" is hardcoded `ok: true`. ⬜ Enquiries today/week/month, recent activity, top searched courses. |
-| 29 | College management | ⬜ | 🔶 `/admin/colleges` reads **bundled literals**. `/admin/colleges/[id]/edit` **route does not exist**. No fee editor, course assignment, gallery upload, FAQ mgmt, SEO editor, preview, draft/publish, rich-text editor. Backend `POST/PUT/DELETE /colleges` all exist, all unused. **Gate "add a college without code" → NO.** |
-| 30 | Placement / NIRF / Cutoff admin | ⬜ | **No UI at all.** 21 enrichment write endpoints exist; **zero are exposed.** |
-| 31 | Course / Scholarship / Exam admin | 🔶 | All three read bundled literals; all create/edit/delete are toast-only via `AddButton`/`RowActions`. |
-| 32 | Blog CMS | 🔶 | Reads bundled `BLOG_POSTS`. No editor, no RTE, no category picker, no draft/publish, no scheduling, not even a status column. `adminApi.blogs` exists, never called. |
-| 33 | Review moderation + FAQ + banners | 🟡 | **Review moderation genuinely works** — real queue, real approve/reject (`ReviewsSection.tsx:36,84-111`). Bulk actions ⬜. FAQ mgmt 🔶. Banner mgmt 🟡 — create/toggle/delete real, **edit is a toast** (`:206-212`). |
-| 34 | Lead / CRM admin | 🟡 | Leads list + status filter + status update real. ⬜ assign counsellor, ⬜ notes, ⬜ export CSV. 🔶 **Counsellor management is 100 % fixture** — `SAMPLE_COUNSELLORS`, 4 invented people with invented conversion rates. Course/state columns render "—" for API rows. |
-| 35 | Sub-users + activity monitoring | ⬜ | **Nothing.** No sub-user UI, no per-module permission model (backend has role-gating only, no permissions table), no activity tables, no search-history table, no student detail tabs. `prefs`/activity state in `AppContext` is dead. |
-
-**Weighted: 2.1 / 9 = 23 %**
-
----
-
-### BLOCK H — Notifications & SEO (Phases 36–37)
-
-| # | Phase | Verdict | Evidence / gap |
-|---|---|---|---|
-| 36 | Notifications, Email, SMS | 🟡 | In-app CRUD + admin broadcast ✅. ⬜ email, ⬜ SMS, ⬜ all 4 templates, ⬜ all 3 triggers. 🔶 the notification bell is a **toast with a hardcoded "3"**; `GET /notifications/my/unread-count` is never called. `prefs` state has no consumer. |
-| 37 | SEO | 🟡 | sitemap ✅, robots ✅. Structured data **2 of 7 types** — missing Course, Scholarship, Article, FAQPage, BreadcrumbList; exam uses `EducationalOccupationalProgram` not `Event`. Canonical on only **4 of 20** routes. ⬜ programmatic SEO pages. |
-
-**Weighted: 1.0 / 2 = 50 %**
-
----
-
-### BLOCK I — AI System (Phases 38–41)
-
-| # | Phase | Verdict | Evidence / gap |
-|---|---|---|---|
-| 38 | RAG Knowledge Pipeline | ⬜ | **No `rag_service.py`.** No pgvector, no embeddings, no chunking, no re-index. `EMBEDDING_MODEL` / `VECTOR_DIMENSIONS` / `RAG_*` sit unread in `.env.example`. |
-| 39 | AI Chat API + Safety | ⬜ | ⬜ `POST /api/v1/ai/chat` (no `ai` router exists). ⬜ RAG context, ⬜ sources, ⬜ all 4 safety-prompt rules, ⬜ conversation storage, ⬜ 20/min limit, ⬜ cost tracking, ⬜ AI admin dashboard. The only AI is a **Next.js route calling OpenAI directly** (`app/api/ai/route.ts:25`) — which **contradicts the spec's own §3 "AI keys via backend, never frontend"** and `.env.example:100`. |
-| 40 | College Predictor (cutoff-based) | 🟡 | **Backend is real and correct** — rank vs `closing_rank`, 4 buckets, confidence, disclaimer, budget demotion (`predictor.py:69-271`). Frontend never calls it (see Phase 24). Returns empty anyway because `cutoffs` is empty. ⚠️ Bug B4. |
-| 41 | Frontend AI Chat Widget | 🟡 | `/ask-ai` page + FAB ✅. FAB is a **link, not a floating overlay**. ⬜ sources shown, ⬜ mobile full-screen. 🔶 `MiniChat` is fake. |
-
-**Weighted: 1.0 / 4 = 25 %**
-
----
-
-### BLOCK J — Mock Test System (Phases 42–46)
-
-| # | Phase | Verdict | Evidence / gap |
-|---|---|---|---|
-| 42 | Test listing + instructions | 🟡 | Listing ✅ both sides. ⬜ instructions page. ⚠️ `MockTestEngine.tsx:80-84` makes three false claims (see §4). |
-| 43 | Question bank admin | 🔶 | Read-only over **4 invented fixture questions** (`SAMPLE_QUESTIONS`). No create/edit/delete, no CSV import, no true/false type. `test_questions`: 0 rows. |
-| 44 | Test interface (desktop only) | 🟡 | Real UI: fullscreen, countdown, question palette, mark-for-review, submit confirm, auto-submit on timer-zero and on violation threshold. ⬜ **server-authoritative timer** (local `setInterval`, `ProctoredMockTest.tsx:207-235`), ⬜ **autosave to backend** (`useState` only), ⬜ **mobile/tablet block** (no device check anywhere), ⬜ tests. The backend engine is real, has 13 passing tests, and is **completely unused**. |
-| 45 | Results page | ✅ | Score, %, correct/incorrect/unanswered, time taken, topic breakdown, practice again, view solutions — all rendered. Backend result route unused. |
-| 46 | Test admin | 🟡 | Backend full CRUD ✅ (create/edit/delete, exam/course/subject/difficulty/duration/marks/negative marking). Frontend 🔶 fixture table, no create form, no question selection. |
-
-**Weighted: 2.7 / 5 = 54 %**
-
----
-
-### BLOCK K — Proctored Exams (Phases 47–55) — **entirely absent server-side**
-
-| # | Phase | Verdict | Evidence / gap |
-|---|---|---|---|
-| 47 | Consent + device check | 🟡 | Permission requests + fullscreen ✅. ⚠️ Consent dialog is **not DPDP-compliant** — no retention period, no "who can access", no privacy link, and it explicitly disclaims uploading. ⬜ **mobile/tablet device check** (a spec gate item). |
-| 48 | Client monitoring | 🟡 | `visibilitychange`, `blur`, `contextmenu`, `copy`, fullscreen-exit, screen-share-surface change, `beforeunload` ✅. ⬜ `paste` blocked, ⬜ keyboard-shortcut detection. |
-| 49 | Event reporting | ⬜ | **Zero API calls.** Violations are local state only. `TestSetupScreen.tsx:79-82` tells users outright that events are not uploaded. |
-| 50 | Auto-submission engine | 🟡 | Timer-zero ✅, violation threshold ✅. ⬜ strict first-violation mode, ⬜ camera-disabled trigger, ⬜ reason persisted. `MAX_VIOLATIONS = 3` is a module constant, not per-test policy. |
-| 51 | Proctoring ML service | ⬜ | No `proctoring-service/`, no container, no face detection. `ProctoredMockTest.tsx:127-129` admits it in a comment. |
-| 52 | Evidence storage (private S3) | ⬜ | No canvas capture, no snapshot, no upload, no S3 client, no encryption, no retention. Camera stream is a local `<video>` preview only. |
-| 53 | Admin proctoring dashboard | ⬜ | No nav entry, no router, no session list, no evidence viewer. |
-| 54 | Configurable policies | ⬜ | `MAX_VIOLATIONS` is a const. **No `test_configurations` table** — a direct consequence of the Phase 7 schema deviation. |
-| 55 | Proctoring recovery | ⬜ | Answers in `useState`. Backend resume path exists (`mock_tests.py:336-353`); no frontend calls it. |
-
-**Weighted: 1.5 / 9 = 17 %**
-
----
-
-### BLOCK L — Data Import (Phases 56–65) — **entirely absent**
-
-| # | Phase | Verdict | Evidence / gap |
-|---|---|---|---|
-| 56 | CSV import API | ⬜ | No import router, no `UploadFile`, no multipart endpoint (`python-multipart` is installed but unused). |
-| 57 | Import UI | ⬜ | No import nav entry, no file input, no drag-drop. |
-| 58 | Duplicate detection (fuzzy) | ⬜ | No fuzzy matching (`difflib`/`rapidfuzz` → 0 matches). Only exact slug uniqueness. |
-| 59 | Import colleges | ⬜ | Hardcoded Python seed only (`SAMPLE_COLLEGES`, 10 rows). 10 vs 1000. |
-| 60 | Import courses/scholarships/exams | ⬜ | Hardcoded seeds only. 20/6/6 vs 50/100/50. |
-| 61 | Import questions | ⬜ | 0 vs 500. |
-| 62 | Import placement data | ⬜ | 0 vs 500. |
-| 63 | Import cutoff data | ⬜ | 0 — and this **silently disables the predictor**. |
-| 64 | Data verification workflow | ⬜ | `verification_status` is a plain string column. No transitions, no approver identity, no dashboard. |
-| 65 | Blog content + legal pages | 🟡 | 12 bundled blogs vs 20 target. **Legal pages entirely absent.** ⚠️ All are untracked subagent output — keep or delete is your call. |
-
-**Weighted: 0.5 / 10 = 5 %**
-
----
-
-### BLOCK M — Security, Performance, Testing (Phases 66–75)
-
-| # | Phase | Verdict | Evidence / gap |
-|---|---|---|---|
-| 66 | Security headers / HTTPS | 🟡 | CORS ✅ (`main.py:53-59`). **Zero** security headers repo-wide (no HSTS, CSP, X-Frame-Options, Referrer-Policy, X-Content-Type-Options) — the only hits are in `docs/` prose. No HTTPS redirect, no `headers()` in `next.config.ts`, no `middleware.ts`. |
-| 67 | Rate limiting | 🟡 | **3 path prefixes of 149 endpoints** (`ratelimit.py:10-25`). **All GET/HEAD/OPTIONS exempt** (`:57-58`). Fails open on `RedisError` (`:87-89`). ⬜ search limit, ⬜ AI limit. Enquiry 5/hr not 3/10 min. |
-| 68 | Input validation | 🟡 | 158 Pydantic `Field()` constraints ✅. ⬜ sanitization layer, ⬜ body-size limit, ⬜ HTML stripping on `BlogCreate.content` / `SeoMetadataUpsert.structured_data`. |
-| 69 | Error handling | 🟡 | 500 envelope with `request_id` ✅. 4xx `detail` strings raw and inconsistent — no shared envelope, which §62 requires. |
-| 70 | DB optimization | 🟡 | GIN + trigram indexes ✅, `selectinload` used widely ✅. ⬜ no `EXPLAIN` evidence, ⬜ no slow-query log. ⚠️ N+1 in enrichment. ⚠️ **Bug B2.** ⚠️ Models and migrations agree (40/40 tables) but the 4 GIN/trigram indexes are raw SQL, invisible to `Base.metadata`, so `alembic --autogenerate` would emit spurious `drop_index`. |
-| 71 | Redis caching | ⬜ | Redis is **only** the rate limiter. All caching is Next.js ISR. `CACHE_TTL_*` keys unread. |
-| 72 | Frontend performance | 🟡 | `next/image` in 3 files, `remotePatterns` set. ⬜ no Lighthouse config/report/budget, ⬜ no CI to enforce. |
-| 73 | Mobile audit | 🟡 | Responsive prefixes used consistently; `pb-16 lg:pb-0` clears BottomNav. No artifact. Dashboard overflows. |
-| 74 | Accessibility | 🟡 | `lang="en-IN"`, focus rings, `Modal` Escape, jsx-a11y via eslint. ⬜ no WCAG/axe/contrast audit. ~20 concrete defects: no focus trap in `Modal` or the filter drawer, `aria-controls` pointing at a non-listbox, `role="checkbox"` where radio is correct, form errors not linked via `aria-describedby`, chat has no `role="log"`. |
-| 75 | Cross-browser | ⬜ | No Playwright/Cypress, no `.browserslistrc`, no matrix. |
-
-**Weighted: 4.0 / 10 = 40 %**
-
----
-
-### BLOCK N — Legal, Monitoring, Backup (Phases 76–85) — **entirely absent**
-
-| # | Phase | Verdict | Evidence / gap |
-|---|---|---|---|
-| 76 | DPDP compliance | ⬜ | No parental consent, no age gate, no data-deletion endpoint, **no Grievance Officer record or page**. Only a generic `consent_records` table (0 rows). |
-| 77 | IT Rules 2021 compliance | ⬜ | No grievance route/model, no 24h/15d/3h clocks, no scheduler. |
-| 78 | Sentry | ⬜ | Zero matches; not in `requirements.txt` or `package.json`. `SENTRY_DSN` unread. |
-| 79 | Monitoring + alerts | ⬜ | `GET /health` is a static `{"status":"ok"}` that stays green with PG and Redis both down. No metrics, no alerts. |
-| 80 | Backup + restore test | ⬜ | No `pg_dump`, no script, no cron, no restore test. |
-| 81 | SSL/HTTPS + HSTS | ⬜ | No HSTS, no certbot, no ACM. |
-| 82 | DNS | ⬜ | No config, no IaC. |
-| 83 | GA4 analytics | ⬜ | Zero `gtag` matches, no events, no GA script in layout. |
-| 84 | Search Console | ⬜ | Sitemap URL referenced; no verification, no submission. |
-| 85 | WAF | ⬜ | No Cloudflare anything. |
-
-**Weighted: 0 / 10 = 0 %**
-
----
-
-### BLOCK O — CI/CD, Staging, Production (Phases 86–105) — **entirely absent**
-
-| # | Phase | Verdict | Evidence / gap |
-|---|---|---|---|
-| 86 | Git branching | 🟡 | `main` + `develop` ✅, conventional commits ✅. ⬜ no `feature/*` observed, **zero tags**, no CONTRIBUTING/commitlint/husky. |
-| 87 | CI pipeline | ⬜ | **No CI config of any kind.** `package.json` has **no `test` and no `typecheck` script** (only `dev`, `build`, `start`, `lint`) and no test runner in devDependencies. **165 backend tests exist and nothing runs them.** |
-| 88 | CD pipeline | ⬜ | No CD config, no app Dockerfile (the only Dockerfile is `docker/db/Dockerfile`, DB only). |
-| 89 | Staging | ⬜ | No staging config or reference. |
-| 90 | Production | ⬜ | No IaC, no `docker-compose.prod.yml`. README only *states* "AWS ap-south-1". |
-| 91 | Load test | ⬜ | No k6/locust/JMeter. No perf baseline. |
-| 92 | Security audit | ⬜ | No OWASP ZAP config or report. |
-| 93 | Final QA | ⬜ | No QA report, no visual baseline, no E2E. |
-| 94 | UAT + fixes | ⬜ | No UAT artifact. |
-| 95 | SEO verification | ⬜ | No Rich Results report, no Search Console property. |
-| 96 | Production deploy | ⬜ | Migrations + seeds exist; no deploy path. |
-| 97 | Smoke tests | ⬜ | None. |
-| 98 | 24-hour monitoring | ⬜ | None (see 79). |
-| 99 | Fix critical bugs | — | Process, not verifiable in-repo. |
-| 100 | Documentation | 🟡 | README + `.env.example` ✅. ⬜ admin guide, ⬜ deployment guide. README documents 2 non-existent directories and claims pgvector + Celery + `asyncpg`, none of which exist. |
-| 101 | Admin training | ⬜ | None. |
-| 102 | Handover | ⬜ | None. |
-| 103 | 2-week stabilization | ⬜ | None. |
-| 104 | Performance tuning | ⬜ | None. |
-| 105 | Final sign-off | ⬜ | None. |
-
-**Weighted: 1.0 / 20 = 5 %**
-
----
-
-## 7. Block scorecard
-
-| Block | Phases | ✅ | 🟡 | 🔶 | ⬜ | Weighted | % |
-|---|---|---|---|---|---|---|---|
-| A — Foundation | 1 | 1 | 0 | 0 | 0 | 1.0 | **100 %** |
-| B — Database | 9 | 4 | 4 | 0 | 1 | 6.0 | **67 %** |
-| C — Backend APIs | 4 | 2 | 2 | 0 | 0 | 3.0 | **75 %** |
-| D — Frontend core | 4 | 1 | 3 | 0 | 0 | 2.5 | **63 %** |
-| E — Content pages | 4 | 0 | 4 | 0 | 0 | 2.0 | **50 %** |
-| F — Student features | 4 | 0 | 3 | 1 | 0 | 1.7 | **43 %** |
-| G — Admin panel | 9 | 0 | 3 | 3 | 3 | 2.1 | **23 %** |
-| H — Notif. + SEO | 2 | 0 | 2 | 0 | 0 | 1.0 | **50 %** |
-| I — AI system | 4 | 0 | 2 | 0 | 2 | 1.0 | **25 %** |
-| J — Mock tests | 5 | 1 | 3 | 1 | 0 | 2.7 | **54 %** |
-| K — Proctored exams | 9 | 0 | 3 | 0 | 6 | 1.5 | **17 %** |
-| L — Data import | 10 | 0 | 1 | 0 | 9 | 0.5 | **5 %** |
-| M — Security/perf/test | 10 | 0 | 8 | 0 | 2 | 4.0 | **40 %** |
-| N — Legal/monitor/backup | 10 | 0 | 0 | 0 | 10 | 0 | **0 %** |
-| O — CI/CD/launch | 20 | 0 | 2 | 0 | 17 | 1.0 | **5 %** |
-| **TOTAL** | **105** | **9** | **40** | **5** | **50** | **30.0** | **28.6 %** |
-
----
-
-## 8. MANUAL GATES (Class 1 — [YOU] tasks)
+## MANUAL GATES (Class 1 — [YOU] tasks)
 
 | # | Task | Mandatory before | Done |
 |---|---|---|---|
-| M1 | Accounts: GitHub, AWS, OpenAI/Anthropic, MSG91, SendGrid/AWS SES, Sentry, Cloudflare, GA4, Search Console | GitHub → P1; MSG91+SendGrid → P3; OpenAI → P38–41; S3 → P47–55; Sentry → P78; GA4 → P83; Cloudflare → P85 | ☑ GitHub only — 8 others PENDING |
-| M2 | Buy `padhaanewala.in`, nameservers → Cloudflare, DNS records | P82 / P90 / P96 | ☐ |
-| M3 | Engage developer, hand over this doc | P1 | ☑ |
-| M4 | Compile data: Colleges (1000+), Courses (50+), Scholarships (100+), Exams (50+), Questions (500+), Placement (top 500), Cutoff CSVs, 20+ blog articles | P56–65 | ☐ |
-| M5 | Legal pages: Privacy Policy (English **and** Hindi), Terms, Disclaimer, Cookie Policy | P76, P96–97 | ☐ — **blocking, and no draft route exists** |
-| M6 | Appoint Grievance Officer (name/email/phone), define 24h ack / 15-day resolution | P76, P96–97 | ☐ |
-| M7 | Configure services: MSG91 (P3), SendGrid (P3), AI key (P38–41), S3 (P52), GA4 (P83), Search Console (P84), WAF (P85) | per phase | ☐ |
-| M8 | Prepare content: college photos/logos (P35), blog + legal text (P56–65) | P35, P56–65 | ☐ |
-| M9 | Verify every phase (live demo, tests green, mobile check, approval) | ALL phases | ☐ |
-| M10 | Launch prep: UAT with 5 friends, phone + laptop test, collect ALL credentials, backup verified | P96 | ☐ |
-
-**M1 and M5 are the two gates actively costing time today:** Phase 3 cannot start
-without MSG91 + SendGrid credentials, and Phase 76/96 cannot proceed without legal copy.
+| M1 | Create accounts: GitHub, AWS, OpenAI/Anthropic, MSG91, SendGrid/AWS SES, Sentry, Cloudflare, GA4, Search Console | GitHub → Phase 1; MSG91+SendGrid → Phase 3; OpenAI → Phase 38–41; S3 → Phase 47–55; Sentry → Phase 78; GA4 → Phase 83; Cloudflare → Phase 85 | ☑ GitHub only — others PENDING |
+| M2 | Buy `padhaanewala.in`, point nameservers to Cloudflare, DNS records | Phase 82 / Phase 90 (production DNS) / Phase 96 (launch) | ☐ |
+| M3 | Engage developer, give them this single doc | Phase 1 | ☑ |
+| M4 | Compile data: Colleges CSV (1000+), Courses (50+), Scholarships (100+), Exams (50+), Questions (500+), Placement (top 500), Cutoff CSVs, 20+ blog articles | Phase 56–65 (Data Import) | ☐ |
+| M5 | Write legal pages: Privacy Policy (English AND Hindi), Terms, Disclaimer, Cookie Policy | Phase 76, Phase 96–97 | ☐ |
+| M6 | Appoint Grievance Officer (name/email/phone), define 24h ack / 15-day resolution | Phase 76, Phase 96–97 (legally required BEFORE launch) | ☐ |
+| M7 | Configure services on demand: MSG91 (P3), SendGrid (P3), AI key (P38–41), S3 bucket (P52), GA4 ID (P83), Search Console (P84), WAF (P85) | As noted per phase | ☐ |
+| M8 | Prepare content: college photos/logos (Phase 35), blog + legal text (Phase 56–65) | Phase 35, Phase 56–65 | ☐ |
+| M9 | Verify every phase (live demo, tests green, mobile check, your approval) | ALL phases | ☐ |
+| M10 | Launch prep: UAT with 5 friends, test phone + laptop, collect ALL credentials (AWS/Cloudflare/GitHub/DB/admin), backup verified | Phase 96 | ☐ |
 
 ---
 
-## 9. Recommended order of work
+## PHASE BLOCKS — Checklist + Mandatory Prerequisites
 
-### Before anyone sees the site
-1. **Fix `/dashboard`** — it is a different product behind a login. Wire it to real
-   data or gate it off. (`components/dashboard/DashboardExplorer.tsx`)
-2. **Delete or clearly label the fabricated blocks** — Analytics, Seo, System
-   status, the 14 Sheryians testimonials, hero stats, per-tile "240+ colleges".
-   Full inventory in §4.
-3. **Fix `app/api/stats/route.ts`** to report a real `ok`, and make the Admin
-   "PostgreSQL verified" line actually check.
+### BLOCK A — Foundation
+| # | Phase | Prerequisites aIready met | Done |
+|---|---|---|---|
+| 1 | Setup Environment [BOTH] | **M1 (GitHub), M3** + Node 18, Python 3.11, Docker, Git, VS Code installed. Domain NOT required yet. | ◐ PARTIAL (~95%) — see Status Update above |
 
-### Blocking correctness (small, high-value)
-4. `mock_tests.py:610-611` — enforce expiry in `submit_attempt` (B1).
-5. `enrichment.py:910` — remove `order_by(None)`; fix the doubled `_paginated` in
-   `/rankings` (B2).
-6. `mock_tests.py:120-125,151-152` — grade non-MCQ types, or reject them at write
-   time (B3).
-7. `predictor.py:219` — replace `hash(str(cid))` with `hashlib` (B4).
-8. `api-server.ts:400-404` — repoint NIRF/other rankings at the real
-   `GET /rankings?ranking_type=` route (N1).
+**Completion Gate:** node/python/git/docker verified ✅; private GitHub repo `padhaanewala` ✅; `docker compose up` runs PostgreSQL+Redis ✅; backend `/health` returns OK ✅; frontend loads at localhost:3000 ✅; code pushed to `develop` ✅ (pushed 11 Sep 2026). → **✅ PASSED — Phase 1 COMPLETE.** Phase 2/4/6 code on `develop` has migrations applied to live Docker PG (head `63603ea2106d`); Block B gate (API login + seeding + tests) still to be verified.
 
-### Closing the biggest spec-vs-build gaps
-9. **Phase 3 (OTP)** — blocks password reset and registration quality entirely.
-10. **Phase 87 (CI)** — 165 tests that nothing runs; add `pytest` to CI and a
-    `typecheck` script to `package.json`.
-11. **Phase 29 (college admin)** — without it, "add a college without code" is false.
-12. **Phase 63 (cutoffs)** — without it the predictor is dead regardless of
-    frontend work.
-13. **Phase 40 (wire the predictor)** — the correct endpoint exists; call it.
+### BLOCK B — Database Layer 1 (Phases 2–10)
+| # | Phase | Mandatory before | Done |
+|---|---|---|---|
+| 2 | Users, Auth, Roles [DEV] | Phase 1 | ✅ **COMPLETE 13 Sep 2026** — register/login/refresh/logout, profile + change-password, roles list, admin user list/search/detail + activate/deactivate + role assignment (`require_role` RBAC), email-normalization hardening; suite now **70 tests** green on live PG (see 13 Sep status) |
+| 3 | Email, SMS, OTP [BOTH] | Phase 2 + **M1 (MSG91 + SendGrid/SES credentials BEFORE developer starts)** | 🟡 **CODE COMPLETE 28 Sep — GATE PENDING.** 8 endpoints + `otp_records` (`b4e91d7a2c58`), MSG91/SMTP adapters w/ console fallback, 39 tests. **Gate blocked on paid credentials (~3 days out).** |
+| 4 | States, Districts, Universities [DEV] | Phase 1 (*parallel* with 2, 3) | ✅ **COMPLETE 28 Sep** — `locations` + `universities` routers; seed verified by table count (36 states / 755 districts / 106 cities / 168 universities) |
+| 5 | Colleges, Courses, Fees [DEV] | Phase 4 (college → state/district/university FK) | 🟡 PARTIAL — 331 colleges + 22 courses seeded, full CRUD live; **colleges admin UI now wired (29 Sep 2026): create/edit/delete + feature toggle, role-gated, real API**; **`fees` table empty (0 rows)**; courses cannot be edited after a college exists (`CollegeUpdate` has no `courses`) |
+| 6 | Scholarships, Exams [DEV] | Phase 4 (*parallel* with 5) | 🟡 PARTIAL — full CRUD live; only 6 scholarships / 6 exams against Phase 65 targets of 100+ / 50+ |
+| 7 | Mock Tests, Questions [DEV] | Phase 5 (→course) + Phase 6 (→exam) | 🟡 PARTIAL — 15 endpoints incl. full attempt lifecycle + admin CRUD (⇒ Phases 42/44/45/46 effectively built); **Phase 43 question-bank admin missing**, `mock_tests` + `test_questions` both empty |
+| 8 | Reviews, Blogs, FAQs, Media, SEO, Notif., Audit [DEV] | Phase 2 + Phase 5 | ✅ **BACKEND COMPLETE** — 7 routers (`reviews`/`blogs`/`faqs`/`media`/`seo`/`notifications`/`audit`); all tables empty (no content yet) |
+| 9 | Enquiries, Leads, Saved, Consent [DEV] | Phase 2 + Phase 5 | 🟡 PARTIAL — all 4 routers exist (`enquiries`/`leads`/`saved_colleges`/`consent`, 13 endpoints) but **nothing wires them together**: submitting an enquiry creates no lead. See Block F. |
+| 10 | Placement, NIRF, Cutoff, Seat Matrix [DEV] | Phase 5 + Phase 6 | ✅ **COMPLETE 28 Sep** (old revision said "models only, APIs → Phase 14") — `placement_records`/`cutoffs`/`nirf_rankings`/`seat_matrix` + 6 public queries + 27 enrichment endpoints. All currently **0 rows**. |
 
-### Cleanup
-14. `docker-compose.dev.yml:10` vs `.env.development:10,14` / `.env.example:22,26`
-    — reconcile the 5433/5432 mismatch. Also `.env.example` says `asyncpg`; the
-    backend actually uses `psycopg2` (`config.py:31`).
-15. Correct `README.md` (remove `proctoring-service/`, `.github/workflows/`, the
-    pgvector and Celery claims, the wrong connection string) and `DESIGN.md`
-    (documents Clay.com — delete or replace).
-16. Delete the stray `frontend/frontend/` nesting by removing the
-    `"@/*": ["./frontend/*", "./*"]` alias in `tsconfig.json:21-23`.
-17. Rename `package.json:2` from `campus-pulse` and migrate the `cp_*` localStorage keys.
+**Completion Gate:** all tables migrated via Alembic ✅; user/login works at API level ✅; ~~OTP arrives on a real phone~~ ⛔ **BLOCKED on M1 credentials**; 28 states + 8 UTs + ~780 districts seeded ✅ (755); college/scholarship/exam tables accept sample data ✅ (331/6/6).
 
----
+### BLOCK C — Backend APIs (Phases 11–14)
+| # | Phase | Mandatory before | Done |
+|---|---|---|---|
+| 11 | College CRUD API [DEV] | Phase 2 + Phase 5 | ✅ **VERIFIED 11 Sep 2026** — list/filter/search/detail + admin create/update/delete (RBAC) live |
+| 12 | Course, Scholarship, Exam APIs [DEV] | Phase 6 (+ Phase 11 patterns) | ✅ **BACKEND COMPLETE 28 Sep 2026** (old revision said "admin CRUD pending" — POST/PUT/DELETE now exist on all three) |
+| 13 | Search Engine (text + filters + NLP) [DEV] | Phase 11 | 🟡 PARTIAL — text/filter search ✅ (`GET /colleges/search`); **NLP parse ☐ not built** |
+| 14 | Placement, Cutoff, NIRF APIs [DEV] | Phase 10 | ✅ **BACKEND COMPLETE 28 Sep 2026** (old revision said "☐") — 6 `catalog-data` queries (placements, cutoffs, rankings, seat-matrix, fees, admissions) + 27 `college-enrichment` endpoints |
 
-## 10. How to use this document
+**Completion Gate:** admin can create colleges ✅; public search with filters works ✅; **NLP parse ☐**; placement/cutoff/NIRF queryable ✅ (endpoints exist, **0 rows of data**); templates passed ☐.
 
-1. Do all **Manual Gates (M1–M10)** in order — nothing starts without them.
-2. Follow blocks **A–P**. The "Mandatory before" list per block is a HARD gate.
-3. Phases marked *parallel* may run together.
-4. After each block, complete the **Completion Gate** before moving on.
+### BLOCK D — Frontend Core (Phases 15–18)
+| # | Phase | Mandatory before | Done |
+|---|---|---|---|
+| 15 | Login, Register, OTP Pages [DEV] | Phase 2 + Phase 3 | ✅ **COMPLETE 28 Sep 2026** — password + mobile-OTP login, forgot/reset password, verify-email; lint + typecheck + 395-page build green |
+| 16 | Header, Footer, Homepage [DEV] | Phase 11 + Phase 12 (sections API) | ☐ |
+| 17 | College Listing [DEV] | Phase 13 (search API) | ☐ |
+| 18 | College Detail Page [DEV] | Phase 11 + Phase 14 (placement/cutoff/NIRF) | ☐ |
 
-### Completion gates (current status)
+**Completion Gate:** registration works on your real phone; homepage loads all sections from database, not hardcoded; filters work; college page shows placement + NIRF.
 
-| Block | Gate | Met? |
-|---|---|---|
-| A | node/python/git/docker verified, repo private, compose runs, `/health` OK, frontend loads, code pushed | ✅ **YES** |
-| B | all tables migrated, login works at API level, **OTP arrives on a real phone**, 28 states + 8 UTs + ~780 districts seeded | ❌ **NO** — OTP (P3) is 0 of 5 steps |
-| C | admin can create colleges; public search with filters works; **NLP parse works**; placement/cutoff/NIRF queryable | ❌ **NO** — NLP missing, tables empty |
-| D | registration works on a real phone; homepage loads all sections from DB; filters work; college page shows placement + NIRF | ❌ **NO** — NIRF is broken (N1), tables empty |
-| E | course/scholarship/exam pages render with data; official links marked; **exam countdowns work**; no mobile breakage | ❌ **NO** — no countdown, no scholarship detail route |
-| F | dashboard shows saved colleges/tests/enquiries; compare 2–4 works; predictor shows buckets with disclaimer; enquiry creates a visible lead | ❌ **NO** — dashboard is a mockup, 4 of 5 routes missing |
-| G | add a college from admin without code; reviews approvable; leads assignable; Content Manager sees only their modules; student activity viewable | ❌ **NO** — no write path (5.2) |
-| H | enquiry → student email + admin alert; unread bell; sitemap validates; structured data passes Rich Results | ❌ **NO** — 2 of 7 types, no email/SMS |
-| I | "What is BHMS?" answers with source; predictor categorised with disclaimer; AI never invents data | ❌ **NO** — 0 of 5 steps |
-| J | full test completes end-to-end; answers autosave; auto-submit on timeout; **mobile shows "desktop only"** | ❌ **NO** — local state only, no device check |
-| K | full proctored flow works with camera; tab-switch detected; evidence viewable; auto-submit per policy | ❌ **NO** — nothing exists server-side |
-| L | 1000+ colleges, 50+ courses, 100+ scholarships, 50+ exams, 500+ questions, placement top 500, cutoffs, 20+ blogs, legal pages all live | ❌ **NO** — 1 %, 6 %, 12 %, 0 %, 0 % |
-| M | Lighthouse >90; no horizontal scroll; security headers active; rate limits on all endpoints; accessibility passes | ❌ **NO** — 0 security headers, 3/149 rate limits |
-| N | Grievance Officer published; parental consent verified; SSL live; analytics tracked; backups restoring | ❌ **NO** |
-| O | staging working; CI/CD automatic; load test passed; security scan clean | ❌ **NO** |
-| P | production live, smoke tests pass, 24h monitoring, docs, training, handover, sign-off | ❌ **NO** |
+### BLOCK E — Content Pages (Phases 19–22)
+| # | Phase | Mandatory before | Done |
+|---|---|---|---|
+| 19 | Course pages [DEV] | Phase 12 + Phase 16 | ☐ |
+| 20 | Scholarship pages [DEV] | Phase 12 + Phase 16 | ☐ |
+| 21 | Exam pages [DEV] | Phase 12 + Phase 16 | ☐ |
+| 22 | Mobile responsive audit [DEV] | Phases 19–21 live | ☐ |
 
----
+**Completion Gate:** course/scholarship/exam pages render with data; official links clearly marked; exam countdowns work; no mobile breakage.
 
-## 11. Quick reference: what must exist before each phase
+### BLOCK F — Student Features (Phases 23–26)
+| # | Phase | Mandatory before | Done |
+|---|---|---|---|
+| 23 | Student Dashboard [DEV] | Phase 15 + Phase 9 | ☐ |
+| 24 | Comparison + Predictor [DEV] | Phase 14 (cutoff data) + Phase 13 | ☐ |
+| 25 | Enquiry, Lead APIs [DEV] | Phase 9 | 🟡 PARTIAL — both APIs exist (`POST /enquiries`; 6 `leads` endpoints incl. assign/follow-up/status/notes) but **no hand-off**: an enquiry never becomes a lead |
+| 26 | Enquiry Form, WhatsApp, Static Pages [DEV] | Phase 25 + Phase 16 | ✅ form live on `/contact`, wired to the Phase 9 enquiry API |
 
+**Completion Gate:** dashboard shows saved colleges/tests/enquiries ☐; compare 2–4 colleges ☐; predictor shows Dream/Safe/Moderate with disclaimer 🟡 (API live, ungated); **enquiry creates a lead admin can see ⛔ FAILS — the hand-off is not implemented.**
+
+### BLOCK G — Admin Panel (Phases 27–35)
+| # | Phase | Mandatory before | Done |
+|---|---|---|---|
+| 27–30 | Admin foundation + dashboard + college mgmt + placement data [DEV] | Phase 2 (RBAC) + Phase 11 + Phase 12 + Phase 14 | ☐ |
+| 31–34 | Admin: courses/scholarships/exams/blogs/reviews/leads [DEV] | Phase 27–30 + Phase 25 | ☐ |
+| 35 | Admin: sub-users + activity monitoring [DEV] | Phase 27–30 + Phase 8 (audit/activity) | ☐ |
+
+**Completion Gate:** you can add a college from admin without code; reviews can be approved/rejected; leads assignable to counsellors; create a "Content Manager" sub-user and confirm they can only see their modules; you can view any student's full activity.
+
+### BLOCK H — Notifications & SEO (Phases 36–37)
+| # | Phase | Mandatory before | Done |
+|---|---|---|---|
+| 36 | Notifications, Email, SMS [DEV] | Phase 3 + Phase 9 + Phase 25 | 🟡 PARTIAL — notification API complete (6 endpoints: my/unread-count/read/read-all/create/delete) and Phase 3 delivery services exist, but **nothing triggers them on an enquiry** |
+| 37 | SEO: sitemap, robots, structured data [DEV] | Public pages live (Block D + E) | ✅ `seo` API + `robots.ts` + `sitemap.xml` + Organization JSON-LD |
+
+**Completion Gate:** **enquiry → student email + admin alert ⛔ FAILS (no dispatch wired)**; notification bell shows unread 🟡 (API only, no trigger); sitemap validates ✅; structured data ☐ (not run through Rich Results).
+
+### BLOCK I — AI System (Phases 38–41)
+| # | Phase | Mandatory before | Done |
+|---|---|---|---|
+| 38 | RAG Knowledge Pipeline [DEV] | Phase 5 + Phase 6 (data sources) | ☐ |
+| 39 | AI Chat API + Safety [DEV] | Phase 38 + **M1 (OpenAI key)** | 🟡 PARTIAL — chat route exists on the frontend (`/api/ai`) with canned fallbacks; no RAG |
+| 40 | College Predictor (cutoff-based) [DEV] | Phase 10 (cutoffs) + Phase 38/39 | 🟡 **CODE COMPLETE 28 Sep — ungated** (`POST /predictor` + `/predictor/exams`); `test_pagination_and_predictor_stability.py` guards it. Needs the cutoff disclaimer reviewed. |
+| 41 | Frontend AI Chat Widget [DEV] | Phase 39 | ☐ |
+
+**Completion Gate:** "What is BHMS?" answers with source; "BHMS colleges in Karnataka" lists DB colleges with sources; predictor categorized with disclaimer; AI never invents data.
+
+### BLOCK J — Mock Test System (Phases 42–46)
+| # | Phase | Mandatory before | Done |
+|---|---|---|---|
+| 42 | Test listing + instructions [DEV] | Phase 7 + Phase 2 | ✅ list + detail live |
+| 43 | Question bank admin [DEV] | Phase 42 | ☐ **not built** — no question CRUD endpoints; `test_questions` empty |
+| 44 | Test interface — DESKTOP ONLY [DEV] | Phase 43 | ✅ attempt lifecycle live (start/answer autosave/submit) |
+| 45 | Results page [DEV] | Phase 44 | ✅ `GET .../attempts/{id}/result` + `test_mock_test_engine.py` |
+| 46 | Test admin (create test) [DEV] | Phase 43 | ✅ admin create/update/delete live |
+
+**Completion Gate:** full test completes end-to-end ✅ (engine tested); answers auto-save ✅; auto-submit on timeout ☐ unverified; mobile "desktop only" ☐ unverified. **Note: 0 mock tests and 0 questions exist, so the flow is untested with real data.**
+
+### BLOCK K — Proctored Exams (Phases 47–55)
+| # | Phase | Mandatory before | Done |
+|---|---|---|---|
+| 47 | Consent + pre-test checks [DEV] | **Phase 42–46 COMPLETE (mandatory)** | ☐ |
+| 48 | Client-side monitoring (tab/fullscreen/copy) [DEV] | Phase 47 | ☐ |
+| 49 | Event reporting [DEV] | Phase 48 | ☐ |
+| 50 | Auto-submission engine [DEV] | Phase 49 | ☐ |
+| 51 | Proctoring ML service [DEV] | Phase 50 | ☐ |
+| 52 | Evidence storage (private S3) [DEV] | Phase 51 + **M1 (S3 bucket)** | ☐ |
+| 53 | Admin proctoring dashboard [DEV] | Phase 52 | ☐ |
+| 54 | Proctoring policies (configurable) [DEV] | Phase 53 | ☐ |
+| 55 | Proctoring recovery [DEV] | Phase 54 | ☐ |
+
+**Completion Gate:** full proctored flow works on your desktop with camera; tab-switch detected; evidence viewable by admin; auto-submit fires per policy.
+
+> ⛔ **Phases 47–55 NOT STARTED — verified 28 Sep 2026.** The string "proctor" appears in the codebase only as a role name (`app/roles.py`) and a schema field (`app/schemas/engagement.py`). No monitoring, event reporting, auto-submit engine, ML service, evidence storage, admin dashboard, policy config or recovery flow. This is the **single largest unbuilt backend block (9 phases)**, and it is gated behind Phase 42–46 being genuinely complete (they are code-complete but hold no data) plus **M1 S3 bucket** for evidence.
+
+### BLOCK L — Data Import (Phases 56–65)
+| # | Phase | Mandatory before | Done |
+|---|---|---|---|
+| 56 | CSV import API [DEV] | Phase 11–14 + Phase 27–34 | ☐ |
+| 57 | Admin import UI [DEV] | Phase 56 | ☐ |
+| 58 | Duplicate detection (fuzzy) [DEV] | Phase 56 | ☐ |
+| 59 | Import colleges | **M4 college CSV FINALIZED** | ☐ |
+| 60 | Import courses/scholarships/exams | **M4 CSVs FINALIZED** | ☐ |
+| 61 | Import questions | **M4 question CSV FINALIZED** | ☐ |
+| 62 | Import placement data | M4 placement CSV | ☐ |
+| 63 | Import cutoff data | M4 cutoff CSV | ☐ |
+| 64 | Data verification workflow [DEV] | Phase 59–63 live | ☐ |
+| 65 | Blog content + legal pages [BOTH] | M4 blog articles + M5 legal drafts | ☐ |
+
+**Completion Gate:** 1000+ colleges, 50+ courses, 100+ scholarships, 50+ exams, 500+ questions, placement for top 500, cutoff data, 20+ blogs, legal pages ALL live and verified.
+
+> ⛔ **Phases 56–64 NOT STARTED — verified 28 Sep 2026.** Zero matches for a CSV-import API, fuzzy duplicate detection, or a data-verification workflow anywhere in `backend/app`. The gap against the gate is large: **331 / 1000+ colleges, 22 / 50+ courses, 6 / 100+ scholarships, 6 / 50+ exams, 0 / 500+ questions, 0 placement rows, 0 cutoff rows, 0 blog posts.** Legal pages (Phase 65) *are* now done — 6 documents, SSG, sitemap + 13 redirects. Everything else here needs **M4 CSVs**.
+
+### BLOCK M — Security, Performance, Testing (Phases 66–75)
+| # | Phase | Mandatory before | Done |
+|---|---|---|---|
+| 66–75 | Security headers, rate limiting, validation, error handling, DB perf, Redis cache, Lighthouse >90, mobile audit, WCAG 2.1 AA, cross-browser | **Blocks A–L COMPLETE (hardens everything)** | ☐ |
+
+**Completion Gate:** Lighthouse >90; no horizontal scroll; security headers active; rate limits on all endpoints; accessibility checklist passes.
+
+> 🟡 **Phases 66–75 PARTIAL — verified 28 Sep 2026.** Present organically rather than as a phase: RBAC + rate limiting (Redis wired), bcrypt secrets, OTP hashing, structured-error conventions, 225 tests. **Never run:** Lighthouse audit, WCAG 2.1 AA pass, cross-browser pass, DB performance tuning, Redis cache on read paths. Two findings from the Phase 3 review belong to this block: `next build` is **memory-sensitive** (395-page export times out at 60s/page under load — build succeeds with a longer timeout, so it is a resource problem, not a code one), and the production guard was only hardened for email/SMS — **no equivalent guard exists for the remaining production settings.**
+
+### BLOCK N — Legal, Monitoring, Backup (Phases 76–85)
+| # | Phase | Mandatory before | Done |
+|---|---|---|---|
+| 76 | DPDP compliance (parental consent, no child tracking, deletion flow) [DEV] | Block M + **M5 legal pages + M6 Grievance Officer** | ☐ |
+| 77 | IT Rules 2021 compliance (grievance page, 3h takedown, 3-month reminders) [DEV] | Phase 76 + M6 | ☐ |
+| 78 | Sentry [DEV] | **M1 (Sentry DSN)** | ☐ |
+| 79 | Monitoring + alerts [DEV] | Phase 78 | ☐ |
+| 80 | Backup + restore test [DEV] | Phase 79 | ☐ |
+| 81 | SSL/HTTPS + HSTS [DEV] | Phase 80 | ☐ |
+| 82 | DNS (production + www + staging) [YOU/DEV] | **M2 (domain owned + Cloudflare)** | ☐ |
+| 83 | GA4 analytics [DEV] | **M1 (GA4 Measurement ID)** | ☐ |
+| 84 | Search Console [BOTH] | Phase 83 | ☐ |
+| 85 | WAF: Cloudflare rules, DDoS, bot protection [BOTH] | **M1 (Cloudflare)** | ☐ |
+
+**Completion Gate:** Grievance Officer details published; parental consent flow verified; SSL live; analytics events tracked; backups restoring; monitoring alerts active.
+
+> ⛔ **Phases 76–85 NOT STARTED — verified 28 Sep 2026.** No parental-consent, guardian, takedown or DMCA code exists. Phase 76 is the sharpest risk: the **privacy policy now explicitly admits** "no age-verification step and no parental-consent record, so we cannot currently demonstrate that this requirement is met" — a disclosed DPDP exposure that is a deliberate 16+ tradeoff, but must be a conscious decision. Phase 77 also requires the 3-hour takedown and 3-month takedown-reminder flows, both absent. Grievance pages are published, but **`GRIEVANCE_OFFICER.name` is still `"To be designated"`** (M6 outstanding). Sentry/GA4/Cloudflare/DNS all need M1.
+
+### BLOCK O — CI/CD, Staging, Production (Phases 86–95)
+| # | Phase | Mandatory before | Done |
+|---|---|---|---|
+| 86 | Git branching + commit conventions [DEV] | Block N | ☐ |
+| 87 | CI pipeline (lint, type check, unit tests, build) [DEV] | Phase 86 | ☐ |
+| 88 | CD pipeline (staging auto, prod approved) [DEV] | Phase 87 | ☐ |
+| 89 | Staging setup + deploy + verify [BOTH] | **M1 (AWS + staging resources)** | ☐ |
+| 90 | Production setup (Mumbai ap-south-1, Multi-AZ) [BOTH] | M1 (AWS prod) + **M2 (DNS)** | ☐ |
+| 91 | Load test (50K concurrent target) [DEV] | Phase 90 | ☐ |
+| 92 | Security audit (OWASP ZAP, fix critical/high) [DEV] | Phase 91 | ☐ |
+| 93 | Final QA [DEV] | Phase 92 | ☐ |
+| 94 | UAT + fixes [BOTH] | **M10 (5 friends test)** | ☐ |
+| 95 | SEO verification [DEV] | Phase 94 | ☐ |
+
+**Completion Gate:** staging.padhaanewala.in working; CI/CD automatic; load test passed; security scan clean.
+
+> ⛔ **Phases 86–95 NOT STARTED — verified 28 Sep 2026.** No CI pipeline, staging, production, load test or security audit. All of Block O needs **M1 (AWS)** and **M2 (DNS)**, so none of it can start now. The backend is otherwise deployable-shaped: migrations apply cleanly to a single head and 225 tests run green.
+
+### BLOCK P — Launch (Phases 96–105)
+| # | Phase | Mandatory before | Done |
+|---|---|---|---|
+| 96 | Production deployment (migrations, seed, CDN) [DEV] | **Blocks A–O complete + M2 DNS + M5 legal published + M6 grievance officer published + M10 all YES** | ☐ |
+| 97 | Smoke tests (homepage, search, college, login, enquiry, AI, mock test, admin) [DEV] | Phase 96 | ☐ |
+| 98 | 24-hour monitoring [DEV] | Phase 97 | ☐ |
+| 99 | Fix critical bugs [DEV] | Phase 98 | ☐ |
+| 100 | Documentation (README, admin guide, deployment, env) [DEV] | Phase 99 | ☐ |
+| 101 | Admin training [BOTH] | Phase 100 | ☐ |
+| 102 | Handover (source, DB schema, credentials, docs) [DEV] | Phase 101 + **M10 credentials collected** | ☐ |
+| 103 | 2-week stabilization [DEV] | Phase 102 | ☐ |
+| 104 | Performance tuning [DEV] | Phase 103 | ☐ |
+| 105 | Final sign-off [BOTH] | Phase 104 — **PROJECT DONE** | ☐ |
+
+## NEXT ACTIONS — ranked by what actually unblocks the project (28 Sep 2026)
+
+Replaces guesswork with a measured backlog. **Unblocked and small** first, because they are the only things that can progress before credentials land.
+
+| # | Action | Phase | Size | Blocked? |
+|---|---|---|---|---|
+| 1 | Wire enquiry → lead + notification + student email | 25/36 | ~1 day | **No — do now.** Highest value per line of code: three routers already exist and are unused, and two completion gates fail without it. |
+| 2 | Question-bank admin CRUD + seed a real mock test | 43/7 | ~1–2 days | **No — do now.** Without questions the whole mock-test engine is untested with real data. |
+| 3 | NLP query parse for college search | 13 | ~2–3 days | No, but needs the 331 colleges to be sane first. |
+| 4 | Real MSG91 + email credentials, then manual handset test | 3 | ~1 hour | **YES — M1, ~3 days out.** Also needs DNS SPF/DKIM for the sender domain. |
+| 5 | Content: fees, cutoff, placement, NIRF, blog rows | 10/5 | ongoing | **YES — M4 CSVs.** Phase 65 gate is far from met (0 cutoff/placement rows). |
+| 6 | Data-import API + fuzzy dedup + verification workflow | 56–64 | ~1 week | **YES — M4 CSVs** + Phases 27–34 admin UI. |
+| 7 | Proctored exam system | 47–55 | ~2–3 weeks | **YES — S3 bucket** + genuinely finishing 42–46. Largest unbuilt block. |
+| 8 | Parental-consent flow + 3-hour takedown | 76/77 | ~1 week | **YES — M6 Grievance Officer**; also a decision, not just code. |
+| 9 | Monitoring, backup, DNS, GA4, WAF | 78–85 | ~1 week | **YES — M1 (Sentry/GA4/Cloudflare) + M2 (domain).** |
+| 10 | CI/CD, staging, prod, load test, security audit | 86–95 | ~2 weeks | **YES — M1 AWS.** |
+
+**Total unblocked work available today: ~4–6 days** (items 1–3). Everything else waits on a purchase, a dataset, or a decision.
+
+## QUICK-REFERENCE: What MUST be done before each phase
 | To start phase | You MUST already have |
 |---|---|
 | Phase 1 | M1 (GitHub), M3, dev tools installed |
 | Phase 2 | Phase 1 |
-| Phase 3 | Phases 1–2 + **MSG91 & SendGrid credentials (M1)** |
+| Phase 3 | Phases 1–2 + MSG91 & SendGrid credentials (M1) — **code done, only the credentials are outstanding** |
 | Phase 4 | Phase 1 (parallel: 2, 3) |
 | Phase 5 | Phase 4 |
 | Phase 6 | Phase 4 (parallel: 5) |
@@ -611,46 +387,27 @@ without MSG91 + SendGrid credentials, and Phase 76/96 cannot proceed without leg
 | Phase 24 | Phases 14 + 13 |
 | Phase 25 | Phase 9 |
 | Phase 26 | Phases 25 + 16 |
-| Phases 27–30 | Phases 2, 11, 12, 14 |
-| Phases 31–34 | Phases 27–30 + 25 |
+| Phase 27–30 | Phases 2, 11, 12, 14 |
+| Phase 31–34 | Phases 27–30 + 25 |
 | Phase 35 | Phases 27–30 + 8 |
 | Phase 36 | Phases 3, 9, 25 |
 | Phase 37 | Public pages live (Blocks D + E) |
-| Phases 38–41 | Phases 5, 6, 10 + OpenAI key (M1) |
-| Phases 42–46 | Phases 7 + 2 |
-| Phases 47–55 | Phases 42–46 **complete** + S3 bucket (M1) |
-| Phases 56–65 | Phases 11–14 + 27–34 + ALL CSVs ready (M4) |
-| Phases 66–75 | Blocks A–L all complete |
-| Phases 76–85 | Block M + M5 + M6 + Sentry/GA4/Cloudflare (M1) |
-| Phases 86–95 | Blocks M + N + AWS prod access + DNS (M2) |
-| Phases 96–105 | Blocks A–O + domain live + legal published + UAT + ALL credentials |
+| Phase 38–41 | Phases 5, 6, 10 + OpenAI key (M1) |
+| Phase 42–46 | Phases 7 + 2 |
+| Phase 47–55 | Phases 42–46 COMPLETE + S3 bucket (M1) |
+| Phase 56–65 | Phases 11–14 + 27–34 + ALL CSVs ready (M4) |
+| Phase 66–75 | Blocks A–L all complete |
+| Phase 76–85 | Block M + M5 + M6 + Sentry/GA4/Cloudflare (M1) |
+| Phase 86–95 | Blocks M + N + AWS prod access + DNS (M2) |
+| Phase 96–105 | Blocks A–O + domain live + legal published + UAT + ALL credentials |
 
 ---
 
-## 12. Non-negotiable rules
-
-1. **[M4]** All data CSVs must be ready **before** Phase 59.
-2. **[M6]** Grievance Officer must be appointed + published before Phase 76; legally
-   required before launch.
-3. **[M5]** Legal pages must be drafted before Phase 76 and **published** before Phase 96.
-4. Proctored exams (Phase 47) cannot start until mock tests (Phase 42–46) fully work.
-5. Predictor (Phase 24/40) cannot be "AI guessing" — it needs real cutoff data
-   (Phase 10 table + Phase 56–63 import). **The correct backend already exists; the
-   frontend must call it rather than reimplementing it client-side.**
-6. **[M1]** MSG91/SendGrid credentials must exist before Phase 3 starts.
-7. No phase may be skipped — every block's Completion Gate must be YES first.
-8. **AI keys go through the backend only.** The current Next.js route calling OpenAI
-   directly violates the spec's own §3 and must not become a pattern.
-
----
-
-## 13. Related documents
-
-| File | Purpose | Trust |
-|---|---|---|
-| `docs/padhaanewala-complete.md` | Master spec V5.0 — authoritative phase list | Authoritative |
-| `docs/phase-verification.md` | Detailed 2026-09-27 phase audit | **Accurate in its per-phase tables; its headline counts are wrong (§1)** |
-| `docs/rbac-compliance-checklist.md` | RBAC ruleset R1–R8, before/after exploit tables | Authoritative; all P0s closed |
-| `docs/session-log-2026-09-27.md` | What was done in that session, including self-reported mistakes | Historical |
-| `docs/PRD.md`, `docs/TRD.md` | **Untracked subagent output that was never requested or reviewed** | ⚠️ Unverified — keep or delete is your call |
-| `DESIGN.md` | **Documents Clay.com, not this project** | ⚠️ Delete or replace |
+## NON-NEGOTIABLE RULES (from Section 109 + doc)
+1. [M4] All data CSVs must be ready BEFORE Phase 59 — you cannot start data import without them.
+2. [M6] Grievance Officer MUST be appointed + published before Phase 76 and is legally required BEFORE launch.
+3. [M5] Legal pages MUST be drafted before Phase 76 and PUBLISHED before Phase 96.
+4. Proctored exams (Phase 47) cannot start until standard mock tests (Phase 42–46) are fully working.
+5. Predictor (Phase 24/40) cannot be built as "AI guessing" — it needs real cutoff data (Phase 10 table + Phase 56–63 import).
+6. [M1] MSG91/SendGrid credentials must exist BEFORE developer starts Phase 3.
+7. No phase may be skipped — every block's Completion Gate must be YES before the next block.

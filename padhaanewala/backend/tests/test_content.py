@@ -2,7 +2,7 @@ import uuid
 
 import pytest
 from fastapi.testclient import TestClient
-from jose import jwt
+import jwt
 
 from app.database import SessionLocal
 from app.main import app
@@ -163,6 +163,10 @@ def test_blog_lifecycle(admin_token):
 
     public = client.get(f"/api/v1/blogs/{blog['slug']}")
     assert public.status_code == 200
+    # 4.6 — GET no longer mutates the counter; the explicit view endpoint owns it.
+    assert public.json()["view_count"] == 0
+    assert client.post(f"/api/v1/blogs/{blog['slug']}/view").status_code == 204
+    public = client.get(f"/api/v1/blogs/{blog['slug']}")
     assert public.json()["view_count"] == 1
 
     listing = client.get("/api/v1/blogs")
@@ -257,9 +261,22 @@ def test_seo_upsert_and_get(admin_token):
     assert upsert.status_code == 200, upsert.text
     assert upsert.json()["meta_title"] == "Best College"
 
-    fetched = client.get(f"/api/v1/seo/college/{_college_ref()}")
-    assert fetched.status_code == 200
+    # Reads are gated too: SEO rows carry draft metadata for every entity, so an
+    # unauthenticated full-table dump is not acceptable.
+    anon = client.get(f"/api/v1/seo/college/{_college_ref()}")
+    assert anon.status_code == 401
+
+    fetched = client.get(f"/api/v1/seo/college/{_college_ref()}", headers=headers)
+    assert fetched.status_code == 200, fetched.text
     assert fetched.json()["meta_description"] == "Description"
+
+
+def test_seo_read_forbidden_for_student(student):
+    response = client.get(
+        f"/api/v1/seo/college/{_college_ref()}",
+        headers={"Authorization": f"Bearer {student['token']}"},
+    )
+    assert response.status_code == 403
 
 
 def test_seo_write_requires_role(student):
@@ -281,7 +298,14 @@ def test_notification_flow(student, admin_token):
     assert empty.status_code == 200
     assert empty.json() == []
 
-    student_id = int(jwt.get_unverified_claims(student["token"])["sub"])
+    # `jwt.get_unverified_claims` was python-jose's way to read a token's payload
+    # without checking the signature. PyJWT has no direct equivalent; decoding
+    # with signature verification switched off is the same operation. Used only
+    # to recover the subject the fixture just created, so the "unverified" part
+    # is safe here.
+    student_id = int(
+        jwt.decode(student["token"], options={"verify_signature": False})["sub"]
+    )
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
     created = client.post(
         "/api/v1/notifications",

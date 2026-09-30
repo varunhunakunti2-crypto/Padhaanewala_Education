@@ -1,3 +1,11 @@
+import sys
+from pathlib import Path
+
+# Allow `python scripts/seed_x.py` from any working directory: the repo root
+# (which contains the `app` package) is not on sys.path by default, because
+# Python puts the *script's* directory there instead.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from app.database import SessionLocal
 from app.data.india_locations import STATES, DISTRICT_TOTAL
 from app.models import City, District, State
@@ -55,18 +63,29 @@ def main() -> None:
                         district_obj.code = f"{code}{idx:02d}"
 
             existing_cities = {c.name for c in db.query(City).join(District).filter(District.state_id == state.id).all()}
-            state_districts = db.query(District).filter(District.state_id == state.id).all()
+
+            # `SessionLocal` is configured with autoflush=False, so the districts
+            # added a moment ago are still pending and a query would not see them.
+            # They must be flushed here, not read out of `session.identity_map`:
+            # that mapping only holds objects that already have an identity key, so
+            # on a fresh database it is empty and the matcher below silently seeds
+            # zero cities (the seed only appeared to work on re-runs).
+            db.flush()
+            state_districts = list(
+                db.query(District).filter(District.state_id == state.id).all()
+            )
+
+            matched_cities = 0
+            unmatched_cities: list[str] = []
             for c_name in cities:
                 if c_name in existing_cities:
                     continue
 
-                def _match(entry):
-                    return _match_city(c_name, entry)
-
                 district = next(
-                    (d for d in state_districts if _match(d)), None
+                    (d for d in state_districts if _match_city(c_name, d)), None
                 )
                 if district is None:
+                    unmatched_cities.append(c_name)
                     continue
                 db.add(
                     City(
@@ -76,6 +95,14 @@ def main() -> None:
                     )
                 )
                 existing_cities.add(c_name)
+                matched_cities += 1
+
+            db.flush()
+            if matched_cities or unmatched_cities:
+                print(
+                    f"  {name}: {matched_cities} cities linked"
+                    + (f", {len(unmatched_cities)} unmatched" if unmatched_cities else "")
+                )
 
         db.commit()
 

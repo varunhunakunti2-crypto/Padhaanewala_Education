@@ -9,8 +9,7 @@ from app.schemas.content import AuditLogResponse
 
 router = APIRouter(prefix="/api/v1/audit-logs", tags=["audit"])
 
-AUDIT_ROLES = ("super_admin", "admin")
-
+from app.roles import AUDIT_ROLES
 
 def _to_response(db: Session, log: AuditLog) -> AuditLogResponse:
     username = None
@@ -29,7 +28,6 @@ def _to_response(db: Session, log: AuditLog) -> AuditLogResponse:
         ip_address=log.ip_address,
         created_at=log.created_at,
     )
-
 
 @router.get("", response_model=list[AuditLogResponse])
 def list_audit_logs(
