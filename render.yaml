@@ -59,7 +59,7 @@ services:
     # /api/v1/stats/catalog is DB-backed and returns 200 with Redis absent. GETs
     # skip RateLimitMiddleware entirely (ratelimit.py:138), so it is unaffected
     # by the limiter being off. It does six COUNT(*) queries, which on a free
-    # Neon is a real — if small — load every 30 s.
+    # Postgres instance is a real — if small — load every 30 s.
     #
     # If you later add a real Redis: switch this back to /health. It is the
     # better probe because it actually reports both dependencies.
