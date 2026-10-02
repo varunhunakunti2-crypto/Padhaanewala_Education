@@ -5,7 +5,11 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
-from app.dependencies import get_current_user, require_role
+from app.dependencies import (
+    get_current_user,
+    require_processing_consent,
+    require_role,
+)
 from app.models import College, Course, Review, User
 from app.schemas.content import (
     ReviewCreate,
@@ -111,7 +115,10 @@ def my_reviews(
 def submit_review(
     payload: ReviewCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    #: Phase 9.1 — a published review names a course of study and a year, which is
+    #: personal data about a person who may be a minor, and it is published to
+    #: every visitor. Gated for the same reason as the rest of the write surface.
+    user: User = Depends(require_processing_consent),
 ):
     college = db.get(College, payload.college_id)
     if college is None:

@@ -92,3 +92,39 @@ def require_role(*allowed_roles: str):
         )
 
     return checker
+
+
+def require_processing_consent(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> User:
+    """Refuse the write unless DPDP processing of this user's data is permitted.
+
+    Phase 9.1. Drop this on any endpoint that *writes* personal data — a profile
+    update, a saved college, an enquiry tied to the account. Read endpoints are
+    deliberately not gated: the right to access your own data (s.8(5)) has to
+    survive the withdrawal of consent, because the way a subject finds out what is
+    held about them is by asking for it.
+
+    403 rather than 401, with a machine-readable `code`. The distinction matters
+    to the client: 401 would send it round the refresh loop, while a `code` of
+    `parental_consent_required` is what tells the age gate to open. It is the same
+    shape as the `email_not_verified` 403 that Phase 3 introduced, and for the
+    same reason.
+    """
+    # Imported here rather than at module scope: `compliance_service` imports the
+    # models and `app.roles`, and this module is imported by those models'
+    # consumers. A top-level import would close a cycle through `get_db`.
+    from app.services.compliance_service import decide_processing
+
+    decision = decide_processing(db, user)
+    if not decision.allowed:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": decision.code,
+                "message": decision.message,
+                "status_endpoint": "/api/v1/compliance/status",
+            },
+        )
+    return user

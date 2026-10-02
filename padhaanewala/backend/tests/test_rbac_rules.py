@@ -44,6 +44,7 @@ def _register(prefix: str = "user") -> dict:
         "email": _unique(prefix),
         "mobile": _unique_mobile(),
         "password": PASSWORD,
+        "age_band": "18_plus",
     }
     response = client.post("/api/v1/auth/register", json=payload)
     assert response.status_code == 201, response.text
@@ -523,6 +524,7 @@ def test_r2_4_registration_fails_closed_when_student_role_missing():
         "email": _unique("noRole"),
         "mobile": _unique_mobile(),
         "password": PASSWORD,
+        "age_band": "18_plus",
     }
     hidden = "__student_temporarily_missing"
 

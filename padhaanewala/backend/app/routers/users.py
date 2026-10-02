@@ -3,7 +3,11 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import get_current_user, require_role
+from app.dependencies import (
+    get_current_user,
+    require_processing_consent,
+    require_role,
+)
 from app.models import Role, StudentProfile, User
 from app.roles import ADMIN_ROLES, RoleName, exceeds_ceiling, exceeds_removal_ceiling
 from app.schemas.auth import (
@@ -64,7 +68,11 @@ def get_my_profile(
 @router.put("/me", response_model=ProfileResponse)
 def update_my_profile(
     payload: UpdateProfileRequest,
-    user: User = Depends(get_current_user),
+    #: Phase 9.1 — this is the richest personal-data write in the product: name,
+    #: education level, course interest, preferred state and city, and a budget
+    #: range. For a user who declared themselves under 18 none of it may be
+    #: processed without verifiable parental consent, so the gate sits here.
+    user: User = Depends(require_processing_consent),
     db: Session = Depends(get_db),
 ):
     profile = db.scalar(

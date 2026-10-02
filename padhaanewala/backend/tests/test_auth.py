@@ -41,6 +41,7 @@ def user_payload():
         "email": _unique("student"),
         "mobile": _unique_mobile(),
         "password": "SecurePass123!",
+        "age_band": "18_plus",
     }
 
 
@@ -58,6 +59,7 @@ def admin():
         "email": _unique("admin"),
         "mobile": _unique_mobile(),
         "password": "SecurePass123!",
+        "age_band": "18_plus",
     }
     response = client.post("/api/v1/auth/register", json=payload)
     assert response.status_code == 201, response.text
@@ -93,6 +95,7 @@ def test_register_duplicate_email(registered):
         "email": registered["email"],
         "mobile": _unique_mobile(),
         "password": "SecurePass123!",
+        "age_band": "18_plus",
     }
     response = client.post("/api/v1/auth/register", json=payload)
     assert response.status_code == 409
@@ -223,6 +226,7 @@ def test_login_case_insensitive_email():
         "email": f"CaseTest.{uuid.uuid4().hex[:8]}@Example.COM",
         "mobile": _unique_mobile(),
         "password": "SecurePass123!",
+        "age_band": "18_plus",
     }
     create = client.post("/api/v1/auth/register", json=payload)
     assert create.status_code == 201

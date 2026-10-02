@@ -55,6 +55,7 @@ def admin():
         "email": _unique("cadmin"),
         "mobile": _unique_mobile(),
         "password": "SecurePass123!",
+        "age_band": "18_plus",
     }
     response = client.post("/api/v1/auth/register", json=payload)
     assert response.status_code == 201, response.text
@@ -74,6 +75,7 @@ def student():
         "email": _unique("reviewer"),
         "mobile": _unique_mobile(),
         "password": "SecurePass123!",
+        "age_band": "18_plus",
     }
     response = client.post("/api/v1/auth/register", json=payload)
     assert response.status_code == 201, response.text
@@ -131,6 +133,7 @@ def test_enquiry_rejects_a_client_supplied_ip_address():
             "name": "Forged Source",
             "mobile": _unique_mobile(),
             "ip_address": "203.0.113.9",
+            "age_band": "18_plus",
         },
     )
     assert response.status_code == 422, response.text
@@ -141,7 +144,7 @@ def test_enquiry_ip_is_derived_server_side():
     mobile = _unique_mobile()
     response = client.post(
         "/api/v1/enquiries",
-        json={"name": "Real Enquiry", "mobile": mobile},
+        json={"name": "Real Enquiry", "mobile": mobile, "age_band": "18_plus"},
     )
     assert response.status_code == 201, response.text
 
@@ -165,7 +168,7 @@ def test_enquiry_ip_honours_the_proxy_header_only_when_configured(monkeypatch):
     mobile = _unique_mobile()
     client.post(
         "/api/v1/enquiries",
-        json={"name": "Spoofed", "mobile": mobile},
+        json={"name": "Spoofed", "mobile": mobile, "age_band": "18_plus"},
         headers={"X-Forwarded-For": "198.51.100.7"},
     )
     with SessionLocal() as db:
@@ -177,7 +180,12 @@ def test_enquiry_message_is_length_capped():
     """Free text from an anonymous caller, stored where counsellors read it."""
     response = client.post(
         "/api/v1/enquiries",
-        json={"name": "Flooder", "mobile": _unique_mobile(), "message": "x" * 5000},
+        json={
+            "name": "Flooder",
+            "mobile": _unique_mobile(),
+            "message": "x" * 5000,
+            "age_band": "18_plus",
+        },
     )
     assert response.status_code == 422
 
@@ -395,6 +403,7 @@ def test_delete_college_still_requires_super_admin():
         "email": _unique("nostudent"),
         "mobile": _unique_mobile(),
         "password": "SecurePass123!",
+        "age_band": "18_plus",
     }
     response = client.post("/api/v1/auth/register", json=payload)
     account = {**payload, **response.json()}

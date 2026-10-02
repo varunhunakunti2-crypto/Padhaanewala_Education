@@ -43,6 +43,26 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_email_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     is_mobile_verified: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # --- Phase 9.1: age declaration -----------------------------------------
+    #
+    # An age *band*, not a date of birth. The only decision the law turns on is
+    # whether the user is under 18, and DPDP s.5(1)(ii) requires collecting only
+    # what is necessary for the stated purpose. A full date of birth is strictly
+    # more identifying than the answer we need, survives every retention sweep
+    # that erases the derived `is_minor` flag, and is a standing target for an
+    # identity thief. So the product asks one question and stores one bit's worth
+    # of answer.
+    #
+    # NULL means the user has not answered. That is deliberately distinct from
+    # "18_plus": an unanswered question must not be read as consent, which is the
+    # failure mode that makes a gate decorative.
+    age_band: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
+    #: Server-derived from `age_band`, stored rather than computed per query
+    #: because every personal-data write path branches on it and each of those
+    #: branches is a database round trip either way.
+    is_minor: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+
     last_login_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -64,6 +84,17 @@ class User(Base):
     )
     notifications: Mapped[list["Notification"]] = relationship(
         back_populates="user"
+    )
+    guardian_consents: Mapped[list["GuardianConsent"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    data_requests: Mapped[list["DataRequest"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+        # `data_requests` has two columns pointing at `users.id` — the subject and
+        # the staff member who closed it — so SQLAlchemy needs to be told which
+        # one makes a row a child of *this* user.
+        foreign_keys="DataRequest.user_id",
     )
 
     @property

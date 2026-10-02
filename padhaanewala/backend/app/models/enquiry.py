@@ -1,6 +1,14 @@
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -39,6 +47,25 @@ class Enquiry(Base):
     utm_content: Mapped[str | None] = mapped_column(String(100), nullable=True)
     ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
     device_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+    # --- Phase 9.1 ---------------------------------------------------------
+    #
+    # This endpoint needs no account, so it is the widest collector of minors'
+    # personal data on the whole site: a name, a mobile number, an optional email,
+    # a course, a location and a free-text message, submitted by whoever wants a
+    # callback. The account-side age gate does not reach it, so the age has to be
+    # declared here too.
+    #
+    # `is_minor` is derived from `age_band` and indexed so the CRM can answer
+    # "which leads are children" without scanning every row — a counsellor
+    # calling a lead who is 15 has to know that before the call, not after.
+    age_band: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
+    is_minor: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    #: A parent or guardian's phone or email for a minor's enquiry. Required by
+    #: the schema when `age_band` is `under_18`: the call has to be placed to an
+    #: adult, and the record has to show whose authority the call was made under.
+    guardian_contact: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
     status: Mapped[str] = mapped_column(String(30), default="new", index=True)
     assigned_counsellor_id: Mapped[int | None] = mapped_column(
         Integer,

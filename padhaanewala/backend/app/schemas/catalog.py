@@ -1,8 +1,8 @@
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.models.mock_test import SELECTED_ANSWER_MAX_LENGTH
 from app.question_types import QuestionType
@@ -639,6 +639,25 @@ class EnquiryCreate(BaseModel):
     utm_campaign: str | None = Field(default=None, max_length=100)
     utm_content: str | None = Field(default=None, max_length=100)
     device_type: str | None = Field(default=None, max_length=20)
+    # Phase 9.1 — required, no default. This endpoint is unauthenticated, so the
+    # account age gate cannot reach it, and it is the widest collector of minors'
+    # personal data on the site. "Optional, defaulting to adult" would be the same
+    # decorative gate the account-side one avoids.
+    age_band: Literal["under_18", "18_plus"]
+    # Required by the validator below when `age_band` is `under_18`. The callback
+    # has to be placed to an adult, and the row has to record whose authority it
+    # was placed under.
+    guardian_contact: str | None = Field(default=None, max_length=255)
+
+    @model_validator(mode="after")
+    def require_guardian_for_minors(self) -> "EnquiryCreate":
+        if self.age_band == "under_18" and not (self.guardian_contact or "").strip():
+            raise ValueError(
+                "A parent or guardian's phone number or email is required when the "
+                "student is under 18"
+            )
+        return self
+
     # `ip_address` is deliberately absent (4.1): this is an unauthenticated
     # endpoint, so a caller-supplied value is a lie about provenance and is
     # rejected rather than silently dropped. The server derives it from the

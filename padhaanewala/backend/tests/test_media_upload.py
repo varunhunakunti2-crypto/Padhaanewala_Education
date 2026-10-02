@@ -74,6 +74,7 @@ def content_admin() -> dict:
             "email": email,
             "mobile": _unique_mobile(),
             "password": "SecurePass123!",
+            "age_band": "18_plus",
         },
     )
     assert registered.status_code == 201, registered.text

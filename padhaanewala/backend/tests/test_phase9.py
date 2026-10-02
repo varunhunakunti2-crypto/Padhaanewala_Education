@@ -18,6 +18,7 @@ def _register(name: str, password: str = "SecurePass123!") -> dict:
             "email": email,
             "mobile": f"9{uuid.uuid4().int % 1_000_000_000:09d}",
             "password": password,
+            "age_band": "18_plus",
         },
     )
     assert response.status_code == 201, response.text
@@ -64,12 +65,23 @@ def _make_counsellor(name: str = "counsellor") -> tuple[dict, int]:
 
 
 def _submit_enquiry(payload: dict | None = None) -> int:
-    body = payload or {
-        "name": f"Lead {uuid.uuid4().hex[:6]}",
-        "mobile": f"8{uuid.uuid4().int % 1_000_000_000:09d}",
-        "city": "Bengaluru",
-        "message": "Interested in B.Tech admission",
-        "source": "website",
+    # Phase 9.1: `EnquiryCreate.age_band` is required with no default, so a
+    # caller-supplied payload has to carry it as well. Merged in here rather than
+    # repeated at each call site, so a test states the one thing it is about and
+    # inherits the rest — and a caller can still override it, which is what lets
+    # the minor-without-a-guardian case be expressed at all.
+    body = {
+        "age_band": "18_plus",
+        **(
+            payload
+            or {
+                "name": f"Lead {uuid.uuid4().hex[:6]}",
+                "mobile": f"8{uuid.uuid4().int % 1_000_000_000:09d}",
+                "city": "Bengaluru",
+                "message": "Interested in B.Tech admission",
+                "source": "website",
+            }
+        ),
     }
     res = client.post("/api/v1/enquiries", json=body)
     assert res.status_code == 201, res.text

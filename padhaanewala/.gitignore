@@ -32,6 +32,10 @@ __pycache__/
 build/
 dist/
 *.egg-info/
+# Locally-uploaded media. The media tests write real files here
+# (backend/tests/test_media_upload.py), so the tree is dirty after any
+# `pytest` run and the contents are per-developer, not source.
+var/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/

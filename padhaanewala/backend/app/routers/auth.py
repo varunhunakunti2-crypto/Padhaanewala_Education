@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.dependencies import get_current_user
-from app.models import Role, StudentProfile, User
+from app.models import ConsentRecord, Role, StudentProfile, User
 from app.roles import RoleName
 from app.schemas.auth import (
     ForgotPasswordRequest,
@@ -27,6 +27,7 @@ from app.schemas.auth import (
 )
 from app.schemas.common import StandardResponse, TokenResponse
 from app.services import email_service, otp_service, session_service, sms_service
+from app.services.compliance_service import GUARDIAN_CONSENT_VERSION
 from app.utils.client_ip import client_ip
 from app.utils.security import (
     decode_token,
@@ -188,6 +189,12 @@ def register(
         is_active=True,
         is_email_verified=False,
         is_mobile_verified=False,
+        # Phase 9.1 — recorded at signup rather than asked for later, so that no
+        # account ever exists whose age is unknown. `is_minor` is derived from the
+        # band in one place (`compliance_service.apply_age_band`) rather than
+        # here, so the flag and the band cannot disagree.
+        age_band=payload.age_band,
+        is_minor=payload.age_band == "under_18",
     )
     db.add(user)
     try:
@@ -213,6 +220,24 @@ def register(
 
     profile = StudentProfile(user_id=user.id, name=payload.name)
     db.add(profile)
+
+    # Phase 9.1 — the age declaration opens the consent ledger rather than only
+    # setting a flag. If the account is later asked "what did this user agree to,
+    # and when", the answer has to start here, on the day the account was made,
+    # and not at the first time somebody thought to ask.
+    db.add(
+        ConsentRecord(
+            user_id=user.id,
+            consent_type="age_verification",
+            consent_version=GUARDIAN_CONSENT_VERSION,
+            consent_text=(
+                "The user declared themselves to be "
+                f"{'under 18' if user.is_minor else '18 or older'} at registration."
+            ),
+            granted=True,
+            ip_address=client_ip(request),
+        )
+    )
     db.commit()
     db.refresh(user)
 

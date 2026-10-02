@@ -56,6 +56,7 @@ def account(client):
         "email": _unique_email("session"),
         "mobile": _unique_mobile(),
         "password": "SecurePass123!",
+        "age_band": "18_plus",
     }
     response = client.post("/api/v1/auth/register", json=payload)
     assert response.status_code == 201, response.text

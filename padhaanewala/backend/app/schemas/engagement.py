@@ -10,6 +10,14 @@ CONSENT_TYPES = {
     "privacy",
     "proctoring",
     "whatsapp",
+    # Phase 9.1. `age_verification` records the answer to the age gate itself;
+    # `parental_consent` records the guardian's decision. Both are kept in this
+    # table rather than only in `guardian_consents` because withdrawal has to be
+    # answerable from the consent ledger too — a data principal asking "what did
+    # I agree to, and have I withdrawn any of it" should not need to know which
+    # of two tables holds the answer.
+    "age_verification",
+    "parental_consent",
 }
 
 LEAD_STATUSES = {"new", "contacted", "qualified", "proposal", "won", "lost", "closed"}

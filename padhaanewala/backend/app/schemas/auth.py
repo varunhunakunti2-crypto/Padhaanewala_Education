@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
@@ -10,6 +11,21 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     mobile: str = Field(..., min_length=10, max_length=15)
     password: str = Field(..., min_length=8, max_length=128)
+
+    # Phase 9.1. Required, with no default, because this is the one field that
+    # decides whether DPDP s.9 applies to everything else the account will hold.
+    #
+    # It is an age *band* rather than a date of birth: the only question s.9
+    # turns on is whether the user is under 18, and s.5(1)(ii) requires collecting
+    # no more than is necessary for that. A full date of birth is strictly more
+    # identifying, outlives every retention sweep that erases the derived flag,
+    # and is a standing target for an identity thief.
+    #
+    # No default on purpose. An optional field with a default would let an account
+    # exist whose age is unknown, and "unknown" would then have to be treated as
+    # either adult or blocked — and the first of those is the failure this phase
+    # exists to close.
+    age_band: Literal["under_18", "18_plus"]
 
     @field_validator("email", mode="before")
     @classmethod

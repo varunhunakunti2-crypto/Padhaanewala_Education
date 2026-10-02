@@ -75,6 +75,7 @@ def user():
         "email": _unique_email(),
         "mobile": _unique_mobile(),
         "password": "SecurePass123!",
+        "age_band": "18_plus",
     }
     response = client.post("/api/v1/auth/register", json=payload)
     assert response.status_code == 201, response.text
@@ -645,6 +646,14 @@ def _production_baseline(monkeypatch, **overrides) -> None:
     monkeypatch.setattr(settings, "SMS_PROVIDER", "msg91")
     monkeypatch.setattr(settings, "SMS_API_KEY", "a-real-msg91-key")
     monkeypatch.setattr(settings, "SMS_DLT_TEMPLATE_ID", "a-registered-dlt-template")
+    # Phase 9 / the media-upload work added three more production guards after
+    # this helper was written, and they trip *before* any delivery-provider check
+    # is reached. Without satisfying them here every assertion in this file would
+    # be testing the wrong guard — the same reason the JWT and lifetime defaults
+    # are pinned above.
+    monkeypatch.setattr(settings, "MEDIA_ROOT", "/var/lib/padhaanewala/media")
+    monkeypatch.setattr(settings, "MEDIA_MAX_BYTES", 5 * 1024 * 1024)
+    monkeypatch.setattr(settings, "MEDIA_URL_PREFIX", "/api/v1/media/files")
     for name, value in overrides.items():
         monkeypatch.setattr(settings, name, value)
 
