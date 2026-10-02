@@ -46,9 +46,8 @@ function reportFailure(path: string, res: Response): void {
   const key = `${res.status} ${path}`;
   if (reportedFailures.has(key)) return;
   reportedFailures.add(key);
-  // eslint-disable-next-line no-console -- the build log is the only place a
-  // swallowed backend failure is observable. Silently rendering an empty page
-  // is the BUG-05 failure mode.
+  // The build log is the only place a swallowed backend failure is observable.
+  // Silently rendering an empty page is the BUG-05 failure mode.
   console.error(
     `[api-server] ${key} — treating as empty. Body: ${res.statusText || "no status text"}`,
   );
@@ -261,7 +260,10 @@ export interface ApiCollegeDetail extends ApiCollegeListItem {
   phone: string | null;
   established_year: number | null;
   accreditation_naac: string | null;
-  accreditation_nba: string | null;
+  /** `bool | None` in `CollegeDetailResponse`. Typed as a string here until the
+   *  2026-09-29 college CRUD pass, which made `false` a type error rather than
+   *  letting it through — the column is `Boolean`, not text. */
+  accreditation_nba: boolean | null;
   overview: string | null;
   facilities: Record<string, unknown> | null;
   state_id: number | null;

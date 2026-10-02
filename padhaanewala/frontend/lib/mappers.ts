@@ -365,7 +365,11 @@ export function mapCollege(bundle: ApiCollegeBundle): College {
 
   const accreditations = [
     text(detail.accreditation_naac) ? `NAAC ${text(detail.accreditation_naac)}` : "",
-    text(detail.accreditation_nba) ? `NBA ${text(detail.accreditation_nba)}` : "",
+    // `accreditation_nba` is a nullable *boolean*, so the accreditation is the
+    // badge itself, not a value to print. Reading it through `text()` — which
+    // type-checked only while the response type claimed it was a string — put a
+    // literal "NBA false" on the public college page.
+    detail.accreditation_nba ? "NBA" : "",
   ].filter(Boolean);
 
   const ownership = text(detail.ownership, "Private");

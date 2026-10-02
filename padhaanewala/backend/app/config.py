@@ -26,6 +26,23 @@ def _is_placeholder(value: str) -> bool:
     return value.strip().lower() in _PLACEHOLDER_SECRETS
 
 
+def _is_absolute_path(value: str) -> bool:
+    """True if `value` is absolute **for the platform that will run the app**.
+
+    `os.path.isabs` answers for the machine running the check, not the machine
+    that will run the service: on Windows it reports `/var/lib/padhaanewala/media`
+    as relative, which is exactly the value a Linux container needs. A config
+    guard that only holds on the machine that runs the tests is a guard that is
+    absent in production and misfires everywhere else, so both forms are
+    accepted — a leading separator, or a drive letter.
+    """
+    text = value.strip()
+    # A leading separator (POSIX or Windows) or a drive letter. `~` is *not*
+    # absolute: nothing expands it, so `~/media` would be a literal directory
+    # named `~` under the working directory.
+    return text.startswith(("/", "\\")) or (len(text) > 1 and text[1] == ":")
+
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -156,6 +173,26 @@ class Settings(BaseSettings):
     SMS_OTP_RATE_WINDOW_MINUTES: int = 10
     SMS_OTP_MAX_VERIFY_ATTEMPTS: int = 5
 
+    # --- Uploaded media -------------------------------------------------
+    #
+    # The `media` table has always been a *registry* of URLs, not a store: it
+    # records where an image already lives. There was no way to put a file into
+    # the system through the API, so every seeded row pointed at
+    # `https://example.com/img.jpg` and the admin panel's "Upload" button fired
+    # a toast.
+    #
+    # Files are written under this root and served back by
+    # `GET /media/files/{id}`, which is same-origin — so the root is part of the
+    # trusted computing base, and only raster formats are accepted. SVG is
+    # refused for exactly that reason. See `app/media_store.py`.
+    MEDIA_ROOT: str = "var/media"
+    #: Ceiling per file, checked against the bytes actually read rather than the
+    #: declared `Content-Length`, which is client-controlled.
+    MEDIA_MAX_BYTES: int = 5 * 1024 * 1024
+    #: Public path prefix for the serving route. The value is baked into
+    #: `media.url`, so changing it after seeding orphans existing rows.
+    MEDIA_URL_PREFIX: str = "/api/v1/media/files"
+
     @model_validator(mode="after")
     def _guard_production_defaults(self):
         # A wildcard CORS origin combined with `allow_credentials=True` lets any
@@ -257,7 +294,66 @@ class Settings(BaseSettings):
                 raise ValueError(
                     f"JWT_ALGORITHM must be an HMAC algorithm, got "
                     f"{self.JWT_ALGORITHM!r}. Asymmetric algorithms would require "
-                    "a public key and are not configured."
+                    f"a public key and are not configured."
+                )
+            if not _is_absolute_path(self.MEDIA_ROOT):
+                raise ValueError(
+                    f"MEDIA_ROOT must be an absolute path in production, got the "
+                    f"relative path {self.MEDIA_ROOT!r}. A relative root resolves "
+                    "against the process working directory, which inside the "
+                    "container is inside the image's writable layer — so uploads "
+                    "appear to work and are destroyed by the next image rebuild. "
+                    "Mount a named volume and set e.g. "
+                    "MEDIA_ROOT=/var/lib/padhaanewala/media."
+                )
+            # Uploaded files are served back same-origin from this root, so the
+            # root is part of the trusted computing base: whatever else lives
+            # under it is reachable through the serving route.
+            #
+            # The floor is three path components — an application-specific
+            # directory two levels down, e.g. `/var/lib/padhaanewala/media`. That
+            # is deliberately not a list of forbidden directories. A blocklist
+            # has to enumerate every system path, and `/var/lib` sits one level
+            # above the recommended value while `/usr/local/bin` sits two levels
+            # below a system root, so no prefix rule separates them honestly.
+            # Depth is the property that actually holds: a directory dedicated to
+            # this service's uploads is always namespaced, and every value a
+            # human types by mistake — `/`, `/var`, `/app/media`, `/data/uploads`
+            # — is shallower than that.
+            #
+            # Scope, stated plainly: this is a guard against gross mistakes, not a
+            # containment control. It accepts a wrong but deep path such as
+            # `/usr/local/bin/images`. What actually bounds the blast radius is
+            # that `GET /media/files/{id}` only ever reads a path derived from a
+            # `media` row's own id, entity and sniffed type — no route walks the
+            # root — so a file that is not in the table is not reachable even
+            # though it sits under it.
+            components = [c for c in self.MEDIA_ROOT.replace("\\", "/").split("/") if c]
+            if len(components) < 3:
+                raise ValueError(
+                    f"MEDIA_ROOT={self.MEDIA_ROOT!r} is too shallow to be a dedicated "
+                    "upload directory. Uploaded files are served same-origin from "
+                    "this root, so a shared or system directory would put whatever "
+                    "else lives there inside the app's origin. Use an "
+                    "application-specific path at least two levels down, e.g. "
+                    "/var/lib/padhaanewala/media."
+                )
+            if self.MEDIA_MAX_BYTES < 1 or self.MEDIA_MAX_BYTES > 50 * 1024 * 1024:
+                raise ValueError(
+                    f"MEDIA_MAX_BYTES must be between 1 byte and 50 MiB, got "
+                    f"{self.MEDIA_MAX_BYTES}"
+                )
+            # The prefix is concatenated into `media.url` and compared against it
+            # to decide whether a row's file is ours to serve, so a prefix that
+            # is not a plain absolute path would make that test meaningless.
+            if (
+                not self.MEDIA_URL_PREFIX.startswith("/")
+                or self.MEDIA_URL_PREFIX.endswith("/")
+                or ".." in self.MEDIA_URL_PREFIX
+            ):
+                raise ValueError(
+                    f"MEDIA_URL_PREFIX must be an absolute path with no trailing "
+                    f"slash and no '..', got {self.MEDIA_URL_PREFIX!r}"
                 )
         return self
 

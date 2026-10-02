@@ -1,4 +1,8 @@
 import type { StudentProfile } from "@/lib/types";
+// Type-only, so nothing in the server-side client is pulled into the browser
+// bundle. These are the single source of truth for the college shapes; the
+// read-only list type is already imported from here by `CollegesSection`.
+import type { ApiCollegeDetail, ApiCollegeListItem } from "@/lib/api-server";
 
 export const API_BASE = (process.env.NEXT_PUBLIC_API_URL || "/api/v1").replace(/\/+$/, "");
 
@@ -884,6 +888,82 @@ export interface AdminBanner {
   is_active: boolean;
 }
 
+/** `GET /api/v1/locations/states` — 36 rows, no pagination. */
+export interface AdminState {
+  id: number;
+  name: string;
+  code: string;
+  is_union_territory: boolean;
+}
+
+export interface AdminDistrict {
+  id: number;
+  name: string;
+  code: string;
+  state_id: number;
+}
+
+export interface AdminUniversity {
+  id: number;
+  name: string;
+  state_id: number | null;
+  city: string | null;
+  type: string;
+}
+
+export interface AdminCourse {
+  id: number;
+  name: string;
+  degree: string | null;
+  category: string | null;
+}
+
+/**
+ * Page size for the admin catalogue walk.
+ *
+ * `GET /colleges`, `/universities` and `/courses` all cap `limit` with
+ * `Query(..., le=100)`. `CollegesSection` used to ask for `limit=1000`, which is
+ * a 422 — and because `useAdminResource` turns any thrown error into its error
+ * state, the panel rendered "Could not reach the colleges API" every time and
+ * nobody noticed, because a 422 from an over-large page size looks exactly like
+ * an unreachable server. This constant is held against the real `le=` bounds by
+ * `tests/page-size-contract.test.ts`.
+ */
+export const CATALOG_PAGE_SIZE = 100;
+
+/** Enough to cover the seeded catalogue with room to spare, and no more. */
+const MAX_CATALOG_ROWS = 5000;
+
+/**
+ * Walk a capped, `offset`-paginated list endpoint to completion.
+ *
+ * Deliberately **not** the failure-tolerant paged fetcher in `api-server.ts`,
+ * which resolves to `[]` on any non-2xx. That is right for a public page that
+ * must render regardless and wrong here: an admin list that silently empties
+ * itself looks like "the catalogue is empty" rather than "the request failed",
+ * and an admin who then creates a duplicate is the cost. A throw becomes the
+ * panel's error state, which says so.
+ */
+export async function fetchAllPages<T>(
+  path: string,
+  pageSize: number = CATALOG_PAGE_SIZE,
+  maxRows: number = MAX_CATALOG_ROWS,
+): Promise<T[]> {
+  const rows: T[] = [];
+  const separator = path.includes("?") ? "&" : "?";
+
+  for (;;) {
+    const page = await apiFetch<T[]>(`${path}${separator}limit=${pageSize}&offset=${rows.length}`);
+    if (!Array.isArray(page) || page.length === 0) break;
+    rows.push(...page);
+    // A short page means the end of the list.
+    if (page.length < pageSize) break;
+    if (rows.length >= maxRows) break;
+  }
+
+  return rows;
+}
+
 export interface AdminBlog {
   id: number;
   title: string;
@@ -952,6 +1032,57 @@ export const adminApi = {
   deleteBanner: (id: number) => apiFetch<void>(`/banners/${id}`, { method: "DELETE" }),
 
   blogs: (params = "") => apiFetch<AdminBlog[]>(`/blogs${params}`),
+
+  /* ------------------------------- Colleges ------------------------------- */
+
+  /**
+   * The whole catalogue, not the first page of it.
+   *
+   * `GET /colleges` caps `limit` at 100 and offers nothing else — no search, no
+   * admin-only variant, no `include_inactive`. Fetching 100 of 331 colleges
+   * would show an admin a third of the records and label the count 100, which
+   * reads as "this is everything". So this walks the offsets.
+   */
+  colleges: () => fetchAllPages<ApiCollegeListItem>("/colleges"),
+
+  college: (ref: string | number) => apiFetch<ApiCollegeDetail>(`/colleges/${ref}`),
+
+  /**
+   * `admin` or `super_admin` only.
+   *
+   * `college_id`, `slug` and `verification_status` are server-generated — the
+   * last is forced to `"unverified"` regardless of the body — so none of them
+   * appear in the payload type.
+   */
+  createCollege: (payload: Record<string, unknown>) =>
+    apiFetch<ApiCollegeDetail>("/colleges", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  /**
+   * `admin` or `super_admin`. The handler uses `model_dump(exclude_unset=True)`,
+   * so only the keys present in the body are applied and an explicit `null`
+   * clears a column. `lib/college-form.ts` decides which keys those are.
+   */
+  updateCollege: (ref: string | number, payload: Record<string, unknown>) =>
+    apiFetch<ApiCollegeDetail>(`/colleges/${ref}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+
+  /** `super_admin` only, and cascades six dependent tables. 204 on success. */
+  deleteCollege: (ref: string | number) =>
+    apiFetch<void>(`/colleges/${ref}`, { method: "DELETE" }),
+
+  states: () => apiFetch<AdminState[]>("/locations/states"),
+
+  districts: (stateId: number) =>
+    apiFetch<AdminDistrict[]>(`/locations/states/${stateId}/districts`),
+
+  universities: () => fetchAllPages<AdminUniversity>("/universities"),
+
+  courses: () => fetchAllPages<AdminCourse>("/courses"),
 
   notifications: () => apiFetch<AdminNotification[]>("/notifications"),
 

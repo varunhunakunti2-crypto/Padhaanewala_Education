@@ -76,15 +76,16 @@ export function AddButton({ label }: { label: string }) {
   );
 }
 
-export function IconAction({ title, onClick, className, children }: { title: string; onClick: () => void; className?: string; children: React.ReactNode }) {
+export function IconAction({ title, onClick, className, disabled, children }: { title: string; onClick: () => void; className?: string; disabled?: boolean; children: React.ReactNode }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       title={title}
       aria-label={title}
       className={cn(
-        "grid h-7 w-7 place-items-center rounded-lg text-slate-400 transition hover:bg-purple-50 hover:text-purple-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-500",
+        "grid h-7 w-7 place-items-center rounded-lg text-slate-400 transition hover:bg-purple-50 hover:text-purple-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-500 disabled:pointer-events-none disabled:opacity-40 disabled:hover:bg-transparent",
         className,
       )}
     >

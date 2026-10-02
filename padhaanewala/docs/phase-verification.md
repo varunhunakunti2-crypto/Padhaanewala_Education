@@ -107,7 +107,7 @@ Tables the spec implies that **do not exist at all**: `otp_records` (Phase 3), `
 |---|---|---|
 | **27** Admin foundation | 🟡 | Sidebar + header ✅. Reuses `/login` (fine). ⬜ `/admin/login`. ⬜ **breadcrumbs**. ⬜ **role-based menu visibility** — all 20 nav items render unconditionally, so a hypothetical Content Manager would see every module. |
 | **28** Admin dashboard | 🔶 | 4 of 6 stat types real. ⚠️ "Registered students **12,480**" is a literal. "Admission leads" = this browser's localStorage. "Top colleges by **views**" sorts bundled colleges by **reviewCount** and labels it views — actively misleading. ⬜ Enquiries today/week/month, recent activity, top searched courses. |
-| **29** College management | ⬜ | 🔶 `/admin/colleges` reads **bundled literals**, not the API. `/admin/colleges/[id]/edit` **route does not exist**. No fee editor, course assignment, gallery upload, FAQ mgmt, SEO editor, preview, draft/publish, rich-text editor. Backend `POST/PUT/DELETE /colleges` all exist, all unused. **Gate "add a college from admin without code" → NO.** |
+| **29** College management | 🟡 | **Core CRUD 🟢 since 29 Sep 2026.** `CollegesSection` reads the real API and has real create/edit/delete against `POST/PUT/DELETE /colleges`, a feature toggle, role gating, and lazy state/district/university/course lookups; the edit dialog prefetches the record because `exclude_unset=True` would let a blank form clear it. The old `?limit=1000` call 422'd on every load, which is why this read bundled literals. Still ⬜ `/admin/colleges/[id]/edit` as a deep route (it is a modal), fee editor, gallery upload, FAQ mgmt, SEO editor, preview, draft/publish, rich-text editor, and course editing after create (`CollegeUpdate` has no `courses`). **Gate "add a college from admin without code" → YES.** |
 | **30** Placement/NIRF/cutoff admin | ⬜ | No UI at all. 21 enrichment write endpoints exist; **zero are exposed**. |
 | **31** Course/scholarship/exam admin | 🔶 | All three read bundled literals; all create/edit/delete are **toast-only** (`primitives.tsx:66-77` — "demo action in this build"). |
 | **32** Blog CMS | 🔶 | Reads bundled `BLOG_POSTS`. No editor, no RTE, no category picker, no draft/publish, no scheduling, not even a status column. `adminApi.blogs` exists, never called. |
@@ -249,9 +249,9 @@ Three decisions explain most of the 🔶 verdicts. Fixing these is higher levera
 
 1. **`lib/content.ts:52-58` silently substitutes bundled literals on empty.** A green build with a completely dead backend renders a fully-populated, fully-fake site. Only `/colleges` surfaces the `source: "api" | "bundled"` flag (`app/colleges/page.tsx:22-26`); every other page discards it. **Worst offender:** an *empty but healthy* live collection is indistinguishable from an outage, so a legitimately empty table swaps in 16 bundled colleges.
 
-2. **The frontend was never wired to ~40% of the API.** Real and unused: the entire mock-test attempt engine, `POST /predictor`, `/saved-colleges`, `POST /reviews`, `PUT /users/me`, `PUT /users/me/password`, `PATCH /users/{id}`, lead notes/assign/follow-up, and all `POST/PUT/DELETE` on `/colleges` and `/enrichment/*`. Backend 165 tests pass; the browser sees none of it.
+2. **The frontend was never wired to ~40% of the API.** Real and unused: the entire mock-test attempt engine, `POST /predictor`, `/saved-colleges`, `POST /reviews`, `PUT /users/me`, `PUT /users/me/password`, `PATCH /users/{id}`, lead notes/assign/follow-up, and all `POST/PUT/DELETE` on `/enrichment/*`. Backend 165 tests pass; the browser sees none of it. *(Updated 29 Sep 2026: the college admin panel is now wired — see item 9 below. `PUT/DELETE /users/{id}` and the rest are still unwired.)*
 
-3. **Admin has no write path.** 20 panels, but only **6** call the API at all, and only **banners** has a full CRUD surface. `AddButton` and `RowActions` in `admin/primitives.tsx:66-113` are toast-only and are reused by **all 14** non-wired panels — which is why they *look* functional.
+3. **Admin has no write path.** 20 panels, but only **7** call the API at all, and only **banners** and **colleges** have a full CRUD surface. `AddButton` and `RowActions` in `admin/primitives.tsx` are toast-only and are reused by the remaining non-wired panels — which is why they *look* functional.
 
 ---
 
@@ -270,8 +270,8 @@ Three decisions explain most of the 🔶 verdicts. Fixing these is higher levera
 
 **Closing the biggest spec-vs-build gaps:**
 8. Phase 3 (OTP) — blocks registration quality and password reset entirely.
-9. Phase 29 (college admin) — without it, "add a college without code" is false.
+9. ~~Phase 29 (college admin) — without it, "add a college without code" is false.~~ **DONE 29 Sep 2026.** `CollegesSection` now has real create/edit/delete against `POST/PUT/DELETE /colleges`, with the feature toggle, role gating (admin may write, only `super_admin` may delete), and lazy state/district/university/course lookups. The edit dialog fetches `GET /colleges/{id}` before enabling Save, because `exclude_unset=True` plus an explicit `null` means a blank form would clear the record. Building it surfaced **BUG-11**: `accreditation_nba` was on the column and the response model but on neither request schema, so the form's NBA control returned 200 and wrote nothing.
 10. Phase 63 (cutoffs) — without it the predictor is dead regardless of frontend work.
-11. Phase 87 (CI) — 165 tests that nothing runs.
+11. Phase 87 (CI) — 165 tests that nothing runs. *(Partly done: the backend suite runs in CI, with a Redis service and a hard failure if the live limiter tests skip.)*
 
 **Documentation corrections:** `README.md` (remove `proctoring-service/`, `.github/workflows/`, the pgvector and Celery claims, the `asyncpg`/5432 connection string), `DESIGN.md` (documents Clay.com — delete or replace), and `docs/padhaanewala-phase-checklist.md` (superseded by this file).

@@ -223,6 +223,23 @@ services:
       # registration 503s and every authenticated request 403s. Set true for the
       # first deploy on a host, then set it back to false.
       RUN_SEEDS: ${RUN_SEEDS:-false}
+
+      # Uploaded images. Absolute because `read_only: true` below means the only
+      # writable path is an explicit mount — a relative root would resolve
+      # against the working directory inside the image's read-only layer and
+      # every upload would fail. `config.py` refuses to boot otherwise, because
+      # the failure this prevents is silent: a relative root in a *writable*
+      # container succeeds and then loses every file on the next rebuild.
+      MEDIA_ROOT: /var/lib/padhaanewala/media
+      MEDIA_MAX_BYTES: ${MEDIA_MAX_BYTES:-5242880}
+      # Baked into `media.url` when a row is written, and compared against to
+      # decide whether a file is ours to serve. Changing it orphans existing rows.
+      MEDIA_URL_PREFIX: /api/v1/media/files
+    volumes:
+      # Uploads survive `docker compose up --build` and image replacement, which
+      # is the whole reason this is a named volume rather than a bind mount: the
+      # VPS path is a deployment detail and a wrong one here is data loss.
+      - media_data:/var/lib/padhaanewala/media
     healthcheck:
       # The image already declares one; Compose honours whichever is set here,
       # and the image default is repeated so this file is readable on its own.
@@ -356,3 +373,7 @@ volumes:
   pgdata:
   caddy_data:
   caddy_config:
+  # Uploaded images. Named, not a bind mount: the volume follows the project
+  # name, so `docker compose -p <name>` must stay stable across deploys or the
+  # images are not found by the new project.
+  media_data:
