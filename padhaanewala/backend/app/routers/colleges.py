@@ -15,6 +15,8 @@ from app.models import (
     NIRFRanking,
     OtherRanking,
     PlacementRecord,
+    Review,
+    SavedCollege,
     SeatMatrix,
     User,
 )
@@ -360,16 +362,28 @@ def delete_college(
     if college is None:
         raise HTTPException(status_code=404, detail="College not found")
 
-    # 4.4/4.5 — the most destructive endpoint in the app. Record who did it,
-    # from where, and exactly how many dependent rows the cascade is about to
-    # destroy — after the commit that number is unrecoverable.
-    cascading = {
+    _refuse_if_detaching_would_collide(db, college)
+
+    # The most destructive endpoint in the app. Record who did it and from
+    # where, plus exactly what the delete does to dependent rows — because the
+    # two outcomes are no longer the same and conflating them hides the
+    # difference from whoever reads this log at 3am.
+    #
+    # `detached` rows survive with a NULL college_id (ON DELETE SET NULL, see
+    # migration b4e8f2a71d09); they are recoverable by re-linking. `destroyed`
+    # rows are genuinely gone, and that number is unrecoverable after the
+    # commit. Only NOT NULL config children still cascade.
+    detached = {
         "cutoffs": _count_for(db, Cutoff, college.id),
         "placements": _count_for(db, PlacementRecord, college.id),
         "nirf_rankings": _count_for(db, NIRFRanking, college.id),
         "other_rankings": _count_for(db, OtherRanking, college.id),
         "seat_matrix": _count_for(db, SeatMatrix, college.id),
+    }
+    destroyed = {
         "college_courses": _count_for(db, CollegeCourse, college.id),
+        "reviews": _count_for(db, Review, college.id),
+        "saved_colleges": _count_for(db, SavedCollege, college.id),
     }
     audit.record(
         db,
@@ -381,15 +395,70 @@ def delete_college(
         old_value={
             "slug": college.slug,
             "name": college.name,
-            "cascading_rows": cascading,
+            "detached_rows": detached,
+            "destroyed_rows": destroyed,
         },
     )
     db.delete(college)
     db.commit()
 
 
+def _refuse_if_detaching_would_collide(db: Session, college: College) -> None:
+    """Refuse a delete that would detach a cutoff onto an existing orphan.
+
+    `uq_cutoff_identity_coalesce` collapses a NULL college_id to the sentinel
+    0, so two cutoffs that were distinguished only by their college become
+    indistinguishable once both are detached. If an unattributed cutoff with the
+    same identity already exists, PostgreSQL raises UniqueViolation inside the
+    delete and the request 500s — correct in direction (nothing is lost) but
+    opaque to whoever clicked the button.
+
+    Refusing up front with a 409 turns that into an actionable answer. The
+    alternative of letting it through is not on the table: catching the error
+    and retrying would mean inventing one of the two rows, which is a data
+    decision this endpoint has no business making silently.
+    """
+    orphans = (
+        select(
+            func.coalesce(Cutoff.course_id, 0),
+            func.coalesce(Cutoff.branch, ""),
+            Cutoff.exam_name,
+            Cutoff.year,
+            func.coalesce(Cutoff.round, ""),
+            func.coalesce(Cutoff.quota, ""),
+            Cutoff.category,
+        )
+        .where(Cutoff.college_id.is_(None))
+        .intersect(
+            select(
+                func.coalesce(Cutoff.course_id, 0),
+                func.coalesce(Cutoff.branch, ""),
+                Cutoff.exam_name,
+                Cutoff.year,
+                func.coalesce(Cutoff.round, ""),
+                func.coalesce(Cutoff.quota, ""),
+                Cutoff.category,
+            ).where(Cutoff.college_id == college.id)
+        )
+    )
+    if db.execute(orphans.limit(1)).first() is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Cannot delete this college: detaching its cutoffs would collide "
+                "with cutoff rows that are already unattributed, because they "
+                "are identical apart from the college. Resolve those duplicate "
+                "cutoffs first."
+            ),
+        )
+
+
 def _count_for(db: Session, model, college_id: int) -> int:
-    """How many rows of `model` reference this college and would cascade away."""
+    """How many rows of `model` reference this college.
+
+    Whether those rows are destroyed or merely detached depends on the FK's
+    ON DELETE rule, so the caller decides which bucket to file the number in.
+    """
     return (
         db.scalar(
             select(func.count())

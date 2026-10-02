@@ -19,7 +19,20 @@ from fastapi.testclient import TestClient
 
 from app.database import SessionLocal
 from app.main import app
-from app.models import AuditLog, Blog, BlogCategory, Enquiry, Role, User
+from app.models import (
+    NIRFRanking,
+    AuditLog,
+    Blog,
+    BlogCategory,
+    College,
+    Cutoff,
+    Enquiry,
+    OtherRanking,
+    PlacementRecord,
+    Role,
+    SeatMatrix,
+    User,
+)
 
 client = TestClient(app)
 
@@ -371,8 +384,9 @@ def _first_college_id() -> int:
 def test_delete_college_is_audited_with_cascade_counts(admin):
     """The most destructive endpoint in the app, and it logged nothing.
 
-    The audit row records how many dependent rows the cascade is about to
-    destroy, because after the commit that number is unrecoverable.
+    The audit row separates the two outcomes, because they stopped being the
+    same: `detached_rows` survive with a NULL college_id and can be re-linked,
+    while `destroyed_rows` are gone for good once the commit lands.
     """
     college_id = _first_college_id()
     listing = client.get(f"/api/v1/colleges/{college_id}").json()
@@ -384,16 +398,170 @@ def test_delete_college_is_audited_with_cascade_counts(admin):
     assert entry is not None, "delete_college must write an audit row"
     assert entry.ip_address
     assert entry.old_value["slug"] == listing["slug"]
-    cascading = entry.old_value["cascading_rows"]
+
+    detached = entry.old_value["detached_rows"]
     for table in (
         "cutoffs",
         "placements",
         "nirf_rankings",
         "other_rankings",
         "seat_matrix",
-        "college_courses",
     ):
-        assert table in cascading, f"the record must say how many {table} rows were lost"
+        assert table in detached, f"the record must say how many {table} rows were detached"
+
+    destroyed = entry.old_value["destroyed_rows"]
+    for table in ("college_courses", "reviews", "saved_colleges"):
+        assert table in destroyed, f"the record must say how many {table} rows were lost"
+
+    assert "cascading_rows" not in entry.old_value, (
+        "the old single bucket claimed every dependent row was destroyed, "
+        "which stopped being true in b4e8f2a71d09 and would now be a lie"
+    )
+
+
+def test_delete_college_preserves_historical_cutoffs_and_rankings(admin):
+    """Deleting a college must not delete a decade of published rank history.
+
+    All eight enrichment FKs were ON DELETE CASCADE while nullable, so
+    `DELETE FROM colleges` destroyed every cutoff, NIRF rank, other-ranking,
+    placement and seat-matrix row that referenced it. An audit log recording
+    the count is not a backup: the rows were gone.
+
+    The regression is about the *survival* of the data, which no test asserted
+    before. It writes one row of each kind against a throwaway college, deletes
+    the college, and requires every row to still be present with a NULL
+    college_id.
+    """
+    stamp = uuid.uuid4().hex[:8]
+    college = client.post(
+        "/api/v1/colleges",
+        json={
+            "name": f"History Probe {stamp}",
+            "slug": f"history-probe-{stamp}",
+            "state_id": 1,
+        },
+        headers=_headers(admin),
+    )
+    assert college.status_code == 201, college.text
+    college_id = college.json()["id"]
+
+    seeded: dict[str, int] = {}
+    # Unique per run: a fixed identity would collide with an orphan left by any
+    # earlier run and the delete would be (correctly) refused with a 409.
+    exam_name = f"JEE-{uuid.uuid4().hex[:8]}"
+    with SessionLocal() as db:
+        cutoff = Cutoff(
+            college_id=college_id,
+            exam_name=exam_name,
+            year=2019,
+            category="General",
+            opening_rank=1000,
+            closing_rank=5000,
+        )
+        nirf = NIRFRanking(college_id=college_id, category="University", year=2019, rank=42)
+        other = OtherRanking(college_id=college_id, ranking_body="NIRF", category="University")
+        placement = PlacementRecord(college_id=college_id, academic_year="2019-20")
+        seat = SeatMatrix(college_id=college_id, year=2019)
+        db.add_all([cutoff, nirf, other, placement, seat])
+        db.commit()
+        seeded = {
+            "cutoffs": cutoff.id,
+            "nirf_rankings": nirf.id,
+            "other_rankings": other.id,
+            "placement_records": placement.id,
+            "seat_matrix": seat.id,
+        }
+
+    response = client.delete(f"/api/v1/colleges/{college_id}", headers=_headers(admin))
+    assert response.status_code == 204, response.text
+
+    models = {
+        "cutoffs": Cutoff,
+        "nirf_rankings": NIRFRanking,
+        "other_rankings": OtherRanking,
+        "placement_records": PlacementRecord,
+        "seat_matrix": SeatMatrix,
+    }
+    try:
+        with SessionLocal() as db:
+            assert db.get(College, college_id) is None, "the college itself must be gone"
+            for table, model in models.items():
+                row = db.get(model, seeded[table])
+                assert row is not None, (
+                    f"{table} row {seeded[table]} was destroyed by the college "
+                    "delete; a published historical fact must outlive the college "
+                    "record"
+                )
+                assert row.college_id is None, f"{table} row should be detached, not rewritten"
+    finally:
+        # The rows now survive the delete, which is the point — so this test owns
+        # them and has to remove them itself. Leaving them would make the next
+        # run collide on `uq_cutoff_identity_coalesce` and fail somewhere
+        # unrelated to the assertion above.
+        with SessionLocal() as db:
+            for table, model in models.items():
+                row = db.get(model, seeded[table])
+                if row is not None:
+                    db.delete(row)
+            db.commit()
+
+
+def test_delete_college_refuses_to_detach_onto_a_duplicate_orphan(admin):
+    """A colliding detach must be refused, not left to 500 inside PostgreSQL.
+
+    `uq_cutoff_identity_coalesce` maps a NULL college_id to the sentinel 0, so
+    detaching a cutoff onto an already-unattributed row of the same identity is
+    a unique violation. Surfacing that as a 500 would send whoever clicked
+    delete looking at a database error instead of at the duplicate cutoffs.
+    """
+    stamp = uuid.uuid4().hex[:8]
+    college = client.post(
+        "/api/v1/colleges",
+        json={
+            "name": f"Collision Probe {stamp}",
+            "slug": f"collision-probe-{stamp}",
+            "state_id": 1,
+        },
+        headers=_headers(admin),
+    )
+    assert college.status_code == 201, college.text
+    college_id = college.json()["id"]
+
+    identity = {
+        "exam_name": f"NEET {stamp}",
+        "year": 2020,
+        "category": "General",
+    }
+
+    orphan_id: int | None = None
+    with SessionLocal() as db:
+        # An unattributed row that a detach would collide with.
+        orphan = Cutoff(college_id=None, **identity)
+        owned = Cutoff(college_id=college_id, **identity)
+        db.add_all([orphan, owned])
+        db.commit()
+        orphan_id = orphan.id
+
+    try:
+        response = client.delete(
+            f"/api/v1/colleges/{college_id}", headers=_headers(admin)
+        )
+        assert response.status_code == 409, response.text
+        assert "unattributed" in response.json()["detail"]
+
+        with SessionLocal() as db:
+            assert db.get(College, college_id) is not None, (
+                "a refused delete must leave the college in place"
+            )
+    finally:
+        with SessionLocal() as db:
+            db.query(Cutoff).filter(
+                Cutoff.exam_name == identity["exam_name"]
+            ).delete(synchronize_session=False)
+            college_row = db.get(College, college_id)
+            if college_row is not None:
+                db.delete(college_row)
+            db.commit()
 
 
 def test_delete_college_still_requires_super_admin():

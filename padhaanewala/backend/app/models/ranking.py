@@ -14,8 +14,10 @@ class NIRFRanking(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # SET NULL, not CASCADE: see Cutoff.college_id. A published NIRF rank is a
+    # historical fact about the world, not a child of the college row.
     college_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("colleges.id", ondelete="CASCADE"), nullable=True, index=True
+        Integer, ForeignKey("colleges.id", ondelete="SET NULL"), nullable=True, index=True
     )
     category: Mapped[str] = mapped_column(String(50), index=True)
     year: Mapped[int] = mapped_column(Integer, index=True)
@@ -33,7 +35,7 @@ class OtherRanking(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     college_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("colleges.id", ondelete="CASCADE"), nullable=True, index=True
+        Integer, ForeignKey("colleges.id", ondelete="SET NULL"), nullable=True, index=True
     )
     ranking_body: Mapped[str] = mapped_column(String(100), index=True)
     category: Mapped[str | None] = mapped_column(String(50), nullable=True)

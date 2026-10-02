@@ -10,11 +10,12 @@ class SeatMatrix(Base):
     __tablename__ = "seat_matrix"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # SET NULL, not CASCADE: see Cutoff.college_id.
     college_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("colleges.id", ondelete="CASCADE"), nullable=True, index=True
+        Integer, ForeignKey("colleges.id", ondelete="SET NULL"), nullable=True, index=True
     )
     course_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("courses.id", ondelete="CASCADE"), nullable=True, index=True
+        Integer, ForeignKey("courses.id", ondelete="SET NULL"), nullable=True, index=True
     )
     branch: Mapped[str | None] = mapped_column(String(100), nullable=True)
     exam: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)

@@ -50,11 +50,17 @@ class Cutoff(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # SET NULL, not CASCADE. This row is a published historical fact (a real
+    # cutoff from a real exam year) and it outlives any single college record:
+    # correcting a college's name, or an admin deleting a duplicate entry, must
+    # not delete a decade of rank history with it. Detaching keeps the fact and
+    # marks it unattributed, which is recoverable; a cascade makes it
+    # unrecoverable. Enquiry.college_id already works this way.
     college_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("colleges.id", ondelete="CASCADE"), nullable=True, index=True
+        Integer, ForeignKey("colleges.id", ondelete="SET NULL"), nullable=True, index=True
     )
     course_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("courses.id", ondelete="CASCADE"), nullable=True, index=True
+        Integer, ForeignKey("courses.id", ondelete="SET NULL"), nullable=True, index=True
     )
     branch: Mapped[str | None] = mapped_column(String(100), nullable=True)
     exam_name: Mapped[str] = mapped_column(String(50), index=True)

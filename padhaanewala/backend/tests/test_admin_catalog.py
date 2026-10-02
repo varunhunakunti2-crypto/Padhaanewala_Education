@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from app.database import SessionLocal
 from app.main import app
-from app.models import College, CollegeCourse, Course, Role, User
+from app.models import College, CollegeCourse, Course, Cutoff, Role, User
 
 client = TestClient(app)
 
@@ -81,6 +81,28 @@ def _cleanup_college(college_id: int) -> None:
             db.execute(
                 delete(CollegeCourse).where(CollegeCourse.college_id == college_id)
             )
+
+        # The five enrichment tables are ON DELETE SET NULL, not CASCADE
+        # (migration b4e8f2a71d09). Deleting the college now *detaches* its
+        # historical rows instead of destroying them, so a cleanup that relies
+        # on the old cascade silently left orphans behind — and once an orphan
+        # exists, the next run's identical cutoff collides with it on
+        # `uq_cutoff_identity_coalesce` and the suite fails far from the cause.
+        # A test fixture owns the rows it creates, so it deletes them itself.
+        from app.models import NIRFRanking, OtherRanking, PlacementRecord, SeatMatrix
+
+        db.execute(delete(Cutoff).where(Cutoff.college_id == college_id))
+        db.execute(
+            delete(PlacementRecord).where(PlacementRecord.college_id == college_id)
+        )
+        db.execute(
+            delete(SeatMatrix).where(SeatMatrix.college_id == college_id)
+        )
+        db.execute(delete(NIRFRanking).where(NIRFRanking.college_id == college_id))
+        db.execute(
+            delete(OtherRanking).where(OtherRanking.college_id == college_id)
+        )
+
         college = db.get(College, college_id)
         if college:
             db.delete(college)
