@@ -1,21 +1,37 @@
 # Padhaanewala — Security & Deployment Phase Tracker
 
-> **Status as of 29 September 2026 (final re-check, later pass)**
-> Branch `main` · HEAD `96589ab` (work-tree changes since)
-> **Phases 0, 1, 2, 3, 5, 6 complete and verified. Phase 7 is materially built
-> (4 of 5 sub-tasks, each verified by running it) and its last gate — the
-> frontend auth failure — is now fixed (BUG-08). Phases 8 and 9 not started
-> (Phase 2 verified the full `prod` stack runs and is healthy; the deploy itself
-> has not been pushed to a server).**
-> **The whole bug register is now clear: BUG-01 through BUG-09 all resolved.
-> BUG-05, BUG-06 and BUG-07 were closed by this pass, not before it; BUG-08 and
-> BUG-09 were closed in the pass before. BUG-04 is a testing-environment
-> caveat, not an application defect.**
-> **Backend suite re-measured: 440 passed, 1 skipped, across two consecutive
-> full runs and against a schema migrated from empty. The 1 skip is pre-existing
-> and intentional (`test_rbac_rules.py`, a legitimate demotion when another
-> super_admin exists). Frontend: 50 passed (3 files), typecheck/lint/build
-> clean. The 11 live Redis tests ran, not skipped.**
+> **Status as of 2 October 2026 (re-verification pass)**
+> Branch `main` · HEAD `bd73521`
+> **Phases 0, 1, 2, 3, 5, 6 complete and verified. Phase 7 materially built.
+> Phase 8 deploy not started (owned elsewhere). Phase 9 DPDP scaffolding merged;
+> the legal appointments and the statutory clocks it serves are not code and are
+> still outstanding.**
+>
+> **Test counts re-measured today: backend 502 passed, 1 skipped (pre-existing
+> and intentional — `test_rbac_rules.py`, a legitimate demotion when another
+> super_admin exists). Frontend 105 passed (5 files). Typecheck, lint and
+> `next build` all clean. The 11 live Redis tests ran, not skipped.**
+>
+> **Four entries in this tracker were stale and are corrected below.** Each was
+> checked against the source, not against the tick-box:
+>
+> | Entry | Was recorded as | Actually |
+> |---|---|---|
+> | 4.3 async Redis | "synchronous client blocks the event loop" | **Already fixed.** `redis.asyncio` throughout (`app/services/redis_client.py`), awaited at `app/middleware/ratelimit.py:148` |
+> | non-MCQ always graded incorrect | "essays/numerics always score zero" | **Was never true.** `numeric` is auto-graded with tolerance (`mock_tests.py:267`); `essay` returns `None` → *pending review*, not incorrect (`:201-208`). No short/long-answer types exist. |
+> | BUG-05 | open | Closed in the 29 Sep pass, and now structurally guarded: `tests/page-size-contract.test.ts` reads the Python `le=` bounds and fails if the frontend's declared page sizes exceed them |
+> | BUG-09 | open | Closed in the 28 Sep pass |
+>
+> **One genuine defect was found and fixed today**, and it was not in the
+> register: all eight enrichment foreign keys (cutoff, NIRF/other rankings,
+> placements, seat matrix × college and course) were `ON DELETE CASCADE` while
+> nullable, so deleting one college destroyed a decade of published rank history
+> via the database. Now `ON DELETE SET NULL` (migration `b4e8f2a71d09`), with a
+> 409 rather than a 500 when a detach would collide with an already-unattributed
+> cutoff. See Phase 4.
+>
+> **The bug register is clear: BUG-01 through BUG-09 all resolved.** BUG-04 is a
+> testing-environment caveat, not an application defect.
 
 This document is the working tracker for taking Padhaanewala from a local
 development checkout to a publicly deployable, security-audited product.
@@ -818,13 +834,15 @@ Targeted specifically at preventing personal data reaching unauthorised parties.
       now 422s (the model is `extra="forbid"`) — and the server derives it from
       the connection, honouring `X-Forwarded-For` only when `TRUSTED_PROXY_HOPS`
       declares a real proxy topology.
-- [ ] **4.2** **Rate limiter fails closed on `/auth`.** It currently does
-      `except redis.RedisError: pass`, so a Redis hiccup removes throttling
-      from the login path entirely. That is precisely the moment an attacker
-      wants.
-- [ ] **4.3** **Async Redis client.** `ratelimit.py` uses the synchronous
-      `redis.Redis` inside an async middleware, blocking the event loop on a
-      network round trip for every write request.
+- [x] **4.2** **Rate limiter fails closed on `/auth`.** `FAIL_CLOSED_NAMESPACES =
+      frozenset({"auth"})` at `app/middleware/ratelimit.py:47`, enforced at
+      `:157-166`. *Re-verified 2 Oct 2026: the description above was stale; this
+      was already implemented and only the tick-box was missing.*
+- [x] **4.3** **Async Redis client.** `redis.asyncio` throughout, constructed
+      once in `app/services/redis_client.py:41` and awaited at
+      `app/middleware/ratelimit.py:148`. No synchronous `redis.Redis` remains
+      anywhere in `app/`. *Re-verified 2 Oct 2026: the description above was
+      stale and described a bug that no longer existed.*
 - [x] **4.4** **Audit every mutation (partial).** College delete now writes an
       audit row with per-table cascade counts; blog update/delete, review
       moderation and password change were already audited. Remaining gaps:
@@ -836,29 +854,94 @@ Targeted specifically at preventing personal data reaching unauthorised parties.
       mutates. A dedicated `POST /blogs/{ref}/view` owns the counter, is a
       single atomic `UPDATE`, answers 204 for unknown slugs, and cannot count an
       unpublished blog.
-- [ ] **4.7** **Harden `/api/ai`.** Currently unauthenticated, unthrottled, with
-      no input-length cap and no `AbortSignal` timeout. Two risks: direct cost
-      exhaustion, and an open prompt-injection relay into the LLM.
+- [x] **4.7** **Harden `/api/ai`.** 500-character cap, 12 requests/minute, and a
+      15s `AbortController` timeout in `frontend/app/api/ai/route.ts`. *Re-verified
+      2 Oct 2026: the description above was stale; this was already implemented.*
 - [x] **4.8** **Rate-limit or authenticate `/api/stats`** (`/api/v1/stats/catalog`
       is now a registered throttle target).
+- [x] **4.9** **CASCADE on nullable enrichment foreign keys (found 2 Oct 2026, not
+      previously in this register).** `cutoffs`, `nirf_rankings`,
+      `other_rankings`, `placement_records` and `seat_matrix` all declared
+      `college_id` (and, for three of them, `course_id`) as nullable *and*
+      `ondelete="CASCADE"`. Because the ORM holds no `back_populates` for those
+      relationships, the database cascade was the only deletion path: deleting a
+      single college silently destroyed every historical cutoff, rank, placement
+      and seat row referencing it, with no way back. An audit row recording the
+      count is not a backup. Migration `b4e8f2a71d09` switches all eight to
+      `ON DELETE SET NULL`, matching `Enquiry.college_id`. `delete_college` now
+      refuses with a **409** when a detach would collide with an
+      already-unattributed cutoff on `uq_cutoff_identity_coalesce`, rather than
+      letting PostgreSQL raise `UniqueViolation` as a 500. Pinned by
+      `tests/test_data_integrity.py::test_delete_college_preserves_historical_cutoffs_and_rankings`.
+- [x] **4.10** **N+1 in the audit list and the enrichment serializers (found
+      2 Oct 2026).** `_course_name` cost one SELECT per row, so a catalogue page
+      at the routers' 500-row cap could issue 501 queries; `list_audit_logs` did
+      `db.get(User, ...)` per row. Both batched. Eager-loading `AuditLog.user`
+      alone was **not** sufficient — `User.display_name` is a property that reads
+      `self.student_profile`, so the N+1 moved a level down (25 rows written by
+      25 different actors: 53 SELECTs before, 9 after) until that was
+      eager-loaded too. Pinned by `tests/test_query_counts.py`, which asserts the
+      query count does not *scale* with row count rather than pinning a budget.
 
 ## Also outstanding from the original audit
 
-- [ ] `submit_attempt` does not enforce exam expiry — a student can let the clock
-      run out and still receive a graded result.
-- [ ] Non-MCQ questions are always graded incorrect.
-- [ ] `cutoffs` has an 8-column unique constraint containing 4 **nullable**
-      columns. PostgreSQL treats NULLs as distinct, so the constraint never fires
-      in the case that matters and duplicate cutoffs are possible — which then
-      skews the predictor's average.
-- [ ] `CASCADE` on a **nullable** `college_id` across five enrichment models
-      means deleting one college silently destroys a decade of cutoff, ranking
-      and placement data. *(Now audited: `delete_college` records per-table
-      cascade counts and the source IP before the commit. The data-destruction
-      semantics are unchanged and remain `super_admin`-only.)*
-- [ ] `CollegeDetailResponse` is constructed in four separate places and has
-      already drifted in risk.
-- [ ] N+1 queries in the audit log list and in every enrichment serializer.
+- [x] `submit_attempt` did not enforce exam expiry. `_finalize_if_expired()` at
+      `app/routers/mock_tests.py:163`, called on submit at `:764`. *Re-verified
+      2 Oct 2026: already implemented.*
+- [x] Non-MCQ questions are always graded incorrect. **This claim was false and
+      has been refuted against the source.** There are no short/long-answer
+      types; `QuestionType` is `mcq | numeric | essay` (`app/question_types.py:50`,
+      with a matching DB CHECK constraint). `numeric` is auto-graded with
+      `Decimal` parsing and an absolute tolerance (`mock_tests.py:267-311`).
+      `essay` returns `None`, which `_grade_attempt` counts as *pending review*
+      (`:201-208, :221`) and excludes from both `incorrect` and `unanswered`.
+      Pinned by `test_ungradable_answers_are_not_counted_incorrect` and
+      `test_essay_is_routed_to_manual_review`.
+
+  A real gap does sit behind the false claim, and is **not** closed: there is no
+  manual-grading write endpoint, so `pending_review_count` is recorded but
+  nothing ever flips an essay from `None` to a verdict. Essays are permanently
+  unscored.
+- [x] `cutoffs` had an 8-column unique constraint containing 5 **nullable**
+      columns. PostgreSQL treats NULLs as distinct, so it never fired in the case
+      that mattered and duplicate cutoffs were possible — which then skewed the
+      predictor's average. Replaced by the functional index
+      `uq_cutoff_identity_coalesce` (migration `9f3c2a7e8d21`), which collapses
+      NULL to unreachable sentinels. The legacy constraint is retained for
+      downgrade compatibility.
+- [x] `CASCADE` on a **nullable** `college_id` across five enrichment models
+      meant deleting one college silently destroyed a decade of cutoff, ranking
+      and placement data. **Fixed 2 Oct 2026** — see sub-task 4.9 above. The
+      auditing added earlier was mitigation, not a fix; the rows were still
+      destroyed.
+- [x] `CollegeDetailResponse` was constructed in four places and had drifted.
+      **Two** places, not four: `get_college` assembled `courses` as unvalidated
+      dicts while `_get_detail` used `CollegeCourseResponse`. Fixed 2 Oct 2026 —
+      `_get_detail` is now the only builder and GET/POST/PUT all route through
+      it, pinned by `test_every_college_detail_path_returns_the_same_shape`.
+- [x] N+1 queries in the audit log list and in every enrichment serializer.
+      **Fixed 2 Oct 2026** — see sub-task 4.10 above.
+
+## Two frontend defects found in the same pass (2 Oct 2026)
+
+Neither was in the register; both were in code that had no tests.
+
+- `deriveAdmissionStatus` in `frontend/lib/mappers.ts` was a stub that ignored its
+  argument and returned `"upcoming"` unconditionally, via a line assigning
+  `detail.courses.length ? null : null`. That value is what the college card
+  renders and what `frontend/lib/data/index.ts:43` filters on, so **every college
+  claimed to have upcoming admissions, and filtering the list by "open" or
+  "closed" returned nothing at all.** It now derives from the published
+  application windows, with three states: a window that has not opened yet is
+  `"upcoming"`, not `"closed"`.
+  *Known limit, documented at the function:* `mapCollegeListItem` passes no
+  admissions because `/colleges` returns a narrower projection, so **list views
+  still report `"upcoming"` for every college** and the status filter on a list
+  page cannot narrow on this value until that projection carries the dates.
+  Closing that needs a backend change to `CollegeListItemResponse`.
+- `frontend/lib/mappers.ts` had **no tests at all** — sixteen exported pure
+  functions. `tests/mappers.test.ts` is the first coverage and concentrates on
+  the functions that make decisions rather than the ones that copy fields.
 
 ---
 
@@ -1634,7 +1717,7 @@ what remains is unbuilt work, not unfixed defects.
 | 1 | P0 security | 22 / 22 | **DONE** |
 | 2 | Containerisation | 6 / 6 | **DONE** — images built, stack driven, 4 latent defects found by executing it |
 | 3 | Session security | 8 / 8 | **DONE** — BUG-01 fixed backend (ledger, rotation, reuse, logout, HttpOnly cookie) and frontend (access token memory-only, cross-tab refresh); BUG-03 fixed |
-| 4 | Data leakage | 5 / 8 | **partial — 4.1, 4.4, 4.5, 4.6, 4.8 done; BUG-02 FIXED** |
+| 4 | Data leakage | 8 / 8 | **COMPLETE (2 Oct 2026)** — 4.2 and 4.3 were already implemented and only the tick-boxes were missing; 4.9 (CASCADE destroying historical rows) and 4.10 (N+1) were real and are fixed; the "non-MCQ always incorrect" claim was refuted against the source. BUG-02 FIXED |
 | 5 | Headers + CSP | 5 / 5 | **DONE** — CSP + full header stack in `proxy.ts`, per-path Permissions-Policy, ISR preserved, real error reporting; see Phase 5 |
 | 6 | Beta scope | 7 / 7 | **DONE** — manifest, live counts, contact identity, submittable funnel, dark-mode dashboard, Grievance Officer guard, DPDP notice |
 | 7 | CI gate | 6 / 6 | **DONE** — frontend job (typecheck/lint/test/build on Node 24), npm + pip audit gating and clean, env-example 9/9, nav-manifest 21/21, Vitest suite 50 tests; BUG-08 found by that suite and fixed. Backend job now also runs a real Redis so the rate limiter's atomicity is covered in CI, and fails the job if those tests skip |
