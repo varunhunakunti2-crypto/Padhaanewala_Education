@@ -19,7 +19,17 @@ from fastapi.testclient import TestClient
 
 from app.database import SessionLocal
 from app.main import app
-from app.models import AuditLog, Blog, BlogCategory, Enquiry, Role, User
+from app.models import (
+    AuditLog,
+    Blog,
+    BlogCategory,
+    College,
+    CollegeCourse,
+    Enquiry,
+    Fee,
+    Role,
+    User,
+)
 
 client = TestClient(app)
 
@@ -322,6 +332,229 @@ def test_rejected_blog_update_does_not_leave_a_phantom_audit_row(admin):
     assert _audit_count("update_blog") == before, (
         "the refused update must not have written an audit row"
     )
+
+
+# --------------------------------------------------------------------------- #
+# 4.4/4.5 - the colleges asymmetry: `delete` was audited, `create`/`update` were not
+# --------------------------------------------------------------------------- #
+
+
+def _college_payload(**overrides) -> dict:
+    payload = {
+        "name": f"Audited College {uuid.uuid4().hex[:8]}",
+        "college_type": "Institute",
+        "ownership": "Private",
+    }
+    payload.update(overrides)
+    return payload
+
+
+def _create_college_via_api(admin: dict, **overrides) -> int:
+    response = client.post(
+        "/api/v1/colleges", json=_college_payload(**overrides), headers=_headers(admin)
+    )
+    assert response.status_code == 201, response.text
+    return response.json()["id"]
+
+
+def _drop_college(college_id: int) -> None:
+    """Remove a college and its join rows directly.
+
+    `DELETE /colleges/{ref}` is `super_admin`-only and audited; going through the
+    API would add an audit row per test and couple cleanup to the route under
+    test.
+    """
+    with SessionLocal() as db:
+        cc_ids = list(
+            db.query(CollegeCourse.id).filter(CollegeCourse.college_id == college_id).all()
+        )
+        if cc_ids:
+            db.query(Fee).filter(Fee.college_course_id.in_(cc_ids)).delete(
+                synchronize_session=False
+            )
+            db.query(CollegeCourse).filter(CollegeCourse.college_id == college_id).delete(
+                synchronize_session=False
+            )
+        db.query(College).filter(College.id == college_id).delete(
+            synchronize_session=False
+        )
+        db.commit()
+
+
+def test_college_create_is_audited_with_an_ip_address(admin):
+    """The trail recorded who deleted a college but not who created one.
+
+    `delete_college` wrote a row; `create_college` and `update_college` wrote
+    nothing at all. Since the college admin form was read-only that was latent,
+    but it is the asymmetry that matters: "who added this college" was
+    unanswerable while "who removed it" was not.
+    """
+    college_id = _create_college_via_api(admin)
+    try:
+        entry = _latest_audit("create_college")
+        assert entry is not None, "create_college must write an audit row"
+        assert entry.entity_type == "college"
+        assert entry.entity_id == college_id
+        assert entry.user_id == admin["id"]
+        assert entry.ip_address, "the helper stamps the IP; an inline row leaves it NULL"
+        assert entry.new_value["name"].startswith("Audited College")
+    finally:
+        _drop_college(college_id)
+
+
+def test_college_update_audit_records_the_before_and_after(admin):
+    """Not just "an update happened" — which field moved, and from what to what.
+
+    An audit row that records only the action cannot answer "what did this
+    admin actually change", which is the only question anyone reads the trail
+    to ask.
+    """
+    college_id = _create_college_via_api(
+        admin, overview="Original overview.", established_year=1994
+    )
+    try:
+        response = client.put(
+            f"/api/v1/colleges/{college_id}",
+            json={"overview": "Rewritten overview.", "established_year": 2001},
+            headers=_headers(admin),
+        )
+        assert response.status_code == 200, response.text
+
+        entry = _latest_audit("update_college")
+        assert entry is not None, "update_college must write an audit row"
+        assert entry.entity_id == college_id
+        assert entry.user_id == admin["id"]
+        assert entry.ip_address
+        assert entry.old_value["overview"] == "Original overview."
+        assert entry.new_value["overview"] == "Rewritten overview."
+        assert entry.old_value["established_year"] == 1994
+        assert entry.new_value["established_year"] == 2001
+    finally:
+        _drop_college(college_id)
+
+
+def test_college_update_audit_omits_untouched_fields(admin):
+    """`exclude_unset` is load-bearing for the audit, not just for the update.
+
+    The admin edit form prefills from the record and sends the whole thing. If
+    every column were logged, each row would be a full-object diff and a
+    reviewer would have to diff it by eye to find the one field that moved —
+    which is the same "reported everything, so it says nothing" failure as
+    BUG-11, in the read direction instead of the write one.
+    """
+    college_id = _create_college_via_api(
+        admin, overview="Original overview.", website="https://example.invalid"
+    )
+    try:
+        client.put(
+            f"/api/v1/colleges/{college_id}",
+            json={"overview": "Only the overview moved.", "website": "https://example.invalid"},
+            headers=_headers(admin),
+        )
+        entry = _latest_audit("update_college")
+        assert entry is not None
+        assert set(entry.old_value) == {"overview"}, (
+            "a field sent unchanged is not a change and must not appear in the trail"
+        )
+    finally:
+        _drop_college(college_id)
+
+
+def test_college_update_that_changes_nothing_writes_no_audit_row(admin):
+    """A no-op re-save must not pad the trail.
+
+    `exclude_unset` plus a value comparison means an unchanged PUT is silent.
+    Logging it anyway would fill the audit log with empty diffs, and a log that
+    is mostly noise is a log nobody reads.
+    """
+    college_id = _create_college_via_api(admin, overview="Stable text.")
+    try:
+        before = _audit_count("update_college")
+        response = client.put(
+            f"/api/v1/colleges/{college_id}",
+            json={"overview": "Stable text."},
+            headers=_headers(admin),
+        )
+        assert response.status_code == 200, response.text
+        assert _audit_count("update_college") == before
+    finally:
+        _drop_college(college_id)
+
+
+def test_rejected_college_update_does_not_leave_a_phantom_audit_row(admin):
+    """The duplicate-name check raises, so no change happened and none is logged.
+
+    The audit row is written after that check on purpose. `update_blog` builds
+    its row *before* validating and relies on the session rollback to discard
+    it; relying on a rollback is one careless `db.commit()` away from writing a
+    record of a change that never occurred.
+    """
+    first = _create_college_via_api(admin)
+    second = _create_college_via_api(admin)
+    try:
+        first_name = client.get(f"/api/v1/colleges/{first}").json()["name"]
+        before = _audit_count("update_college")
+
+        refused = client.put(
+            f"/api/v1/colleges/{second}",
+            json={"name": first_name},
+            headers=_headers(admin),
+        )
+        assert refused.status_code == 400, refused.text
+        assert _audit_count("update_college") == before, (
+            "the refused update must not have written an audit row"
+        )
+    finally:
+        _drop_college(first)
+        _drop_college(second)
+
+
+def test_college_audit_survives_decimal_and_datetime_payloads(admin):
+    """`lat`/`lng` are `Decimal` and `AuditLog` is a plain `JSON` column.
+
+    SQLAlchemy serialises with `json.dumps`, which has no `Decimal`. So the
+    obvious implementation — log the payload you were handed — raises a
+    `TypeError` from inside the flush, and the admin's save fails with a 500
+    that looks like an application fault rather than an audit fault. The helper
+    coerces instead, which is what makes its "never raises" docstring true.
+    """
+    college_id = _create_college_via_api(admin, overview="Decimal check.")
+    try:
+        response = client.put(
+            f"/api/v1/colleges/{college_id}",
+            json={"overview": "Moved.", "lat": "12.9716", "lng": "77.5946"},
+            headers=_headers(admin),
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["lat"] is not None
+
+        entry = _latest_audit("update_college")
+        assert entry is not None, "the flush must not have raised before the audit landed"
+        assert entry.new_value["lat"] == pytest.approx(12.9716)
+        assert entry.new_value["lng"] == pytest.approx(77.5946)
+        # And it must survive a round trip through the column, not merely be
+        # accepted in Python.
+        with SessionLocal() as db:
+            reloaded = db.get(AuditLog, entry.id)
+            assert reloaded.new_value["lat"] == pytest.approx(12.9716)
+    finally:
+        _drop_college(college_id)
+
+
+def test_college_create_audit_round_trips_a_decimal(admin):
+    """Same coercion on the create path, where the payload is logged whole."""
+    college_id = _create_college_via_api(
+        admin, overview="Create decimal.", lat="19.0760", lng="72.8777"
+    )
+    try:
+        entry = _latest_audit("create_college")
+        assert entry is not None
+        with SessionLocal() as db:
+            reloaded = db.get(AuditLog, entry.id)
+            assert reloaded.new_value["lat"] == pytest.approx(19.0760)
+            assert reloaded.new_value["lng"] == pytest.approx(72.8777)
+    finally:
+        _drop_college(college_id)
 
 
 def _audit_count(action: str) -> int:
