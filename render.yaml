@@ -121,8 +121,24 @@ services:
       - key: TRUSTED_PROXY_HOPS
         value: "1"
 
+      # Injected from the `databases:` block below. Render resolves the
+      # connection string itself, so the credential never has to be pasted into
+      # this file or typed into the dashboard.
       - key: DATABASE_URL
-        sync: false
+        fromDatabase:
+          name: padhaanewala-db
+          property: connectionString
+
+      # 5/5, overriding the config.py defaults of 20/20. The free Postgres
+      # instance caps concurrent connections well below 40, and blowing past it
+      # does not fail at startup -- it fails per request with `too many
+      # connections for role`, which looks like random 500s rather than a
+      # misconfiguration. There is one API instance here, so 10 is ample.
+      - key: DB_POOL_SIZE
+        value: "5"
+
+      - key: DB_MAX_OVERFLOW
+        value: "5"
 
       # false, not true: no Redis on the free tier, and a missing Redis fails
       # the auth namespace CLOSED, which 503s every login and refresh.
@@ -166,3 +182,30 @@ services:
 
       - key: JWT_ALGORITHM
         value: HS256
+
+# ============================================================================
+# DATABASE
+# ============================================================================
+# region MUST match the web service's `region: singapore` above. A cross-region
+# pair turns every query into an inter-continent round trip, and the health
+# check at /api/v1/stats/catalog issues six COUNT(*) queries on every probe.
+#
+# Free plan limits, all of which matter for this deployment:
+#   - 1 GB fixed storage
+#   - EXPIRES 30 DAYS AFTER CREATION. Then a 14-day grace period to upgrade,
+#     after which Render deletes the database and all of its data. Render emails
+#     before both deadlines. Keep backend/var/*.dump current or the catalogue is
+#     unrecoverable.
+#   - NO BACKUPS of any kind, and the instance may be restarted at any time.
+#   - Only one free database per workspace.
+#
+# Migrations are applied by the image ENTRYPOINT (`alembic upgrade head`), not by
+# this file, so the schema is created on first boot.
+#
+# The catalogue itself is NOT seeded -- see RUN_SEEDS above. pg_dump it from the
+# local dev database and psql it in, or you get an empty schema.
+databases:
+  - name: padhaanewala-db
+    databaseName: padhaanewala
+    plan: free
+    region: singapore

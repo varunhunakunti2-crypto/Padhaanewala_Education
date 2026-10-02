@@ -13,13 +13,24 @@ from app.config import settings
 SCHEMA = os.environ.get("PADHAANEWALA_SCHEMA")
 
 # `search_path` is applied on connect instead of being passed through the
-# connection string. Neon hands out sessions with an empty `search_path` for
-# `neondb_owner`, which made every unqualified query fail with
-# `relation "colleges" does not exist` even though the table was present, and the
-# PgBouncer pooler rejects the parameter outright:
-#   ERROR: unsupported startup parameter in options: search_path.
-# A `connect` event runs inside the established session, so it works on local
-# Postgres, Docker and managed hosts alike.
+# connection string, for two independent reasons:
+#
+#   1. A connection pooler in transaction mode (PgBouncer) accepts only a
+#      whitelist of startup parameters, so passing it in the URL fails outright:
+#        ERROR: unsupported startup parameter in options: search_path.
+#   2. Some managed Postgres hosts hand the application role a session whose
+#      `search_path` does not include `public`, so every unqualified query fails
+#      with `relation "colleges" does not exist` even though the table is there.
+#
+# A `connect` event runs inside the established session, so the setting is
+# applied per connection regardless of what the host or a pooler did to the
+# connection string. This works identically on local Postgres, Docker, and
+# Render's managed instance.
+#
+# Note that under a transaction-mode pooler the `SET` below is session state and
+# may be discarded when the connection is returned to the pool -- which is one
+# reason to prefer a direct connection over a pooled one for a single-instance
+# deployment.
 
 engine = create_engine(
     settings.DATABASE_URL,
