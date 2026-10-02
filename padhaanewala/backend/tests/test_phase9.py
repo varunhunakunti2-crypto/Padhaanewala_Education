@@ -269,3 +269,124 @@ def test_leads_forbidden_for_students():
     assert client.get("/api/v1/leads", headers=acc["headers"]).status_code == 403
     assert client.patch("/api/v1/leads/1/assign", json={"counsellor_id": None}, headers=acc["headers"]).status_code == 403
     assert client.get("/api/v1/leads/1", headers=acc["headers"]).status_code == 403
+
+
+# --- Data-subject requests (DPDP s.11) ---
+#
+# This whole block is missing-and-should-not-be. `create_data_request` audits
+# `{"due_at": row.due_at}` — a `datetime` — into a JSON column, so every call
+# raised `TypeError` at flush time and answered 500. The suite was green because
+# nothing here exercised the endpoint: the 90-day DPDP Rules 2025 workflow, which
+# is the single most legally load-bearing thing Phase 9 builds, had no test at
+# all. It was found by driving the deployed container, not by pytest.
+
+
+def test_create_data_request_succeeds_and_is_listed():
+    acc = _register("dsr")
+
+    created = client.post(
+        "/api/v1/compliance/requests",
+        json={"request_type": "access", "details": "Please send me a copy of my data"},
+        headers=acc["headers"],
+    )
+    assert created.status_code == 201, created.text
+    body = created.json()
+    assert body["request_type"] == "access"
+    assert body["status"] in {"pending", "open", "received"}
+
+    listed = client.get("/api/v1/compliance/requests", headers=acc["headers"])
+    assert listed.status_code == 200
+    assert any(r["id"] == body["id"] for r in listed.json())
+
+    single = client.get(
+        f"/api/v1/compliance/requests/{body['id']}", headers=acc["headers"]
+    )
+    assert single.status_code == 200
+
+
+def test_data_request_deadline_is_set_at_intake():
+    """The 90-day SLA must be a stored column, not derived on read.
+
+    Deriving it on read would move the deadline every time the row was looked at,
+    so a request could never breach and the sweep would never fire.
+    """
+    acc = _register("dsr")
+    created = client.post(
+        "/api/v1/compliance/requests",
+        json={"request_type": "erasure", "details": "delete my data"},
+        headers=acc["headers"],
+    )
+    assert created.status_code == 201, created.text
+    due = created.json()["due_at"]
+    assert due, "due_at must be persisted, not computed per read"
+
+
+def test_data_request_rejects_an_unknown_type():
+    acc = _register("dsr")
+    bad = client.post(
+        "/api/v1/compliance/requests",
+        json={"request_type": "definitely-not-a-real-type"},
+        headers=acc["headers"],
+    )
+    assert bad.status_code == 422, bad.text
+
+
+def test_data_request_requires_auth():
+    anon = client.post(
+        "/api/v1/compliance/requests", json={"request_type": "access"}
+    )
+    assert anon.status_code in (401, 403), anon.status_code
+    assert client.get("/api/v1/compliance/requests").status_code in (401, 403)
+
+
+def test_data_request_is_scoped_to_the_requester():
+    """One student's DSR list must not contain another's."""
+    mine = _register("dsr_mine")
+    theirs = _register("dsr_theirs")
+
+    client.post(
+        "/api/v1/compliance/requests",
+        json={"request_type": "access", "details": "mine"},
+        headers=theirs["headers"],
+    )
+    listed = client.get("/api/v1/compliance/requests", headers=mine["headers"]).json()
+    assert all(r.get("details") != "mine" for r in listed), (
+        "a data-subject request leaked into another user's list"
+    )
+
+
+def test_audit_payload_never_carries_a_non_json_value():
+    """The defect, pinned at the choke point rather than at one caller.
+
+    `old_value`/`new_value` are JSON columns and PostgreSQL serialises them with
+    `json.dumps`. Anything else raises at *flush* time — which is the caller's
+    `db.commit()`, so no `try/except` around the audit call can contain it.
+    """
+    from datetime import datetime, timezone
+    from decimal import Decimal
+
+    from app.utils.audit import redact
+
+    payload = {
+        "due_at": datetime(2026, 12, 31, tzinfo=timezone.utc),
+        "fee": Decimal("125000.50"),
+        "nested": {"expires_at": datetime(2027, 1, 1, tzinfo=timezone.utc)},
+        "listed": [datetime(2027, 1, 2, tzinfo=timezone.utc)],
+        "email": "student@example.com",
+        "count": 3,
+        "flag": True,
+    }
+    out = redact(payload)
+
+    # Must survive json.dumps, which is what the column does at flush.
+    import json
+
+    json.dumps(out)
+
+    assert isinstance(out["due_at"], str)
+    assert isinstance(out["fee"], str)
+    assert isinstance(out["nested"]["expires_at"], str)
+    assert isinstance(out["listed"][0], str)
+    # Redaction still wins over coercion.
+    assert out["email"] == "[redacted]"
+    assert out["count"] == 3 and out["flag"] is True
