@@ -204,7 +204,9 @@ def get_college(college_ref: str, db: Session = Depends(get_db)):
         .options(
             selectinload(College.state),
             selectinload(College.university),
-            selectinload(College.college_courses).selectinload(CollegeCourse.course),
+            # `college_courses` is deliberately absent: `_get_detail` queries the
+            # active links itself, and eager-loading them here would mean
+            # fetching every link twice.
         )
         .where(
             College.is_active,
@@ -214,43 +216,7 @@ def get_college(college_ref: str, db: Session = Depends(get_db)):
     if college is None:
         raise HTTPException(status_code=404, detail="College not found")
 
-    base = _to_list_item(college)
-    courses = []
-    for cc in college.college_courses:
-        if cc.is_active:
-            courses.append(
-                {
-                    "id": cc.id,
-                    "course_id": cc.course_id,
-                    "course_name": cc.course.name if cc.course else None,
-                    "annual_fee": cc.annual_fee,
-                    "total_fee": cc.total_fee,
-                    "intake_seats": cc.intake_seats,
-                    "admission_mode": cc.admission_mode,
-                    "entrance_exam": cc.entrance_exam,
-                }
-            )
-
-    return CollegeDetailResponse(
-        **base.model_dump(),
-        official_name=college.official_name,
-        address=college.address,
-        pincode=college.pincode,
-        lat=college.lat,
-        lng=college.lng,
-        website=college.website,
-        email=college.email,
-        phone=college.phone,
-        established_year=college.established_year,
-        accreditation_naac=college.accreditation_naac,
-        accreditation_nba=college.accreditation_nba,
-        overview=college.overview,
-        facilities=college.facilities,
-        state_id=college.state_id,
-        district_id=college.district_id,
-        university_id=college.university_id,
-        courses=courses,
-    )
+    return _get_detail(college, db)
 
 
 @router.post(
@@ -477,6 +443,20 @@ def _find_college(db: Session, ref: str) -> College | None:
 
 
 def _get_detail(college: College, db: Session) -> CollegeDetailResponse:
+    """The only place a `CollegeDetailResponse` is built.
+
+    Four endpoints return one: GET, POST, PUT and (historically) a private
+    helper. They used to be built in two places, and the two drifted: the read
+    path assembled `courses` as unvalidated dicts while the write path used
+    `CollegeCourseResponse`. Nothing tied the field lists together, so adding a
+    field to the schema updated the write path and left the public GET returning
+    the old shape — an admin shown "Saved" against a field the page never
+    displays.
+
+    Callers must therefore not build this response themselves. Note that this
+    issues its own `CollegeCourse` query rather than reading the relationship,
+    so callers should not also eager-load it.
+    """
     base = _to_list_item(college)
     cc_rows = db.scalars(
         select(CollegeCourse)

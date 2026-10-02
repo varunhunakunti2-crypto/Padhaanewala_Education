@@ -564,6 +564,53 @@ def test_delete_college_refuses_to_detach_onto_a_duplicate_orphan(admin):
             db.commit()
 
 
+def test_every_college_detail_path_returns_the_same_shape(admin):
+    """GET, POST and PUT must not be able to drift apart.
+
+    `CollegeDetailResponse` was built in two places. The read path assembled
+    `courses` as unvalidated dicts and the write path used
+    `CollegeCourseResponse`; nothing tied the field lists together, so adding a
+    field to the schema updated the write path and left the public GET serving
+    the old shape — an admin shown "Saved" for a field the page never displays.
+    There is now one builder, and this test is what holds the four endpoints to
+    it.
+    """
+    stamp = uuid.uuid4().hex[:8]
+    created = client.post(
+        "/api/v1/colleges",
+        json={
+            "name": f"Shape Probe {stamp}",
+            "slug": f"shape-probe-{stamp}",
+            "state_id": 1,
+            "overview": "original",
+        },
+        headers=_headers(admin),
+    )
+    assert created.status_code == 201, created.text
+    slug = created.json()["slug"]
+
+    fetched = client.get(f"/api/v1/colleges/{slug}")
+    assert fetched.status_code == 200, fetched.text
+
+    updated = client.put(
+        f"/api/v1/colleges/{slug}",
+        json={"overview": "revised"},
+        headers=_headers(admin),
+    )
+    assert updated.status_code == 200, updated.text
+
+    post_body, get_body, put_body = created.json(), fetched.json(), updated.json()
+    assert post_body.keys() == get_body.keys() == put_body.keys(), (
+        "the create, read and update responses expose different fields; "
+        f"missing from GET: {set(post_body) - set(get_body)}, "
+        f"missing from PUT: {set(post_body) - set(put_body)}"
+    )
+    # The read path must actually reflect the write, not just agree on keys.
+    assert get_body["overview"] == "original"
+    assert put_body["overview"] == "revised"
+    assert isinstance(get_body["courses"], list)
+
+
 def test_delete_college_still_requires_super_admin():
     """The role gate is unchanged — this is an audit fix, not a permissions fix."""
     payload = {

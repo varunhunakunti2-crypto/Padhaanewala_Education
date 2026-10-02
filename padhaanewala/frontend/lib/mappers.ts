@@ -273,11 +273,66 @@ export function mapFaqs(rows: ApiFaq[]): Faq[] {
 
 /* ----------------------------- admission ----------------------------- */
 
-export function deriveAdmissionStatus(detail: ApiCollegeDetail): AdmissionStatus {
-  // Without an explicit status column we infer from published application dates.
-  const start = detail.courses.length ? null : null;
-  void start;
+/**
+ * Derive the admission status from the college's published application windows.
+ *
+ * This used to be a stub that ignored its argument and returned `"upcoming"`
+ * unconditionally — including a line that assigned
+ * `detail.courses.length ? null : null`, which cannot be anything but null.
+ * Because the result is what `lib/data/index.ts` filters on and what the college
+ * card renders, every college claimed to have upcoming admissions and filtering
+ * the list by "open" or "closed" returned nothing at all.
+ *
+ * The dates live on the admission rows, not on the college, so the signature
+ * takes those rather than the detail. `now` is injectable so this is testable
+ * without freezing the clock.
+ *
+ * Colleges that have published no dates are reported as `"upcoming"` rather than
+ * `"closed"`. Absence of a deadline is not evidence that admissions have shut,
+ * and a card claiming "closed" for a college that never published dates would be
+ * a worse lie than the old one.
+ *
+ * Known limitation: `mapCollegeListItem` passes no admissions, because `/colleges`
+ * returns a narrower projection that does not include them. List views therefore
+ * still report `"upcoming"` for every college, and the status filter on a list
+ * page cannot narrow on this value until the list projection carries the dates.
+ */
+export function deriveAdmissionStatus(
+  admissions: ApiAdmission[],
+  now: Date = new Date(),
+): AdmissionStatus {
+  let sawWindow = false;
+  let sawFuture = false;
+
+  for (const admission of admissions ?? []) {
+    const start = toDate(admission?.application_start_date);
+    const end = toDate(admission?.application_end_date);
+    // A row with neither bound carries no information about the window.
+    if (!start && !end) continue;
+    sawWindow = true;
+
+    // An absent bound means "unbounded on that side": an end date alone means it
+    // is open until then, a start date alone means it closed when it began.
+    const started = start ? start.getTime() <= now.getTime() : true;
+    const notEnded = end ? end.getTime() >= now.getTime() : false;
+
+    if (started && notEnded) return "open";
+    // A window that has not opened yet is neither open nor shut. Collapsing it
+    // into "closed" is what made a college with a December intake read as
+    // "admissions closed" for most of the year.
+    if (!started) sawFuture = true;
+  }
+
+  if (sawFuture) return "upcoming";
+  if (sawWindow) return "closed";
   return "upcoming";
+}
+
+/** Parse an API date, returning null for absent or unparseable values. */
+function toDate(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
 function mapAdmission(
@@ -398,7 +453,7 @@ export function mapCollege(bundle: ApiCollegeBundle): College {
     district: "",
     state: text(detail.state),
     university: text(detail.university_name),
-    admissionStatus: deriveAdmissionStatus(detail),
+    admissionStatus: deriveAdmissionStatus(admissions),
     pincode: text(detail.pincode),
     rating: avgRating,
     reviewCount,
