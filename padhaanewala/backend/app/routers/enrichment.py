@@ -64,16 +64,57 @@ def _course_name(db: Session, course_id: int | None) -> str | None:
         return None
     return db.scalar(select(Course.name).where(Course.id == course_id))
 
+
+def _course_names_by_id(db: Session, rows) -> dict[int, str]:
+    """course_id -> name for every course referenced by `rows`, in one query.
+
+    `_course_name` costs one query per row. The catalogue routers cap `limit` at
+    500, so serialising a page of cutoffs, placements or seat matrices that way
+    issued up to 501 queries for one HTTP request. The ids in a page are few and
+    repeat heavily, which is exactly the case `IN (...)` is for.
+    """
+    ids = {r.course_id for r in rows if r.course_id is not None}
+    if not ids:
+        return {}
+    return dict(
+        db.execute(select(Course.id, Course.name).where(Course.id.in_(ids))).all()
+    )
+
+
+def _course_names_by_college_course(db: Session, rows) -> dict[int, str]:
+    """college_course_id -> course name for every link referenced by `rows`.
+
+    Fees and admissions identify a course indirectly, through the college-course
+    link, so they need the join rather than a `course_id` on the row itself. Same
+    per-row-query problem, same fix.
+    """
+    ids = {r.college_course_id for r in rows if r.college_course_id is not None}
+    if not ids:
+        return {}
+    return dict(
+        db.execute(
+            select(CollegeCourse.id, Course.name)
+            .join(Course, CollegeCourse.course_id == Course.id)
+            .where(CollegeCourse.id.in_(ids))
+        ).all()
+    )
+
 # ---------------------------------------------------------------- Cutoffs ----
 
-def _to_cutoff(db: Session, cutoff: Cutoff) -> CutoffResponse:
+def _to_cutoff(
+    db: Session, cutoff: Cutoff, course_names: dict[int, str] | None = None
+) -> CutoffResponse:
     college_name = cutoff.college.name if cutoff.college else None
     return CutoffResponse(
         id=cutoff.id,
         college_id=cutoff.college_id,
         college_name=college_name,
         course_id=cutoff.course_id,
-        course_name=_course_name(db, cutoff.course_id),
+        course_name=(
+            course_names.get(cutoff.course_id)
+            if course_names is not None
+            else _course_name(db, cutoff.course_id)
+        ),
         branch=cutoff.branch,
         exam_name=cutoff.exam_name,
         year=cutoff.year,
@@ -121,7 +162,8 @@ def list_cutoffs(
         .where(*conditions)
         .order_by(Cutoff.year.desc(), Cutoff.exam_name, Cutoff.category)
     ).all()
-    return [_to_cutoff(db, c) for c in cutoffs]
+    course_names = _course_names_by_id(db, cutoffs)
+    return [_to_cutoff(db, c, course_names) for c in cutoffs]
 
 @router.post(
     "/{college_ref}/cutoffs",
@@ -195,12 +237,17 @@ def delete_cutoff(
 
 # -------------------------------------------------------------------- Fees ----
 
-def _to_fee(db: Session, fee: Fee) -> FeeResponse:
-    course_name = db.execute(
-        select(Course.name)
-        .join(CollegeCourse, CollegeCourse.course_id == Course.id)
-        .where(CollegeCourse.id == fee.college_course_id)
-    ).scalar_one_or_none()
+def _to_fee(
+    db: Session, fee: Fee, course_names: dict[int, str] | None = None
+) -> FeeResponse:
+    if course_names is not None:
+        course_name = course_names.get(fee.college_course_id)
+    else:
+        course_name = db.execute(
+            select(Course.name)
+            .join(CollegeCourse, CollegeCourse.course_id == Course.id)
+            .where(CollegeCourse.id == fee.college_course_id)
+        ).scalar_one_or_none()
     return FeeResponse(
         id=fee.id,
         college_course_id=fee.college_course_id,
@@ -262,7 +309,8 @@ def list_fees(
     fees = db.scalars(
         select(Fee).where(*conditions).order_by(Fee.academic_year.desc())
     ).all()
-    return [_to_fee(db, f) for f in fees]
+    course_names = _course_names_by_college_course(db, fees)
+    return [_to_fee(db, f, course_names) for f in fees]
 
 @router.post(
     "/{college_ref}/fees",
@@ -335,13 +383,21 @@ def delete_fee(college_ref: str, fee_id: int, db: Session = Depends(get_db)):
 
 # ------------------------------------------------------------- Placements ----
 
-def _to_placement(db: Session, placement: PlacementRecord) -> PlacementResponse:
+def _to_placement(
+    db: Session,
+    placement: PlacementRecord,
+    course_names: dict[int, str] | None = None,
+) -> PlacementResponse:
     return PlacementResponse(
         id=placement.id,
         college_id=placement.college_id,
         college_name=placement.college.name if placement.college else None,
         course_id=placement.course_id,
-        course_name=_course_name(db, placement.course_id),
+        course_name=(
+            course_names.get(placement.course_id)
+            if course_names is not None
+            else _course_name(db, placement.course_id)
+        ),
         branch=placement.branch,
         academic_year=placement.academic_year,
         total_graduating=placement.total_graduating,
@@ -391,7 +447,8 @@ def list_placements(
         .where(*conditions)
         .order_by(PlacementRecord.academic_year.desc())
     ).all()
-    return [_to_placement(db, p) for p in placements]
+    course_names = _course_names_by_id(db, placements)
+    return [_to_placement(db, p, course_names) for p in placements]
 
 @router.post(
     "/{college_ref}/placements",
@@ -672,13 +729,19 @@ def delete_other_ranking(
 
 # ------------------------------------------------------------ Seat matrix ----
 
-def _to_seat_matrix(db: Session, seat: SeatMatrix) -> SeatMatrixResponse:
+def _to_seat_matrix(
+    db: Session, seat: SeatMatrix, course_names: dict[int, str] | None = None
+) -> SeatMatrixResponse:
     return SeatMatrixResponse(
         id=seat.id,
         college_id=seat.college_id,
         college_name=seat.college.name if seat.college else None,
         course_id=seat.course_id,
-        course_name=_course_name(db, seat.course_id),
+        course_name=(
+            course_names.get(seat.course_id)
+            if course_names is not None
+            else _course_name(db, seat.course_id)
+        ),
         branch=seat.branch,
         exam=seat.exam,
         total_seats=seat.total_seats,
@@ -728,7 +791,8 @@ def list_seat_matrix(
         .where(*conditions)
         .order_by(SeatMatrix.year.desc())
     ).all()
-    return [_to_seat_matrix(db, s) for s in seats]
+    course_names = _course_names_by_id(db, seats)
+    return [_to_seat_matrix(db, s, course_names) for s in seats]
 
 @router.post(
     "/{college_ref}/seat-matrix",
@@ -787,22 +851,30 @@ def delete_seat_matrix(
 # ------------------------------------------------------------ Admissions ----
 
 def _course_name_via_college_course(
-    db: Session, college_course_id: int | None
+    db: Session,
+    college_course_id: int | None,
+    course_names: dict[int, str] | None = None,
 ) -> str | None:
     if college_course_id is None:
         return None
+    if course_names is not None:
+        return course_names.get(college_course_id)
     return db.execute(
         select(Course.name)
         .join(CollegeCourse, CollegeCourse.course_id == Course.id)
         .where(CollegeCourse.id == college_course_id)
     ).scalar_one_or_none()
 
-def _to_admission(db: Session, admission: Admission) -> AdmissionResponse:
+def _to_admission(
+    db: Session,
+    admission: Admission,
+    course_names: dict[int, str] | None = None,
+) -> AdmissionResponse:
     return AdmissionResponse(
         id=admission.id,
         college_course_id=admission.college_course_id,
         course_name=_course_name_via_college_course(
-            db, admission.college_course_id
+            db, admission.college_course_id, course_names
         ),
         admission_information=admission.admission_information,
         eligibility_details=admission.eligibility_details,
@@ -840,7 +912,8 @@ def list_admissions(
     admissions = db.scalars(
         select(Admission).where(*conditions).order_by(Admission.id)
     ).all()
-    return [_to_admission(db, a) for a in admissions]
+    course_names = _course_names_by_college_course(db, admissions)
+    return [_to_admission(db, a, course_names) for a in admissions]
 
 @router.post(
     "/{college_ref}/admissions",
@@ -967,7 +1040,8 @@ def catalog_cutoffs(
         limit,
         offset,
     )
-    return [_to_cutoff(db, c) for c in cutoffs]
+    course_names = _course_names_by_id(db, cutoffs)
+    return [_to_cutoff(db, c, course_names) for c in cutoffs]
 
 @catalog_router.get("/fees", response_model=list[FeeResponse])
 def catalog_fees(
@@ -1000,7 +1074,8 @@ def catalog_fees(
         limit,
         offset,
     )
-    return [_to_fee(db, f) for f in fees]
+    course_names = _course_names_by_college_course(db, fees)
+    return [_to_fee(db, f, course_names) for f in fees]
 
 @catalog_router.get("/placements", response_model=list[PlacementResponse])
 def catalog_placements(
@@ -1027,7 +1102,8 @@ def catalog_placements(
         limit,
         offset,
     )
-    return [_to_placement(db, p) for p in placements]
+    course_names = _course_names_by_id(db, placements)
+    return [_to_placement(db, p, course_names) for p in placements]
 
 @catalog_router.get("/rankings", response_model=list[RankingResponse])
 def catalog_rankings(
@@ -1138,7 +1214,8 @@ def catalog_seat_matrix(
         limit,
         offset,
     )
-    return [_to_seat_matrix(db, s) for s in seats]
+    course_names = _course_names_by_id(db, seats)
+    return [_to_seat_matrix(db, s, course_names) for s in seats]
 
 @catalog_router.get("/admissions", response_model=list[AdmissionResponse])
 def catalog_admissions(
@@ -1165,4 +1242,5 @@ def catalog_admissions(
         limit,
         offset,
     )
-    return [_to_admission(db, a) for a in admissions]
+    course_names = _course_names_by_college_course(db, admissions)
+    return [_to_admission(db, a, course_names) for a in admissions]
