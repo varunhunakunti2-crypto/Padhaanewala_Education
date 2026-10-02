@@ -17,3 +17,14 @@ Thumbs.db
 desktop.ini
 *.swp
 .idea/
+
+# Run logs. `*.log` lives in padhaanewala/.gitignore, which only covers paths
+# beneath padhaanewala/ -- so the repository-root logs/ directory was
+# unprotected and both files in it were committed, one carrying a local
+# filesystem path and the other a LAN address.
+logs/
+
+# uvicorn/npm stdout+stderr captures. `*.log` does not match these, and a
+# SQLAlchemy error message can embed the connection string and credentials.
+*.err
+*.out

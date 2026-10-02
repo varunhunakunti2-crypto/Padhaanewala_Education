@@ -612,6 +612,11 @@ export function mapBlogPost(api: ApiBlog): BlogPost {
     readTime: `${Math.max(1, Math.round(wordCount / 200))} min read`,
     tags: [mapBlogCategory(api.category_name)],
     featured: Boolean(api.is_featured),
+    // Preserved rather than dropped. `undefined` when blank, so the page can
+    // fall back to the title/excerpt instead of rendering an empty meta tag.
+    metaTitle: text(api.meta_title) || undefined,
+    metaDescription: text(api.meta_description) || undefined,
+    canonicalUrl: text(api.canonical_url) || undefined,
   };
 }
 

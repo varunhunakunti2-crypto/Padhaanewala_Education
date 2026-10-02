@@ -2,13 +2,15 @@ import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 
 import { VerifyEmailPanel } from "@/components/auth/VerifyEmailPanel";
+import { pageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
-  title: "Confirming your email | Padhaanewala",
+// A one-shot confirmation link must not be indexed or archived.
+export const metadata: Metadata = pageMetadata({
+  title: "Confirming your email",
   description: "Confirming the email address on your Padhaanewala account.",
-  // A one-shot confirmation link must not be indexed or archived.
-  robots: { index: false, follow: false },
-};
+  path: "/verify-email",
+  noindex: true,
+});
 
 export default async function VerifyEmailPage({
   searchParams,

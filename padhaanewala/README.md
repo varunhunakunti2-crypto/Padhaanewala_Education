@@ -10,51 +10,74 @@ India-wide education discovery, AI assistance, examination, counselling and lead
 
 ## Tech Stack
 
+Verified against the code on 30 September 2026. Several rows below used to
+describe planned components rather than installed ones; the corrections matter
+because each one is a thing a new contributor will otherwise go looking for.
+
 | Component | Technology |
 |---|---|
-| Frontend | Next.js 14+ (App Router), React 18+, TypeScript, Tailwind CSS |
-| Backend | Python 3.11+, FastAPI, SQLAlchemy, Alembic |
-| Database | PostgreSQL 15+ (pgvector for embeddings) |
-| Cache / Queue | Redis 7+, Celery |
-| Storage | AWS S3 / Cloudflare R2 |
-| AI / LLM | OpenAI / Anthropic (backend only) |
-| Auth | JWT + refresh tokens, bcrypt (12 rounds) |
+| Frontend | Next.js 16.3 (App Router), React 19.2, TypeScript, Tailwind CSS 4 |
+| Backend | Python 3.11+ (3.14.7 verified), FastAPI 0.141, SQLAlchemy 2.0, Alembic 1.19 |
+| Database | PostgreSQL. Search is full-text (`to_tsvector` + a GIN index) — there is **no pgvector** and no embedding column |
+| Cache / rate limiting | Redis. There is **no Celery and no queue worker** |
+| Storage | **Not implemented.** No S3/R2 client and no `boto3`. A `media` row stores a URL string an admin pastes in; no bytes are ever accepted |
+| AI / LLM | OpenAI, called from the **Next.js** route handler at `app/api/ai`, not from the backend. No key set ⇒ a canned offline reply |
+| Auth | JWT access token (30 min) + rotating refresh token in an HttpOnly cookie, bcrypt (12 rounds), SMS/email OTP |
+| Tests | pytest + httpx (backend), Vitest + jsdom (frontend) |
 
 ## Prerequisites
 
 - Node.js 18+ (verified: v24.14.0)
-- Python 3.11+ (verified: 3.14.5)
+- Python 3.11+ (the project venv is 3.14.7)
 - Git (verified: 2.52.0)
 - Docker Desktop (verified: 29.4.1)
-- PostgreSQL 15+ (verified: 18.4, running as Windows service)
+- PostgreSQL 15+ (the dev box runs 16 natively; the Docker dev stack publishes 15)
 
 ## Project Structure
 
 ```
 padhaanewala/
 ├── frontend/            → Next.js app
+│   ├── frontend/        → components/ ONLY. See "The doubled path" below
+│   ├── app/             → routes (App Router)
+│   ├── lib/             → api.ts, api-server.ts, content.ts, mappers.ts, nav.ts
+│   └── tests/           → Vitest
 ├── backend/             → FastAPI app
-├── proctoring-service/  → ML proctoring (Phase 47)
-├── docs/                → documentation
-├── scripts/             → helper scripts
-├── .github/workflows/   → CI/CD (Phase 86)
-├── docker-compose.dev.yml
-├── .env.example
-├── .env.development
-└── .gitignore
+│   ├── app/             → routers, models, schemas, services, middleware
+│   ├── alembic/         → migrations (single linear chain)
+│   ├── scripts/         → seed_*.py, bootstrap_test_db.py, purge_demo_data.py
+│   └── tests/           → pytest
+├── docker/              → Caddyfile, db init
+├── docs/                → specification, phase checklists, RBAC ruleset
+└── docker-compose.{dev,localtest,prod}.yml
 ```
+
+`.github/workflows/` lives at the **repository root**, one level above this
+directory, not inside it. There is no `proctoring-service/` — it is a Phase 47
+item that has not been started.
+
+### The doubled path
+
+`frontend/frontend/components/` is intentional. `tsconfig.json` maps
+`"@/*": ["./frontend/*", "./*"]`, and 255 imports resolve through the first
+entry. Do not "tidy" it into `"@/*": ["./*"]` — that breaks the build.
+`frontend/AGENTS.md` has the full explanation.
 
 ## Quick Start
 
 ### 1. Environment Variables
 
-Copy the template and edit values:
+`.env.example` sits at this directory's root, but **`Settings` loads
+`.env.development` relative to the process working directory** — and the backend
+runs from `backend/`. A `.env.development` created here is therefore read by
+nothing:
 
 ```bash
-cp .env.example .env.development
+cp .env.example backend/.env.development
 ```
 
-Never commit `.env.development` or any real secrets. Only `.env.example` is tracked.
+Override the filename with `PADHAANEWALA_ENV_FILE` if you need to. Both files
+are gitignored; only `.env.example` is tracked.
 
 ### 2. PostgreSQL (dev database)
 
@@ -83,12 +106,24 @@ Alternatively, run PostgreSQL via Docker:
 docker compose -f docker-compose.dev.yml up -d db
 ```
 
-### 3. Redis (cache + Celery broker)
+> **Port trap.** The two database options are on **different ports**, and the
+> connection string above is only right for the native one. Native PostgreSQL
+> holds 5432; `docker-compose.dev.yml` publishes 5433 (`"5433:5432"`) because
+> 5432 is already taken on this machine. Whichever you choose, `DB_PORT` and
+> `DATABASE_URL` in `backend/.env.development` must agree with it — the shipped
+> `config.py` default is 5433, so a stale `.env.development` pointing at 5432
+> will silently override it and you will be reading the wrong database.
+
+### 3. Redis (rate limiting)
 
 ```bash
 docker compose -f docker-compose.dev.yml up -d redis
 docker exec padhaanewala-redis-1 redis-cli ping   # → PONG
 ```
+
+Redis backs the rate limiter only. It is not a Celery broker, because there is no
+Celery. If Redis is down the limiter fails **closed** on `/api/v1/auth/*` (503)
+and fails open everywhere else.
 
 > `docker-compose.dev.yml` runs **dependencies only** — the database and Redis.
 > The API and the frontend always run natively: `uvicorn` in step 4, and
@@ -119,6 +154,16 @@ python scripts/seed_scholarships.py
 python scripts/seed_exams.py
 python scripts/seed_mock_tests.py
 ```
+
+Order matters: locations before scholarships (which need states), exams before
+mock tests. `bootstrap_test_db.py` does all of it in one command if you would
+rather not track the sequence:
+
+```bash
+python scripts/bootstrap_test_db.py
+```
+
+`purge_demo_data.py` removes seed and test residue from a dev database.
 
 `seed_mock_tests.py` loads the papers and questions from
 `frontend/lib/data/mockTests.json` — the same file the frontend imports, so the
@@ -172,9 +217,25 @@ Website: http://localhost:3000
 - No direct commits to `main`
 - Conventional commit messages
 
+## Tests
+
+```bash
+cd backend && python -m pytest        # needs a reachable PostgreSQL (see step 2)
+cd frontend && npm test               # Vitest, no database needed
+```
+
+`npm run typecheck` and `npm run lint` are the other two frontend gates. CI runs
+all four — see `.github/workflows/` at the repository root.
+
 ## Documentation
 
-The full product specification, architecture and implementation plan lives in `../padhaanewala-complete.md` (Master Document V5.0). Development follows its 105 phases in strict order.
+| Document | What it is |
+|---|---|
+| `docs/padhaanewala-complete.md` | The master product specification and implementation plan (V5.0), 105 phases |
+| `docs/Pending-phases.md` | The authoritative status tracker for taking this to deployable. **Supersedes the two below.** |
+| `docs/padhaanewala-phase-checklist.md` | Per-phase checklist. Predates the code it describes; several rows are wrong |
+| `docs/rbac-compliance-checklist.md` | The authorization ruleset, keyed to `app/roles.py` |
+| `docs/phase-verification.md`, `docs/session-log-2026-09-27.md` | Point-in-time records. Useful as history, not as status |
 
 ## References
 

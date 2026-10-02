@@ -226,7 +226,6 @@ export const SITEMAP_PAGES: readonly SitemapPage[] = [
   { path: "/resources", changeFrequency: "monthly", priority: 0.5 },
   { path: "/about", changeFrequency: "yearly", priority: 0.3 },
   { path: "/contact", changeFrequency: "yearly", priority: 0.3 },
-  { path: "/login", changeFrequency: "yearly", priority: 0.3 },
 ] as const;
 
 /**
@@ -252,6 +251,28 @@ export const SITEMAP_SLUG_SECTIONS = [
 
 /** Never in the sitemap, and never crawled: auth, admin and API surfaces. */
 export const PRIVATE_ROUTES = ["/admin", "/api"] as const;
+
+/**
+ * Pages that must not be indexed but **must stay crawlable**, so they are
+ * `noindex` and deliberately *not* in `ROBOTS_DISALLOW`.
+ *
+ * The two lists do different jobs and combining them for these routes defeats
+ * the purpose. `Disallow` stops a crawler fetching the URL; `noindex` is an
+ * instruction the crawler can only obey after fetching it. A disallowed login
+ * page can therefore still surface as a bare URL with no snippet, and the
+ * `noindex` that would have removed it is never read.
+ *
+ * `/login` was in `SITEMAP_PAGES` with neither treatment: the site was actively
+ * advertising its authentication page for indexing. `app/login/page.tsx` now
+ * carries `noindex` via `pageMetadata()`.
+ */
+export const NOINDEX_ROUTES = ["/login"] as const;
+
+/** True when `pathname` is `NOINDEX_ROUTES` or a child of one. */
+export function isNoindex(pathname: string): boolean {
+  const path = pathname.replace(/\/+$/, "") || "/";
+  return NOINDEX_ROUTES.some((route) => path === route || path.startsWith(`${route}/`));
+}
 
 export const ROBOTS_DISALLOW: readonly string[] = [
   ...BETA_HIDDEN_ROUTES,

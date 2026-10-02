@@ -1,14 +1,14 @@
 import type { Metadata } from "next";
 import { ExamPlanner } from "@/components/planner/ExamPlanner";
-import { BETA_NOINDEX } from "@/lib/nav";
-import { SITE } from "@/lib/site";
+import { pageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
-  title: `Exam Planner — ${SITE.name}`,
+export const metadata: Metadata = pageMetadata({
+  title: "Exam Planner",
   description:
     "Plan your mock tests and exam dates on a calendar, so your prep progress is visible day by day.",
-  ...BETA_NOINDEX,
-};
+  path: "/plan",
+  noindex: true,
+});
 
 export default function PlannerPage() {
   return <ExamPlanner />;

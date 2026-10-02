@@ -1486,7 +1486,7 @@ for Significant Data Fiduciary breaches · ₹50 crore otherwise.
 
 # Repository hygiene
 
-**Status: NOT STARTED** · 0 of 5 sub-tasks
+**Status: PARTIAL** · 3 of 5 sub-tasks, plus 2 found while doing them
 
 Not a launch blocker, but all of it is public in a public repository.
 
@@ -1497,21 +1497,120 @@ Not a launch blocker, but all of it is public in a public repository.
       installed. Two of the three copies record `Status: Not initialized` and
       cannot answer a question; the three have already drifted apart; and the
       largest is screenshots of other people's editors.
-- [ ] **Delete `DESIGN.md`.** It documents Clay.com's B2B brand system —
+      **Not started: deletion was explicitly deferred.** A fourth copy at
+      `padhaanewala/frontend/.agents/` is tracked and was not counted above, so
+      the real figure is 4 directories / 262 files / ~4.9 MB. Of those, only
+      `padhaanewala/.agents/` is functional — it is the sole copy that has the
+      `references/docs/` snapshot actually committed; the other three cannot
+      answer a question at all. Deleting all four therefore also means removing
+      the `Always Use: tailwind-4-docs, web-design-guidelines` lines from
+      `frontend/AGENTS.md` and `frontend/CLAUDE.md`, which would otherwise dangle.
+- [x] **Delete `DESIGN.md`.** It documents Clay.com's B2B brand system —
       cream canvas, "Plain Black" display face, claymation mascots — not this
-      project.
-- [ ] **Document the doubled `frontend/frontend/` path in `AGENTS.md`.** It is
+      project. Confirmed before deleting: its own frontmatter reads
+      `name: Clay-design-analysis`, and nothing in the build, the Compose files
+      or the CI workflows referenced it. `git rm padhaanewala/DESIGN.md`.
+- [x] **Document the doubled `frontend/frontend/` path in `AGENTS.md`.** It is
       load-bearing: `tsconfig.json` maps `"@/*": ["./frontend/*", "./*"]` and
       every one of roughly 200 `@/components/*` imports resolves through the first
       entry. Simplifying that array to the conventional `"@/*": ["./*"]` breaks
       the entire build. Nothing in `README.md`, `AGENTS.md` or `CLAUDE.md`
-      mentions it.
-- [ ] **Fix the `frontend/package.json` name.** It reads `campus-pulse`, a
-      leftover from a different project, and appears in every script header.
+      mentions it. Added to `frontend/AGENTS.md`, with the reason
+      `vitest.config.mts` cannot use a `resolve.alias` and the warning already
+      present in `.dockerignore`. Measured while writing it: 255
+      `@/components/*` imports and 504 `@/` imports across 171 source files, so
+      the "~200" figure elsewhere in this document understates it.
+- [x] **Fix the `frontend/package.json` name.** It read `campus-pulse`, a
+      leftover from a different project, and appeared in every script header.
+      Now `padhaanewala`, with `package-lock.json` resynced via
+      `npm install --package-lock-only`. Verified after: `npm run typecheck`
+      clean, `npm run lint` 0 errors, `npm test` 50/50.
 - [ ] **Clean `data/`.** `Padhaanewala_Data.xlsx` is a **PDF wearing an `.xlsx`
       extension** — byte-identical to `Hardcore_JEE_Mock_Paper_2_2026.pdf`. The
       remaining 11 files are raw spreadsheets and mock papers, not the CSV
       deliverables the specification requires.
+      **Not started.** The duplicate was re-confirmed: both files hash to
+      `5CDE1505B313DB35890015AB183B4495D426482BBFA9FE653D17E9CD66BD34BA`, and the
+      `.xlsx` opens with the bytes `25 50 44 46 2D 31 2E 34` (`%PDF-1.4`).
+      Cleanup is blocked on a product decision rather than on effort: these are
+      the raw authoring sources for the mock-test papers, and the intended route
+      for that material is an admin-panel PDF upload (see the open question at
+      the foot of this section), not a `data/` directory in the repository.
+
+- [x] **Untrack the committed run logs** *(not in the original five; found
+      while verifying the above).** `logs/backend.log` and `logs/frontend.log`
+      were both tracked, and `.gitignore` did not stop them — `*.log` is
+      declared in `padhaanewala/.gitignore`, which only covers paths beneath
+      `padhaanewala/`, so the repository-root `logs/` directory was unprotected.
+      `backend.log` contained a local filesystem path
+      (`D:\code\Clients\Padhaanewala\Final\New`) and `frontend.log` a LAN
+      address (`10.215.86.193`) alongside the `campus-pulse@0.1.0` banner that
+      item 4 above removes. Both are now `git rm --cached`, kept on disk, and
+      the root `.gitignore` covers `logs/`, `*.err` and `*.out` — `*.err`/`*.out`
+      were likewise only declared sub-project-wide, and those are the captures
+      that can embed a SQLAlchemy connection string.
+
+- [x] **Correct the false claims in `README.md`** *(not in the original five;
+      found while checking that `DESIGN.md` was unreferenced).* The README is the
+      front door of a public repository and described a stack that is not
+      installed. Every correction below was checked against the code, not
+      inferred:
+
+| Claim | Reality |
+|---|---|
+| `proctoring-service/` in the tree | Does not exist — a Phase 47 item, not started |
+| `.github/workflows/` inside this directory | It is at the **repository root**, one level up |
+| `scripts/` at this level | Only `backend/scripts/` exists |
+| "PostgreSQL 15+ (pgvector for embeddings)" | No pgvector, no embedding column. Search is `to_tsvector` + a GIN index |
+| "Cache / Queue: Redis 7+, **Celery**" | No Celery, no queue worker anywhere |
+| "Storage: AWS S3 / Cloudflare R2" | No `boto3`, no S3 client. `media` rows hold a pasted URL string |
+| "AI / LLM: OpenAI / Anthropic (**backend only**)" | Called from the **Next.js** handler at `app/api/ai`, not the backend |
+| "Next.js 14+, React 18+" | Next 16.3.6, React 19.2.8 |
+| `cp .env.example .env.development` at this level | `Settings` loads the file relative to CWD and the backend runs from `backend/`, so a file created here is read by nothing |
+| Connection string on `localhost:5432` | Right for native PostgreSQL, wrong for Docker — `docker-compose.dev.yml` publishes **5433**. A port trap, now called out explicitly |
+| Spec lives in `../padhaanewala-complete.md` | It is at `docs/padhaanewala-complete.md` |
+
+      Also added: a Tests section naming the four gates CI runs, and a table
+      marking `docs/Pending-phases.md` as the authoritative tracker over the two
+      superseded ones. The doubled-path warning was added here too, so it is
+      visible from the repository root and not only from `frontend/AGENTS.md`.
+
+      This list matches the corrections proposed in `phase-verification.md`,
+      which `Pending-phases.md` explicitly refuses as a status source — the note
+      was right and had simply never been executed.
+
+## Open question blocking the `data/` cleanup
+
+The `data/` item is not blocked on effort. It is blocked on a decision that was
+asked and not yet answered, and the answer changes what the cleanup should be.
+
+The stated requirement is that a PDF for a mock test should be uploaded from the
+admin panel and read back from there. That route does not exist yet, and the gap
+is wider than it looks:
+
+| Layer | State, measured 30 September 2026 |
+|---|---|
+| Backend `UploadFile` / `File()` / `Form()` | **0 occurrences.** `python-multipart` is installed and never imported |
+| `media` router | Metadata only. `MediaCreate.url` is a string the admin pastes; no bytes are ever accepted or stored |
+| Object storage | No `boto3`, no S3/R2 client. `S3_*` is documented in `.env.example` and read by **no code** — a dead-variable entry of exactly the kind listed in that file's own header |
+| Frontend | `FormData` = **0**, `<input type="file">` = **0** |
+| `MediaSection.tsx` | The "Upload" button is `<AddButton>`, which only fires a toast: *"Create flow is a demo action in this build."* |
+
+Uploading a PDF would also not by itself create questions: no extraction code
+exists, and `seed_mock_tests.py` reads hand-curated
+`frontend/lib/data/mockTests.json`. An uploaded PDF becomes an attachment and
+nothing more until a parser is written.
+
+**Adjacent finding, recorded because it is a contradiction in the admin UI:**
+`QuestionsSection.tsx` states *"There are no question tables in the database and
+no importer wired up"*. That is false. `test_questions` exists, with full
+question CRUD in `routers/mock_tests.py` under `CONTENT_ROLES` and 29 tests in
+`tests/test_mock_test_authoring.py`. The panel is behind its own backend.
+
+Once an upload path exists, the `data/` papers are reachable through the admin
+panel and the directory can be dropped from the repository. Until then they are
+the only copy of that material, which is why deleting them was not a call worth
+making unilaterally.
 
 ---
 
@@ -1520,7 +1619,7 @@ Not a launch blocker, but all of it is public in a public repository.
 Per-phase `Complete` column is the authoritative count. It excludes the
 supplementary "Found by running it" and "Still open" lists in Phases 2 and 6, so
 it is lower than a raw `- [x]` grep of this file, which double-counts them.
-Totals: **84 of 104 (81%)**, including 0 of 5 for repository hygiene. Phase 7 is
+Totals: **87 of 104 (84%)**, including 3 of 5 for repository hygiene. Phase 7 is
 6/6. The percentage is *sub-task* reality, not the same as "deployable": Phase 8
 is untouched, Phase 9 has not started, and BUG-05/06/07/09 remain open. BUG-08
 was found by the Phase 7.5 test suite and fixed by it.
@@ -1537,9 +1636,10 @@ was found by the Phase 7.5 test suite and fixed by it.
 | 7 | CI gate | 6 / 6 | **DONE** — frontend job (typecheck/lint/test/build on Node 24), npm + pip audit gating and clean, env-example 9/9, nav-manifest 21/21, Vitest suite 45 tests; BUG-08 found by that suite and fixed |
 | 8 | Deploy | 0 / 5 | not started — `prod` Compose stack verified running and healthy, but nothing is deployed to a server |
 | 9 | Legal / DPDP | 0 / 7 | not started |
-| — | Repository hygiene | 0 / 5 | not started |
+| — | Repository hygiene | 3 / 5 | **partial** — `DESIGN.md` deleted, `package.json` name fixed, the doubled `frontend/frontend/` path documented, and two found while doing them: run logs untracked, `README.md` false claims corrected. Skill bundles and `data/` deferred |
 
-**84 of 104 sub-tasks complete (81%), re-checked by executing on 29 September.**
+**87 of 104 sub-tasks complete (84%)**, re-checked by executing on 29 September
+(hygiene 4–6 re-checked 30 September).
 The only phase left on the critical path is **8 (Deploy)** — and Phase 9
 (Legal/DPDP) carries the largest unmitigated financial exposure in the project,
 so the two are worth doing together rather than in sequence.

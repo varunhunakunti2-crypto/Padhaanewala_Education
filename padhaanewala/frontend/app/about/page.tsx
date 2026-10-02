@@ -11,13 +11,16 @@ import {
   BadgeCheck,
 } from "lucide-react";
 import { AboutFacts } from "@/components/home/AboutFacts";
+import { JsonLd } from "@/components/seo/JsonLd";
+import { breadcrumbLd, ldGraph, pageMetadata } from "@/lib/seo";
 import { SITE } from "@/lib/site";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMetadata({
   title: "About",
   description:
     "Learn about Padhaanewala — our mission to help every Indian student find the right college, with transparency and data-driven discovery.",
-};
+  path: "/about",
+});
 
 const VALUES = [
   {
@@ -47,8 +50,16 @@ const VALUES = [
 ];
 
 export default function AboutPage() {
+  const jsonLd = ldGraph([
+    breadcrumbLd([
+      { name: "Home", path: "/" },
+      { name: "About", path: "/about" },
+    ]),
+  ]);
+
   return (
     <section className="mx-auto max-w-7xl px-4 pt-28 pb-10 sm:px-6 sm:pt-32 lg:px-8 lg:pt-36 lg:pb-16">
+      <JsonLd data={jsonLd} />
       {/* hero */}
       <div className="relative isolate overflow-hidden rounded-3xl bg-gradient-to-br from-purple-100/80 via-white to-blue-50/70 dark:from-purple-950/60 dark:via-slate-900 dark:to-blue-950/60 dark:border dark:border-purple-800/40 px-6 py-14 text-center sm:px-12 lg:py-20 shadow-sm">
         <div className="pointer-events-none absolute inset-0 -z-10">

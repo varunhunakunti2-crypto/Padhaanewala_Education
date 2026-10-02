@@ -1,12 +1,14 @@
 import { Metadata } from "next";
 import { AdminDashboard } from "@/components/admin/AdminDashboard";
 import { RequireAdmin } from "@/components/layout/RequireAdmin";
+import { pageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMetadata({
   title: "Admin",
   description: "Padhaanewala admin console for managing colleges, students, leads, content and analytics.",
-  robots: { index: false, follow: false },
-};
+  path: "/admin",
+  noindex: true,
+});
 
 export default function AdminPage() {
   return (

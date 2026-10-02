@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Caveat, Inter, Plus_Jakarta_Sans, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 import { Header } from "@/components/layout/Header";
@@ -7,7 +7,15 @@ import { BottomNav } from "@/components/layout/BottomNav";
 import { Providers } from "@/components/layout/Providers";
 import { WhatsAppFab } from "@/components/layout/WhatsAppFab";
 import { AskAiFab } from "@/components/layout/AskAiFab";
-import { SITE, SITE_URL } from "@/lib/site";
+import { JsonLd } from "@/components/seo/JsonLd";
+import {
+  DEFAULT_OG_IMAGE,
+  SITE_KEYWORDS,
+  ldGraph,
+  organizationLd,
+  webSiteLd,
+} from "@/lib/seo";
+import { SITE, SITE_LOGO_PATH, SITE_THEME_COLOR, SITE_URL } from "@/lib/site";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -33,6 +41,18 @@ const caveat = Caveat({
   display: "swap",
 });
 
+/**
+ * The root `metadata` is a fallback, not the primary source.
+ *
+ * Every route calls `pageMetadata()` in `lib/seo.ts`, which returns a *complete*
+ * object — title, description, canonical, robots, `openGraph` and `twitter` —
+ * because the Metadata API merges shallowly and a descendant's `openGraph`
+ * replaces the ancestor's entirely. This block exists so a route that forgets
+ * still emits valid tags rather than inheriting a half-populated card.
+ *
+ * `themeColor` is deliberately absent: the field was deprecated in Next 14 and
+ * lives on the `viewport` export below.
+ */
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
@@ -41,20 +61,14 @@ export const metadata: Metadata = {
   },
   description: SITE.description,
   applicationName: SITE.name,
-  keywords: [
-    "padhaanewala",
-    "college discovery",
-    "college search india",
-    "compare colleges",
-    "engineering colleges",
-    "medical colleges",
-    "mba colleges",
-    "entrance exams",
-    "mock tests",
-    "scholarships",
-  ],
-  authors: [{ name: SITE.legalName }],
+  keywords: SITE_KEYWORDS,
+  authors: [{ name: SITE.legalName, url: SITE_URL }],
   creator: SITE.legalName,
+  publisher: SITE.legalName,
+  category: "education",
+  // No `icons` entry: `app/icon.svg` is a file-convention icon and Next emits
+  // the <link rel="icon"> tags from it. Declaring the same path again here
+  // would render a duplicate.
   openGraph: {
     type: "website",
     locale: "en_IN",
@@ -62,17 +76,38 @@ export const metadata: Metadata = {
     siteName: SITE.name,
     title: `${SITE.name} — ${SITE.tagline}`,
     description: SITE.description,
+    images: [DEFAULT_OG_IMAGE],
   },
   twitter: {
     card: "summary_large_image",
+    site: "@padhaanewala",
     title: `${SITE.name} — ${SITE.tagline}`,
     description: SITE.description,
+    images: [DEFAULT_OG_IMAGE],
   },
   robots: { index: true, follow: true },
   other: {
     "format-detection": "telephone=no",
   },
 };
+
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: SITE_THEME_COLOR },
+    { media: "(prefers-color-scheme: dark)", color: "#071426" },
+  ],
+  colorScheme: "light dark",
+  width: "device-width",
+  initialScale: 1,
+};
+
+/**
+ * `Organization` and `WebSite` are emitted once, on the root layout, so every
+ * page in the site shares the same two `@id`s. Every other structured-data node
+ * references them by `@id` instead of restating the publisher, which is what
+ * lets a crawler connect a college page to the organisation that publishes it.
+ */
+const ROOT_JSON_LD = ldGraph([organizationLd(), webSiteLd()]);
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -102,6 +137,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         */}
         {/* eslint-disable-next-line @next/next/no-sync-scripts */}
         <script src="/theme-init.js" />
+        <JsonLd data={ROOT_JSON_LD} />
         <Providers>
           <Header />
           <main className="flex-1">{children}</main>

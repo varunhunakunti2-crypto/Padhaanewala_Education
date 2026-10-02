@@ -3,12 +3,16 @@ import Link from "next/link";
 import { Phone, Mail, MapPin, Clock, MessageCircle, HelpCircle, Headset } from "lucide-react";
 import { SectionHeading } from "@/components/ui/SectionHeading";
 import { AdmissionHelpButton } from "@/components/admission/AdmissionForm";
+import { JsonLd } from "@/components/seo/JsonLd";
+import { breadcrumbLd, ldGraph, pageMetadata } from "@/lib/seo";
 import { SITE } from "@/lib/site";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMetadata({
   title: "Contact Us",
-  description: "Get in touch with the Padhaanewala team for admissions, scholarships, partnerships or feedback.",
-};
+  description:
+    "Get in touch with the Padhaanewala team for admissions, scholarships, partnerships or feedback.",
+  path: "/contact",
+});
 
 /**
  * Read from `SITE` rather than retyped.
@@ -51,8 +55,16 @@ function ChannelBody({ channel }: { channel: Channel }) {
 }
 
 export default function ContactPage() {
+  const jsonLd = ldGraph([
+    breadcrumbLd([
+      { name: "Home", path: "/" },
+      { name: "Contact", path: "/contact" },
+    ]),
+  ]);
+
   return (
     <section className="mx-auto max-w-7xl px-4 pt-28 pb-12 sm:px-6 sm:pt-32 lg:px-8 lg:pt-36 lg:pb-16">
+      <JsonLd data={jsonLd} />
       <SectionHeading
         eyebrow="We're here to help"
         title="Contact Padhaanewala"
