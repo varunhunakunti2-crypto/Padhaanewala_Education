@@ -1,7 +1,7 @@
 import os
 from typing import Generator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from app.config import settings
@@ -12,13 +12,17 @@ from app.config import settings
 # search_path so database-level extensions (pg_trgm) remain resolvable.
 SCHEMA = os.environ.get("PADHAANEWALA_SCHEMA")
 
-DATABASE_URL = settings.DATABASE_URL
-if SCHEMA:
-    _sep = "&" if "?" in DATABASE_URL else "?"
-    DATABASE_URL = f"{DATABASE_URL}{_sep}options=-csearch_path%3D{SCHEMA},public"
+# `search_path` is applied on connect instead of being passed through the
+# connection string. Neon hands out sessions with an empty `search_path` for
+# `neondb_owner`, which made every unqualified query fail with
+# `relation "colleges" does not exist` even though the table was present, and the
+# PgBouncer pooler rejects the parameter outright:
+#   ERROR: unsupported startup parameter in options: search_path.
+# A `connect` event runs inside the established session, so it works on local
+# Postgres, Docker and managed hosts alike.
 
 engine = create_engine(
-    DATABASE_URL,
+    settings.DATABASE_URL,
     pool_pre_ping=True,
     # These were 5/10, which is the SQLAlchemy default and far too small for a
     # process that also serves a Next.js server. `next build` prerendering the
@@ -34,6 +38,15 @@ engine = create_engine(
     # cloud load balancers so a reaped connection is never handed out.
     pool_recycle=280,
 )
+
+
+@event.listens_for(engine, "connect")
+def _set_search_path(dbapi_connection, connection_record) -> None:
+    with dbapi_connection.cursor() as cursor:
+        cursor.execute(
+            f'SET search_path TO "{SCHEMA}", public' if SCHEMA else "SET search_path TO public"
+        )
+
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
