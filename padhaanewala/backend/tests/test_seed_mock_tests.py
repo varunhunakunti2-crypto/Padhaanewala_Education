@@ -35,7 +35,13 @@ _spec.loader.exec_module(seed)
 from app.models import MockTest, TestQuestion  # noqa: E402
 from app.question_types import QuestionType  # noqa: E402
 
-CANONICAL_QUESTIONS = 75
+CANONICAL_PAPERS = {
+    "jee-main-hardcore-mock-paper-2-2026": 75,
+    "jee-main-hardcore-mock-paper-3-2026": 75,
+    "jee-main-hardcore-full-length-mock-test-1-2026": 75,
+    "neet-ug-hardcore-full-length-mock-test-2-2026": 180,
+}
+CANONICAL_QUESTIONS = sum(CANONICAL_PAPERS.values())
 
 
 @pytest.fixture(scope="module")
@@ -78,9 +84,15 @@ def test_source_of_truth_is_the_file_the_frontend_imports(papers):
 
 
 def test_canonical_paper_has_seventy_five_questions(papers):
-    total = sum(len(paper["questions"]) for paper in papers)
+    counts = {paper["slug"]: len(paper["questions"]) for paper in papers}
+    assert counts == CANONICAL_PAPERS, (
+        f"the frontend file now serves {counts}; the seeded papers must match or "
+        "the browser and the database serve different papers"
+    )
+
+    total = sum(counts.values())
     assert total == CANONICAL_QUESTIONS, (
-        f"the frontend shows {total} questions; the seeded paper must match or "
+        f"the frontend shows {total} questions; the seeded papers must match or "
         "the browser and the database serve different papers"
     )
 

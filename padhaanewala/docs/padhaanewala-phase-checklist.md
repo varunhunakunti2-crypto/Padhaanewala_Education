@@ -30,11 +30,11 @@ Generated from: `padhaanewala-complete.md` (Master Plan V5.0)
 - ✅ **Phase 15 (Login, Register, OTP Pages) — COMPLETE — 28 Sep 2026** (password + mobile-OTP login, `/forgot-password`, `/reset-password`, `/verify-email`; lint/typecheck/395-page build green)
 - 🟡 **Phase 3 (Email, SMS, OTP) — CODE COMPLETE, GATE PENDING — 28 Sep 2026.** Backend + frontend done, 39 tests. Gate cannot pass until MSG91 + email credentials land (~3 days). Until then both providers fall back to **console logging**, so no message has reached a real phone or inbox.
 - 🟡 **Phase 40 (College Predictor) — CODE COMPLETE, ungated** (`/predictor` POST + exam list; disclaimer copy pending review)
-- 🟡 **Phase 7 (Mock Tests, Questions) — PARTIAL** (15 mock-test endpoints incl. start/submit/attempts/result + admin create/update/delete, so Phases 42/44/45/46 are effectively built; **Phase 43 question-bank admin has no endpoints** and `test_questions` is empty)
+- ✅ **Phase 7 (Mock Tests, Questions) — BUILT** (15 mock-test endpoints incl. start/submit/attempts/result + admin create/update/delete, so Phases 42/44/45/46 are effectively built; **Phase 43 question-bank admin built** on 2 cross-paper read endpoints, with paper-scoped writes. 75 seeded questions)
 
 ### Confirmed NOT started (measured, not assumed)
 - **Phase 13 — NLP query parse.** Text/filter search exists (`GET /colleges/search`); no NLP parse endpoint.
-- **Phase 25/36 — enquiry hand-off is missing.** `POST /enquiries` creates the enquiry and stops: it never creates a `Lead`, never writes a `Notification`, never emails the student or alerts an admin (`routers/enquiries.py` is 30 lines). The `leads` and `notifications` APIs exist and are unused by this path, so both the Phase 25 gate ("enquiry creates a lead admin can see") and the Phase 36 gate ("enquiry → student email + admin alert") **cannot** pass.
+- **Phase 25 — enquiry hand-off now DONE 30 Sep 2026.** `POST /enquiries` commits the enquiry, then `services/lead_handoff.py` assigns it to the least-loaded active counsellor (round-robin by open-lead count, ties on lowest id) and writes a `Notification` to every active admin plus the assigned counsellor. Overflow to admin when nobody has headroom. Gate items 1–3 hold. **Phase 36 remains open** — no student email and no SMS is dispatched on an enquiry; the in-app alert is all that fires.
 - **Phases 47–55 — Proctored exams.** Effectively zero: "proctor" appears only as a role name and a schema field.
 - **Phases 56–64 — Data import.** Zero: no CSV import API, no fuzzy duplicate detection, no data-verification workflow.
 - **Phases 76–77 — DPDP parental consent + IT Rules 2021 takedown.** Zero: no parental/guardian or takedown code. The privacy policy openly states there is no age-verification or parental-consent record — a **known, disclosed** legal gap, not an oversight.
@@ -163,9 +163,9 @@ Generated from: `padhaanewala-complete.md` (Master Plan V5.0)
 | 4 | States, Districts, Universities [DEV] | Phase 1 (*parallel* with 2, 3) | ✅ **COMPLETE 28 Sep** — `locations` + `universities` routers; seed verified by table count (36 states / 755 districts / 106 cities / 168 universities) |
 | 5 | Colleges, Courses, Fees [DEV] | Phase 4 (college → state/district/university FK) | 🟡 PARTIAL — 331 colleges + 22 courses seeded, full CRUD live; **colleges admin UI now wired (29 Sep 2026): create/edit/delete + feature toggle, role-gated, real API**; **`fees` table empty (0 rows)**; courses cannot be edited after a college exists (`CollegeUpdate` has no `courses`) |
 | 6 | Scholarships, Exams [DEV] | Phase 4 (*parallel* with 5) | 🟡 PARTIAL — full CRUD live; only 6 scholarships / 6 exams against Phase 65 targets of 100+ / 50+ |
-| 7 | Mock Tests, Questions [DEV] | Phase 5 (→course) + Phase 6 (→exam) | 🟡 PARTIAL — 15 endpoints incl. full attempt lifecycle + admin CRUD (⇒ Phases 42/44/45/46 effectively built); **Phase 43 question-bank admin missing**, `mock_tests` + `test_questions` both empty |
+| 7 | Mock Tests, Questions [DEV] | Phase 5 (→course) + Phase 6 (→exam) | ✅ BUILT — 15 endpoints incl. full attempt lifecycle + admin CRUD (⇒ Phases 42/44/45/46 effectively built); **Phase 43 question-bank admin built**, `test_questions` seeded with 75 rows |
 | 8 | Reviews, Blogs, FAQs, Media, SEO, Notif., Audit [DEV] | Phase 2 + Phase 5 | ✅ **BACKEND COMPLETE** — 7 routers (`reviews`/`blogs`/`faqs`/`media`/`seo`/`notifications`/`audit`); all tables empty (no content yet) |
-| 9 | Enquiries, Leads, Saved, Consent [DEV] | Phase 2 + Phase 5 | 🟡 PARTIAL — all 4 routers exist (`enquiries`/`leads`/`saved_colleges`/`consent`, 13 endpoints) but **nothing wires them together**: submitting an enquiry creates no lead. See Block F. |
+| 9 | Enquiries, Leads, Saved, Consent [DEV] | Phase 2 + Phase 5 | 🟡 PARTIAL — all 4 routers exist and are now **wired together** (30 Sep 2026): `POST /enquiries` promotes the enquiry to a lead (round-robin assign + admin alert), plus new `GET /enquiries` admin list and `GET /counsellors` roster. `saved_colleges` still unlinked from the dashboard view. |
 | 10 | Placement, NIRF, Cutoff, Seat Matrix [DEV] | Phase 5 + Phase 6 | ✅ **COMPLETE 28 Sep** (old revision said "models only, APIs → Phase 14") — `placement_records`/`cutoffs`/`nirf_rankings`/`seat_matrix` + 6 public queries + 27 enrichment endpoints. All currently **0 rows**. |
 
 **Completion Gate:** all tables migrated via Alembic ✅; user/login works at API level ✅; ~~OTP arrives on a real phone~~ ⛔ **BLOCKED on M1 credentials**; 28 states + 8 UTs + ~780 districts seeded ✅ (755); college/scholarship/exam tables accept sample data ✅ (331/6/6).
@@ -205,10 +205,10 @@ Generated from: `padhaanewala-complete.md` (Master Plan V5.0)
 |---|---|---|---|
 | 23 | Student Dashboard [DEV] | Phase 15 + Phase 9 | ☐ |
 | 24 | Comparison + Predictor [DEV] | Phase 14 (cutoff data) + Phase 13 | ☐ |
-| 25 | Enquiry, Lead APIs [DEV] | Phase 9 | 🟡 PARTIAL — both APIs exist (`POST /enquiries`; 6 `leads` endpoints incl. assign/follow-up/status/notes) but **no hand-off**: an enquiry never becomes a lead |
+| 25 | Enquiry, Lead APIs [DEV] | Phase 9 | ✅ **COMPLETE 30 Sep 2026** — `POST /enquiries` now hand-offs to a lead (least-loaded active counsellor, overflow to admin, `Notification` to admins + assignee), admin `GET /enquiries` with status/search filters, `GET /counsellors` roster with live workload, and the 6 `leads` endpoints. Admin Leads panel now calls assign / notes / follow-up / status for real instead of only status. 17 tests in `test_phase9.py`. |
 | 26 | Enquiry Form, WhatsApp, Static Pages [DEV] | Phase 25 + Phase 16 | ✅ form live on `/contact`, wired to the Phase 9 enquiry API |
 
-**Completion Gate:** dashboard shows saved colleges/tests/enquiries ☐; compare 2–4 colleges ☐; predictor shows Dream/Safe/Moderate with disclaimer 🟡 (API live, ungated); **enquiry creates a lead admin can see ⛔ FAILS — the hand-off is not implemented.**
+**Completion Gate:** dashboard shows saved colleges/tests/enquiries ☐; compare 2–4 colleges ☐; predictor shows Dream/Safe/Moderate with disclaimer 🟡 (API live, ungated); **enquiry creates a lead admin can see ✅ 30 Sep 2026** (round-robin assign + admin notification; unassigned overflow is visible to admins, which is the intended behaviour).
 
 ### BLOCK G — Admin Panel (Phases 27–35)
 | # | Phase | Mandatory before | Done |
@@ -222,10 +222,10 @@ Generated from: `padhaanewala-complete.md` (Master Plan V5.0)
 ### BLOCK H — Notifications & SEO (Phases 36–37)
 | # | Phase | Mandatory before | Done |
 |---|---|---|---|
-| 36 | Notifications, Email, SMS [DEV] | Phase 3 + Phase 9 + Phase 25 | 🟡 PARTIAL — notification API complete (6 endpoints: my/unread-count/read/read-all/create/delete) and Phase 3 delivery services exist, but **nothing triggers them on an enquiry** |
+| 36 | Notifications, Email, SMS [DEV] | Phase 3 + Phase 9 + Phase 25 | 🟡 PARTIAL — notification API complete (6 endpoints) and an enquiry now **triggers** an in-app admin alert + assignee alert (30 Sep 2026), so the bell is no longer orphaned. **Still no outbound email/SMS to the student** on an enquiry. |
 | 37 | SEO: sitemap, robots, structured data [DEV] | Public pages live (Block D + E) | ✅ `seo` API + `robots.ts` + `sitemap.xml` + Organization JSON-LD |
 
-**Completion Gate:** **enquiry → student email + admin alert ⛔ FAILS (no dispatch wired)**; notification bell shows unread 🟡 (API only, no trigger); sitemap validates ✅; structured data ☐ (not run through Rich Results).
+**Completion Gate:** **enquiry → student email + admin alert 🟡 half done (30 Sep 2026)** — the admin/assignee in-app alert fires; the student email does not, so the gate still fails on dispatch. Notification bell shows unread 🟡 (now triggered by enquiries); sitemap validates ✅; structured data ☐ (not run through Rich Results).
 
 ### BLOCK I — AI System (Phases 38–41)
 | # | Phase | Mandatory before | Done |
@@ -241,7 +241,7 @@ Generated from: `padhaanewala-complete.md` (Master Plan V5.0)
 | # | Phase | Mandatory before | Done |
 |---|---|---|---|
 | 42 | Test listing + instructions [DEV] | Phase 7 + Phase 2 | ✅ list + detail live |
-| 43 | Question bank admin [DEV] | Phase 42 | ☐ **not built** — no question CRUD endpoints; `test_questions` empty |
+| 43 | Question bank admin [DEV] | Phase 42 | ✅ built — 2 cross-paper read endpoints (`GET /api/v1/questions` filterable, `GET /api/v1/questions/facets`); writes stay paper-scoped on the Phase 7 nested routes; 75 seeded questions. Bank is browse-per-paper, **not** a reusable question pool |
 | 44 | Test interface — DESKTOP ONLY [DEV] | Phase 43 | ✅ attempt lifecycle live (start/answer autosave/submit) |
 | 45 | Results page [DEV] | Phase 44 | ✅ `GET .../attempts/{id}/result` + `test_mock_test_engine.py` |
 | 46 | Test admin (create test) [DEV] | Phase 43 | ✅ admin create/update/delete live |

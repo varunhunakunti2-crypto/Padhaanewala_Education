@@ -5,7 +5,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
-from app.dependencies import get_optional_current_user, require_role
+from app.dependencies import get_current_user, get_optional_current_user, require_role
 from app.models import (
     College,
     CollegeCourse,
@@ -225,7 +225,12 @@ def get_college(college_ref: str, db: Session = Depends(get_db)):
     status_code=201,
     dependencies=[Depends(require_role(*ADMIN_ROLES))],
 )
-def create_college(payload: CollegeCreate, db: Session = Depends(get_db)):
+def create_college(
+    payload: CollegeCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     slug = _slugify(payload.name)
     if db.scalar(select(College).where(College.slug == slug)):
         raise HTTPException(status_code=400, detail="College with this name exists")
@@ -275,6 +280,25 @@ def create_college(payload: CollegeCreate, db: Session = Depends(get_db)):
             )
         )
 
+    # 4.4/4.5 — `delete_college` was audited and this was not, which is the
+    # worst asymmetry available: the trail recorded who destroyed a record but
+    # not who created or edited it, so "who added this college" was
+    # unanswerable. The admin CRUD screen is what makes this reachable at all.
+    #
+    # Written after `flush` so `college.id` exists, and after the courses so the
+    # row describes what was actually created. The whole payload is logged
+    # rather than a hand-picked subset — an audit column that silently omits a
+    # field is how BUG-11 happened, where `accreditation_nba` was saved by
+    # nobody and reported by everybody.
+    audit.record(
+        db,
+        request=request,
+        action="create_college",
+        entity_type="college",
+        entity_id=college.id,
+        actor=user,
+        new_value=payload.model_dump(),
+    )
     db.commit()
     db.refresh(college)
     return _get_detail(college, db)
@@ -286,13 +310,30 @@ def create_college(payload: CollegeCreate, db: Session = Depends(get_db)):
     dependencies=[Depends(require_role(*ADMIN_ROLES))],
 )
 def update_college(
-    college_ref: str, payload: CollegeUpdate, db: Session = Depends(get_db)
+    college_ref: str,
+    payload: CollegeUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     college = _find_college(db, college_ref)
     if college is None:
         raise HTTPException(status_code=404, detail="College not found")
 
     data = payload.model_dump(exclude_unset=True)
+
+    # 4.4/4.5 — captured before the `setattr` loop, and narrowed to the keys the
+    # caller actually sent. `exclude_unset` is what makes this correct: the
+    # admin form prefills from the record, so a full dump would record every
+    # untouched column as a change and make the trail unreadable. Only the
+    # fields that differ are logged, so a reviewer sees the edit, not the form.
+    before = {field: getattr(college, field) for field in data if hasattr(college, field)}
+    changed = {
+        field: {"from": before[field], "to": value}
+        for field, value in data.items()
+        if field in before and before[field] != value
+    }
+
     if "name" in data and data["name"] != college.name:
         slug = _slugify(data["name"])
         if db.scalar(select(College).where(College.slug == slug, College.id != college.id)):
@@ -309,6 +350,24 @@ def update_college(
         district = db.get(District, college.district_id)
         if district is None or district.state_id != college.state_id:
             college.district_id = None
+
+    # Written after the duplicate-name check above, so a refused update leaves no
+    # row describing a change that never happened — the same shape as
+    # `test_rejected_blog_update_does_not_leave_a_phantom_audit_row`.
+    #
+    # A no-op PUT (the form re-saved unchanged values) logs nothing. That is
+    # deliberate: a trail padded with empty diffs trains a reviewer to skip it.
+    if changed:
+        audit.record(
+            db,
+            request=request,
+            action="update_college",
+            entity_type="college",
+            entity_id=college.id,
+            actor=user,
+            old_value={field: pair["from"] for field, pair in changed.items()},
+            new_value={field: pair["to"] for field, pair in changed.items()},
+        )
     db.commit()
     db.refresh(college)
     return _get_detail(college, db)

@@ -26,6 +26,7 @@ audit,
     compliance,
     consent,
     courses,
+    counsellors,
     enquiries,
     enrichment,
     exams,
@@ -34,6 +35,7 @@ audit,
     locations,
     media,
     mock_tests,
+    questions,
     notifications,
     predictor,
     reviews,
@@ -120,11 +122,13 @@ app.include_router(courses.router)
 app.include_router(consent.router)
 app.include_router(enquiries.router)
 app.include_router(leads.router)
+app.include_router(counsellors.router)
 app.include_router(enrichment.router)
 app.include_router(enrichment.catalog_router)
 app.include_router(scholarships.router)
 app.include_router(exams.router)
 app.include_router(mock_tests.router)
+app.include_router(questions.router)
 app.include_router(reviews.router)
 app.include_router(blogs.router)
 app.include_router(faqs.router)

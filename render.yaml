@@ -1,0 +1,211 @@
+# ============================================================================
+# Render Blueprint — temporary free-tier demo for the Padhaanewala API.
+#
+# Deploy: Render dashboard -> New -> Blueprint -> point at this repo. Render
+# reads this file and creates the service. Then paste the env values in.
+#
+# This is NOT the production deployment. Production is docker-compose.prod.yml
+# behind Caddy on a real VPS with a real domain; that path is untouched.
+#
+# ---------------------------------------------------------------------------
+# BEFORE YOU DEPLOY — the free tier has two behaviours that will otherwise
+# present as bugs in this codebase specifically:
+#
+# 1. THE SERVICE SLEEPS. Render's free plan spins the container down after ~15
+#    minutes without traffic and takes 1-3 minutes to wake. Anything that calls
+#    the API during a cold start sees a failed connection, not a slow one.
+#    That collides with the frontend's 6-second fetch timeout
+#    (frontend/lib/api-server.ts:35): a cold backend is indistinguishable from
+#    a dead one, and every server-side fetch falls back to bundled data.
+#    So the FIRST Vercel build will very likely render an empty catalogue, and
+#    the pages will fill in on their own once ISR revalidates.
+#    Fix: curl the Render /health once to wake it, then trigger the Vercel
+#    redeploy. See the runbook.
+#
+# 2. NO PERSISTENT DISK. Uploads (admin media, banners) are written to the
+#    container filesystem and are destroyed on every deploy. The media rows
+#    survive in Postgres and dangle. Acceptable for a week-long demo.
+#
+# 3. NO FREE REDIS. See RATE_LIMIT_ENABLED in padhaanewala/.env.deploy. With no
+#    Redis, `RATE_LIMIT_ENABLED` MUST be false or login returns 503 for every
+#    caller, because the auth namespace fails closed by design
+#    (backend/app/middleware/ratelimit.py:47).
+# ============================================================================
+
+services:
+  - type: web
+    name: padhaanewala-api
+    runtime: docker
+
+    # Free tier: 512 MB RAM, 0.5 CPU, sleeps after ~15 min idle, 750 h/month.
+    plan: free
+    region: singapore
+
+    # The backend image is self-contained — app/, alembic/, alembic.ini,
+    # scripts/ and the entrypoint. Its build context is the backend directory,
+    # NOT the repo root, because the .dockerignore there is written against
+    # backend-relative paths and a repo-root context would ship the 331-row
+    # media tree and the local venv into the build.
+    rootDir: padhaanewala/backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+
+    # NOT /health.
+    #
+    # /health returns 503 whenever Redis is unreachable (main.py:199-203), and
+    # we have no Redis on the free tier. Pointing Render's health check at it
+    # means the service never registers as healthy.
+    #
+    # /api/v1/stats/catalog is DB-backed and returns 200 with Redis absent. GETs
+    # skip RateLimitMiddleware entirely (ratelimit.py:138), so it is unaffected
+    # by the limiter being off. It does six COUNT(*) queries, which on a free
+    # Postgres instance is a real — if small — load every 30 s.
+    #
+    # If you later add a real Redis: switch this back to /health. It is the
+    # better probe because it actually reports both dependencies.
+    healthCheckPath: /api/v1/stats/catalog
+
+    # Note the absence of a `startCommand`. Render runs the Dockerfile's
+    # ENTRYPOINT, which runs `alembic upgrade head` before uvicorn. Overriding
+    # the command here would skip migrations and the service would serve
+    # against a schema that does not exist.
+
+    # -------------------------------------------------------------------------
+    # Environment
+    #
+    # `sync: false` means Render creates the key as a prompt on the Blueprint
+    # screen instead of taking the value from this file. That is deliberate:
+    # DATABASE_URL is a credential and this file is committed to a public repo.
+    # JWT_SECRET_KEY and JWT_REFRESH_SECRET_KEY are the same story — the values
+    # generated into padhaanewala/.env.deploy are real secrets and must not
+    # live in git, even for a demo.
+    #
+    # Everything without `sync: false` is inert by design: APP_ENV=staging
+    # leaves the production guards off, so this service boots with console
+    # email and SMS rather than refusing to start for want of a SendGrid key
+    # and a DLT template id.
+    # -------------------------------------------------------------------------
+    envVars:
+      - key: APP_ENV
+        value: staging
+
+      - key: APP_URL
+        sync: false
+
+      - key: API_URL
+        sync: false
+
+      - key: CORS_ORIGINS
+        sync: false
+
+      - key: ALLOWED_HOSTS
+        sync: false
+
+      # Render's edge forwards X-Forwarded-For, so exactly one hop.
+      #
+      # This does NOT fully close the header-trust hole, and the distinction
+      # matters. `client_ip()` (app/utils/client_ip.py) trusts the header only
+      # when this matches the topology, but uvicorn's ProxyHeadersMiddleware has
+      # ALREADY rewritten request.client before any application code runs — the
+      # Dockerfile passes `--forwarded-allow-ips "*"` (Dockerfile:164-169).
+      # So on a directly-reachable container, any caller can still forge their
+      # client IP, and with it every rate-limit bucket and audit-log row.
+      #
+      # The Dockerfile comments on exactly this (Dockerfile:147-151) and
+      # concludes it is safe only because "this container publishes no port"
+      # and the sole reachable peer is the frontend over a private Compose
+      # network. On Render that premise is false. Closing it properly means
+      # changing `--forwarded-allow-ips` from `*` to Render's proxy range —
+      # say the word and I will make it env-overridable with `*` still the
+      # default so the Compose prod stack is unaffected.
+      - key: TRUSTED_PROXY_HOPS
+        value: "1"
+
+      # Injected from the `databases:` block below. Render resolves the
+      # connection string itself, so the credential never has to be pasted into
+      # this file or typed into the dashboard.
+      - key: DATABASE_URL
+        fromDatabase:
+          name: padhaanewala-db
+          property: connectionString
+
+      # 5/5, overriding the config.py defaults of 20/20. The free Postgres
+      # instance caps concurrent connections well below 40, and blowing past it
+      # does not fail at startup -- it fails per request with `too many
+      # connections for role`, which looks like random 500s rather than a
+      # misconfiguration. There is one API instance here, so 10 is ample.
+      - key: DB_POOL_SIZE
+        value: "5"
+
+      - key: DB_MAX_OVERFLOW
+        value: "5"
+
+      # false, not true: no Redis on the free tier, and a missing Redis fails
+      # the auth namespace CLOSED, which 503s every login and refresh.
+      - key: RATE_LIMIT_ENABLED
+        value: "false"
+
+      - key: REDIS_URL
+        sync: false
+
+      - key: SECRET_KEY
+        sync: false
+
+      - key: JWT_SECRET_KEY
+        sync: false
+
+      - key: JWT_REFRESH_SECRET_KEY
+        sync: false
+
+      - key: EMAIL_PROVIDER
+        value: console
+
+      - key: EMAIL_FROM_EMAIL
+        value: no-reply@padhaanewala.in
+
+      - key: SMS_PROVIDER
+        value: console
+
+      - key: MEDIA_ROOT
+        value: /var/lib/padhaanewala/media
+
+      - key: RUN_MIGRATIONS
+        value: "true"
+
+      # The catalogue is migrated from the local dev database, not re-seeded.
+      # Set this to "true" and redeploy only if you skip the pg_dump step.
+      - key: RUN_SEEDS
+        value: "false"
+
+      - key: BCRYPT_ROUNDS
+        value: "12"
+
+      - key: JWT_ALGORITHM
+        value: HS256
+
+# ============================================================================
+# DATABASE
+# ============================================================================
+# region MUST match the web service's `region: singapore` above. A cross-region
+# pair turns every query into an inter-continent round trip, and the health
+# check at /api/v1/stats/catalog issues six COUNT(*) queries on every probe.
+#
+# Free plan limits, all of which matter for this deployment:
+#   - 1 GB fixed storage
+#   - EXPIRES 30 DAYS AFTER CREATION. Then a 14-day grace period to upgrade,
+#     after which Render deletes the database and all of its data. Render emails
+#     before both deadlines. Keep backend/var/*.dump current or the catalogue is
+#     unrecoverable.
+#   - NO BACKUPS of any kind, and the instance may be restarted at any time.
+#   - Only one free database per workspace.
+#
+# Migrations are applied by the image ENTRYPOINT (`alembic upgrade head`), not by
+# this file, so the schema is created on first boot.
+#
+# The catalogue itself is NOT seeded -- see RUN_SEEDS above. pg_dump it from the
+# local dev database and psql it in, or you get an empty schema.
+databases:
+  - name: padhaanewala-db
+    databaseName: padhaanewala
+    plan: free
+    region: singapore

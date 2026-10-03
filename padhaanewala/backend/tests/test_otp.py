@@ -649,7 +649,7 @@ def _production_baseline(monkeypatch, **overrides) -> None:
     # Phase 9 / the media-upload work added three more production guards after
     # this helper was written, and they trip *before* any delivery-provider check
     # is reached. Without satisfying them here every assertion in this file would
-    # be testing the wrong guard — the same reason the JWT and lifetime defaults
+    # be testing the wrong guard - the same reason the JWT and lifetime defaults
     # are pinned above.
     monkeypatch.setattr(settings, "MEDIA_ROOT", "/var/lib/padhaanewala/media")
     monkeypatch.setattr(settings, "MEDIA_MAX_BYTES", 5 * 1024 * 1024)

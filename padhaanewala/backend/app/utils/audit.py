@@ -103,7 +103,11 @@ def _jsonable(value):
     if isinstance(value, (datetime, date)):
         return value.isoformat()
     if isinstance(value, Decimal):
-        return str(value)
+        # float rather than str: an audit diff is read by eye, and "12.5" and
+        # 12.5 are the same number to the person checking whether an admin
+        # changed a fee. Precision beyond float is not what this column is for,
+        # and a JSON number is what the admin console renders.
+        return float(value)
     if isinstance(value, Enum):
         return _jsonable(value.value)
     if isinstance(value, UUID):

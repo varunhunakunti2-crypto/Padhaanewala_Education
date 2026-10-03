@@ -52,6 +52,15 @@ junit.xml
 *.out
 
 # ============================================================================
+# RUNTIME STATE (backend)
+# ============================================================================
+# `var/` holds everything the running app produces: pg_dump backups, uploaded
+# college images, and files written by the upload tests. A `.dump` is a whole
+# copy of the development database, so committing one publishes every row in
+# it. Nothing here is source -- all of it is reproducible or disposable.
+var/
+
+# ============================================================================
 # IDE / OS
 # ============================================================================
 .idea/

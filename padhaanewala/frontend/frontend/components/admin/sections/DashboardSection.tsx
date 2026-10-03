@@ -14,8 +14,8 @@ import {
 import { Badge } from "@/components/ui/Badge";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { useApp } from "@/lib/context/AppContext";
-import { apiFetch } from "@/lib/api";
-import type { ApiCollegeListItem, ApiScholarship } from "@/lib/api-server";
+import { adminApi, type AdminScholarship } from "@/lib/api";
+import type { ApiCollegeListItem } from "@/lib/api-server";
 import { useAdminResource } from "@/components/admin/useAdminResource";
 import { useCatalogStats, useBackendHealth } from "@/lib/useStats";
 import { cn } from "@/lib/utils";
@@ -45,12 +45,15 @@ export function DashboardSection({ go }: { go: (s: SectionKey) => void }) {
   const { enquiries, testHistory } = useApp();
   const stats = useCatalogStats();
   const health = useBackendHealth();
-  const { data: scholarships } = useAdminResource<ApiScholarship>(() =>
-    apiFetch<ApiScholarship[]>("/scholarships?limit=200"),
+  // Both of these used to be hand-written `?limit=200` and `?limit=1000` queries
+  // against routes that cap `limit` at 100 — a 422 each, rendered by
+  // `useAdminResource` as an unreachable API, so the deadline panel and the
+  // "recently added" list were silently empty on every load. The `adminApi` walks
+  // are held against the real `le=` bounds by `tests/page-size-contract.test.ts`.
+  const { data: scholarships } = useAdminResource<AdminScholarship>(() =>
+    adminApi.scholarships(),
   );
-  const { data: colleges } = useAdminResource<ApiCollegeListItem>(() =>
-    apiFetch<ApiCollegeListItem[]>("/colleges?limit=1000"),
-  );
+  const { data: colleges } = useAdminResource<ApiCollegeListItem>(() => adminApi.colleges());
 
   // "Now" is captured once at mount: reading the clock during render makes the
   // deadline list depend on when React happened to re-render.

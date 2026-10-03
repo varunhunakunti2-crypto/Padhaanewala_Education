@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 
 from app.database import SessionLocal
 from app.main import app
-from app.models import Counsellor, Role, User
+from app.models import Counsellor, Notification, Role, User
 
 client = TestClient(app)
 
@@ -49,14 +49,14 @@ def _make_admin() -> dict:
     return _login(acc["email"])
 
 
-def _make_counsellor(name: str = "counsellor") -> tuple[dict, int]:
+def _make_counsellor(name: str = "counsellor", max_leads: int = 100) -> tuple[dict, int]:
     acc = _register(name)
     with SessionLocal() as db:
         user = db.query(User).filter(User.email == acc["email"]).first()
         role = db.query(Role).filter(Role.name == "counsellor").first()
         assert role is not None
         user.roles.append(role)
-        counsellor = Counsellor(user_id=user.id, name=name, max_leads=100)
+        counsellor = Counsellor(user_id=user.id, name=name, max_leads=max_leads)
         db.add(counsellor)
         db.commit()
         db.refresh(counsellor)
@@ -384,9 +384,277 @@ def test_audit_payload_never_carries_a_non_json_value():
     json.dumps(out)
 
     assert isinstance(out["due_at"], str)
-    assert isinstance(out["fee"], str)
+    assert isinstance(out["fee"], float)
     assert isinstance(out["nested"]["expires_at"], str)
     assert isinstance(out["listed"][0], str)
     # Redaction still wins over coercion.
     assert out["email"] == "[redacted]"
     assert out["count"] == 3 and out["flag"] is True
+
+
+# --- Enquiry -> lead hand-off (Phase 25) ---
+
+
+def _park_all_counsellors() -> None:
+    """Deactivate every counsellor left behind by earlier tests.
+
+    The suite truncates `users` (and therefore `counsellors`) once per session,
+    not once per test, so any test that asserts *which* counsellor a new enquiry
+    lands on has to own the roster first. Without this, a counsellor created by
+    an unrelated test would silently take the assignment.
+    """
+    with SessionLocal() as db:
+        for existing in db.query(Counsellor).all():
+            existing.is_active = False
+        db.commit()
+
+
+def _make_counsellor_with_user(name: str, max_leads: int = 100) -> tuple[dict, int, int]:
+    """`(_headers, counsellor_id, user_id)`, so tests can read an inbox."""
+    headers, counsellor_id = _make_counsellor(name, max_leads=max_leads)
+    with SessionLocal() as db:
+        user_id = (
+            db.query(Counsellor).filter(Counsellor.id == counsellor_id).one().user_id
+        )
+    return headers, counsellor_id, user_id
+
+
+def _inbox(user_id: int) -> list[dict]:
+    with SessionLocal() as db:
+        return [
+            {"type": n.type, "title": n.title, "data": n.data}
+            for n in db.query(Notification)
+            .filter(Notification.user_id == user_id)
+            .order_by(Notification.id.desc())
+            .all()
+        ]
+
+
+def _admin_user_id(admin_headers: dict) -> int:
+    me = client.get("/api/v1/users/me", headers=admin_headers)
+    assert me.status_code == 200, me.text
+    return me.json()["id"]
+
+
+def test_new_enquiry_is_assigned_and_announced():
+    """The Phase 25 gate: an enquiry becomes a lead somebody owns."""
+    _park_all_counsellors()
+    admin_headers = _make_admin()
+    admin_id = _admin_user_id(admin_headers)
+    _counsellor_headers, counsellor_id, counsellor_user_id = _make_counsellor_with_user(
+        "handoff-counsellor"
+    )
+
+    lead_id = _submit_enquiry()
+
+    detail = client.get(f"/api/v1/leads/{lead_id}", headers=admin_headers)
+    assert detail.status_code == 200
+    assert detail.json()["assigned_counsellor"] == "handoff-counsellor"
+
+    admin_alerts = [
+        n
+        for n in _inbox(admin_id)
+        if n["type"] == "new_lead" and (n["data"] or {}).get("enquiry_id") == lead_id
+    ]
+    assert admin_alerts, "the admin who owns the queue was never told about the lead"
+
+    assigned_alerts = [
+        n
+        for n in _inbox(counsellor_user_id)
+        if n["type"] == "lead_assigned" and (n["data"] or {}).get("enquiry_id") == lead_id
+    ]
+    assert assigned_alerts, "the counsellor the lead was assigned to was never told"
+
+    # The auto-assignment must be a real one the CRM can see, not a notification
+    # claiming something the list endpoint disagrees with.
+    roster = client.get("/api/v1/counsellors", headers=admin_headers)
+    assert roster.status_code == 200
+    entry = next(c for c in roster.json() if c["id"] == counsellor_id)
+    assert entry["active_leads"] == 1
+
+
+def test_round_robin_prefers_the_least_loaded_counsellor():
+    _park_all_counsellors()
+    admin_headers = _make_admin()
+    _headers_busy, busy_id, _ = _make_counsellor_with_user("busy-counsellor")
+    _headers_idle, idle_id, _ = _make_counsellor_with_user("idle-counsellor")
+
+    # Load only the first counsellor. The second is created later, so a naive
+    # "first by id" balancer would keep handing work to the busy one.
+    first = _submit_enquiry()
+    assigned = client.get(f"/api/v1/leads/{first}", headers=admin_headers).json()
+    assert assigned["assigned_counsellor"] == "busy-counsellor"
+
+    second = _submit_enquiry()
+    detail = client.get(f"/api/v1/leads/{second}", headers=admin_headers).json()
+    assert detail["assigned_counsellor"] == "idle-counsellor"
+
+    loads = {c["id"]: c["active_leads"] for c in client.get(
+        "/api/v1/counsellors", headers=admin_headers
+    ).json()}
+    assert loads[busy_id] == 1
+    assert loads[idle_id] == 1
+
+
+def test_closed_lead_frees_round_robin_capacity():
+    _park_all_counsellors()
+    admin_headers = _make_admin()
+    _headers_one, _id_one, _ = _make_counsellor_with_user("capped-counsellor", max_leads=1)
+
+    first = _submit_enquiry()
+    assert client.get(f"/api/v1/leads/{first}", headers=admin_headers).json()[
+        "assigned_counsellor"
+    ] == "capped-counsellor"
+
+    # Capacity is now used up, so the next enquiry has nowhere to go but the
+    # admins. Spec §39: "overflow to admin".
+    overflowed = _submit_enquiry()
+    assert (
+        client.get(f"/api/v1/leads/{overflowed}", headers=admin_headers).json()[
+            "assigned_counsellor"
+        ]
+        is None
+    )
+
+    # Winning the first lead must release the slot, otherwise a counsellor who
+    # converts their work is permanently the least-preferred target.
+    won = client.patch(
+        f"/api/v1/leads/{first}/status", json={"status": "won"}, headers=admin_headers
+    )
+    assert won.status_code == 200
+
+    third = _submit_enquiry()
+    assert client.get(f"/api/v1/leads/{third}", headers=admin_headers).json()[
+        "assigned_counsellor"
+    ] == "capped-counsellor"
+
+
+def test_overflow_lead_still_reaches_the_admin():
+    """A lead nobody can take must not be a lead nobody heard about."""
+    _park_all_counsellors()
+    admin_headers = _make_admin()
+    admin_id = _admin_user_id(admin_headers)
+    _make_counsellor_with_user("full-counsellor", max_leads=1)
+
+    first = _submit_enquiry()
+    second = _submit_enquiry()
+
+    alerts = [
+        n
+        for n in _inbox(admin_id)
+        if n["type"] == "new_lead" and (n["data"] or {}).get("enquiry_id") in {first, second}
+    ]
+    assert len(alerts) == 2, "an unassignable lead was captured silently"
+
+
+def test_counsellor_roster_is_admin_only():
+    _park_all_counsellors()
+    _make_counsellor_with_user("roster-counsellor")
+    acc = _register("student")
+    counsellor_headers, _cid, _uid = _make_counsellor_with_user("roster-peer")
+
+    assert client.get("/api/v1/counsellors").status_code == 401
+    assert client.get("/api/v1/counsellors", headers=acc["headers"]).status_code == 403
+    # A counsellor can work assigned leads but has no business listing the team
+    # they could be measured against, and cannot hand work over anyway.
+    assert client.get("/api/v1/counsellors", headers=counsellor_headers).status_code == 403
+
+
+def test_counsellor_roster_hides_inactive_by_default():
+    _park_all_counsellors()
+    admin_headers = _make_admin()
+    _headers, _cid, _uid = _make_counsellor_with_user("roster-active")
+
+    active = client.get("/api/v1/counsellors", headers=admin_headers)
+    assert active.status_code == 200
+    assert [c["name"] for c in active.json()] == ["roster-active"]
+
+    everything = client.get(
+        "/api/v1/counsellors", params={"include_inactive": True}, headers=admin_headers
+    )
+    assert everything.status_code == 200
+    names = {c["name"] for c in everything.json()}
+    assert "roster-active" in names
+    assert len(names) > 1, "deactivated counsellors should still be listed on request"
+    assert any(not c["is_active"] for c in everything.json())
+
+
+def test_reassigning_a_lead_to_its_current_owner_is_not_a_capacity_check():
+    """A counsellor who is exactly full must still be able to re-save their own lead."""
+    _park_all_counsellors()
+    admin_headers = _make_admin()
+    _headers, _cid, _uid = _make_counsellor_with_user("exactly-full", max_leads=1)
+
+    lead_id = _submit_enquiry()
+    detail = client.get(f"/api/v1/leads/{lead_id}", headers=admin_headers).json()
+    assert detail["assigned_counsellor"] == "exactly-full"
+
+    with SessionLocal() as db:
+        counsellor = db.query(Counsellor).filter(Counsellor.name == "exactly-full").one()
+        counsellor_id = counsellor.id
+
+    # The lead is their only one, so they are at max_leads. Re-sending the same
+    # assignment must succeed: the lead being moved is not a *new* claim on
+    # capacity, and refusing it would break the "save" button on a full
+    # counsellor's own workspace.
+    same = client.patch(
+        f"/api/v1/leads/{lead_id}/assign",
+        json={"counsellor_id": counsellor_id},
+        headers=admin_headers,
+    )
+    assert same.status_code == 200, same.text
+    assert same.json()["assigned_counsellor"] == "exactly-full"
+
+    # But somebody else's lead is a genuine new claim, and must still be refused.
+    other = _submit_enquiry()
+    refused = client.patch(
+        f"/api/v1/leads/{other}/assign",
+        json={"counsellor_id": counsellor_id},
+        headers=admin_headers,
+    )
+    assert refused.status_code == 409, refused.text
+
+
+def test_a_max_length_name_still_produces_a_notification():
+    """`enquiries.name` is VARCHAR(255) and the title prefix pushes past
+    `notifications.title`'s own 255 — a long name must not lose the alert."""
+    _park_all_counsellors()
+    admin_headers = _make_admin()
+    admin_id = _admin_user_id(admin_headers)
+    long_name = "N" * 255
+
+    lead_id = _submit_enquiry({"name": long_name, "mobile": f"3{uuid.uuid4().int % 1_000_000_000:09d}"})
+
+    alerts = [
+        n
+        for n in _inbox(admin_id)
+        if n["type"] == "new_lead" and (n["data"] or {}).get("enquiry_id") == lead_id
+    ]
+    assert alerts, "a 255-character name silently swallowed the alert"
+    assert len(alerts[0]["title"]) <= 255
+
+
+def test_admin_enquiry_list_filters_and_is_gated():
+    _park_all_counsellors()
+    admin_headers = _make_admin()
+    marker = f"Filterable{uuid.uuid4().hex[:6]}"
+    lead_id = _submit_enquiry({"name": marker, "mobile": f"4{uuid.uuid4().int % 1_000_000_000:09d}"})
+
+    listing = client.get("/api/v1/enquiries", headers=admin_headers)
+    assert listing.status_code == 200
+    assert any(e["id"] == lead_id for e in listing.json())
+
+    by_search = client.get(
+        "/api/v1/enquiries", params={"search": marker}, headers=admin_headers
+    )
+    assert [e["id"] for e in by_search.json()] == [lead_id]
+
+    by_status = client.get(
+        "/api/v1/enquiries", params={"status": "won"}, headers=admin_headers
+    )
+    assert all(e["status"] == "won" for e in by_status.json())
+    assert lead_id not in [e["id"] for e in by_status.json()]
+
+    acc = _register("student")
+    assert client.get("/api/v1/enquiries", headers=acc["headers"]).status_code == 403
+    assert client.get("/api/v1/enquiries").status_code == 401

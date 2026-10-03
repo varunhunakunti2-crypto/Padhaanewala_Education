@@ -409,6 +409,61 @@ class AdminQuestionResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class AdminQuestionListItem(AdminQuestionResponse):
+    """A question as the cross-paper bank sees it.
+
+    Adds the owning paper to ``AdminQuestionResponse``. Every question row
+    belongs to exactly one ``mock_tests`` row -- the FK is ``NOT NULL`` -- so a
+    bank listing that spans papers has to say which paper each row came from.
+    Without that, "can I reuse this question in another paper?" is a question
+    the editor cannot answer from what is on screen.
+
+    ``paper_name``/``paper_slug`` are denormalised onto the row rather than
+    exposed as a nested object because the editor's write path is
+    ``/mock-tests/{ref}/questions``: it needs the slug on every row it might
+    open, and a nested object would only save one request per row.
+    """
+
+    mock_test_id: int
+    paper_name: str
+    paper_slug: str
+
+    model_config = {"from_attributes": True}
+
+
+class AdminQuestionPaper(BaseModel):
+    """A paper as a filter option, with the question count the editor will see."""
+
+    mock_test_id: int
+    name: str
+    slug: str
+    #: Counting inactive questions too, so this matches
+    #: ``MockTestAdminDetailResponse.question_count`` rather than the number the
+    #: student-facing paper reports.
+    question_count: int = 0
+
+    model_config = {"from_attributes": True}
+
+
+class AdminQuestionFacets(BaseModel):
+    """Distinct values present in the bank, for the filter dropdowns.
+
+    Computed by the server rather than hardcoded in the admin UI. Subjects and
+    topics are *content*, not configuration: a hardcoded list has to be updated
+    by hand every time a paper is authored, and until somebody remembers, the
+    dropdown offers a subject that matches nothing and looks broken. A
+    ``GROUP BY`` is a few lines and cannot go stale.
+    """
+
+    subjects: list[str]
+    topics: list[str]
+    difficulties: list[str]
+    question_types: list[str]
+    #: Papers holding at least one question, so "add a question" knows where a
+    #: new row can go and the paper filter never offers an empty target.
+    papers: list[AdminQuestionPaper]
+
+
 class MockTestAdminDetailResponse(MockTestResponse):
     attempt_count: int = 0
     questions: list[AdminQuestionResponse] = []

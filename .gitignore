@@ -24,7 +24,27 @@ desktop.ini
 # filesystem path and the other a LAN address.
 logs/
 
+# Logs. The root .gitignore had no *.log rule, so a dev server started from the
+# repository root left backend.log and dev.log untracked-but-unprotected -- a
+# plain `git add -A` would have committed them.
+*.log
+
 # uvicorn/npm stdout+stderr captures. `*.log` does not match these, and a
 # SQLAlchemy error message can embed the connection string and credentials.
 *.err
 *.out
+
+# Local database artifacts. Both directories are regenerable output, and the
+# second holds binary pg_dump files that have no business in history:
+#   backend/var/   media uploads, test uploads, and pre-operation .dump backups
+#   backend/data/  catalogue CSV exports from scripts/export_catalog_csvs.py
+padhaanewala/backend/var/
+padhaanewala/backend/data/
+
+# Defence in depth. The nested .gitignore files already cover these, but a stray
+# copy at the root would otherwise be unprotected.
+node_modules/
+.next/
+__pycache__/
+*.tsbuildinfo
+*.py[cod]

@@ -19,6 +19,7 @@ from app.schemas.engagement import (
     SetFollowUpRequest,
     UpdateLeadStatusRequest,
 )
+from app.services.lead_handoff import CLOSED_LEAD_STATUSES
 
 router = APIRouter(prefix="/api/v1/leads", tags=["leads"])
 
@@ -72,11 +73,15 @@ def _can_access(db: Session, user: User, enquiry_id: int) -> bool:
 
 def _to_detail(enquiry: Enquiry) -> LeadDetailResponse:
     item = _to_list_item(enquiry)
+    # Ordered here rather than on the relationships so the guarantee is local to
+    # the one response that exposes them. Without it the order is whatever the
+    # selectinload happened to return, and a lead's notes would appear in an
+    # order that could change between two reads of the same unchanged row.
     return LeadDetailResponse(
         **item.model_dump(),
         notes=[
             LeadNoteResponse(id=n.id, note=n.note, created_at=n.created_at)
-            for n in enquiry.lead_notes
+            for n in sorted(enquiry.lead_notes, key=lambda n: (n.created_at, n.id))
         ],
         status_history=[
             LeadStatusHistoryResponse(
@@ -85,7 +90,9 @@ def _to_detail(enquiry: Enquiry) -> LeadDetailResponse:
                 new_status=h.new_status,
                 created_at=h.created_at,
             )
-            for h in enquiry.status_history
+            for h in sorted(
+                enquiry.status_history, key=lambda h: (h.created_at, h.id)
+            )
         ],
     )
 
@@ -217,7 +224,13 @@ def assign_lead(
         active = db.scalar(
             select(func.count(Enquiry.id)).where(
                 Enquiry.assigned_counsellor_id == counsellor.id,
-                Enquiry.status.notin_(["won", "lost", "closed"]),
+                Enquiry.status.notin_(CLOSED_LEAD_STATUSES),
+                # The lead being moved must not count against the limit it is
+                # being checked against, or re-saving an unchanged assignment
+                # would 409 for a counsellor who is exactly full. It only needs
+                # excluding when it is already theirs: if it sits with somebody
+                # else it is not in this count in the first place.
+                Enquiry.id != enquiry_id,
             )
         )
         if (active or 0) >= counsellor.max_leads:
