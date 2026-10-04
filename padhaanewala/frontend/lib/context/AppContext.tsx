@@ -180,6 +180,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setRolesReady(true);
       return;
     }
+    // Mark the lookup as *in flight*. Without this the flag keeps whatever value
+    // the previous session left behind — and on the sign-in path that value is
+    // `true` with an empty role list, because the boot exchange found no token
+    // and ran the branch above. `RequireAdmin` reads `rolesReady && !isAdmin` as
+    // "this person is not an admin" and ships the freshly signed-in admin to
+    // /dashboard before this request has answered. The fetch below is the only
+    // thing that can make that decision correctly, so the guard has to wait for
+    // it rather than race it.
+    setRolesReady(false);
     setRoles(await fetchMyRoles());
     setRolesReady(true);
   }, []);
