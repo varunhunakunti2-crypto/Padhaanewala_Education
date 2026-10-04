@@ -188,11 +188,38 @@ describe("mapCollegeListItem", () => {
     expect(college.reviews).toEqual([]);
   });
 
-  it("reports upcoming status, which is all the list projection can support", () => {
-    // `/colleges` returns no admission rows, so this is a known limit rather than
-    // a derived value. Pinned here so that when the projection does grow the
-    // dates, this test is what has to be updated.
+  it("still reports upcoming when the projection carries no windows", () => {
+    // A college that has published no dates is not evidence of a closed intake.
     expect(mapCollegeListItem(item).admissionStatus).toBe("upcoming");
+  });
+
+  it("derives the status from the windows the list projection now carries", () => {
+    // This is the case the test above was pinned for. Before `/colleges`
+    // returned `admissions`, every row was `"upcoming"` and the status filter
+    // on a list page matched neither "open" nor "closed".
+    //
+    // Windows are built relative to today rather than hard-coded: a fixed
+    // "open" window turns this into a test that passes until the calendar
+    // passes it, which is the worst kind of failing test to inherit.
+    const day = (offset: number) => {
+      const d = new Date();
+      d.setUTCDate(d.getUTCDate() + offset);
+      return d.toISOString().slice(0, 10);
+    };
+    const window = (start: string, end: string) => ({
+      ...item,
+      admissions: [
+        { application_start_date: start, application_end_date: end, entrance_exam: null },
+      ],
+    });
+
+    expect(mapCollegeListItem(window(day(-10), day(10))).admissionStatus).toBe("open");
+    expect(mapCollegeListItem(window(day(-40), day(-20))).admissionStatus).toBe(
+      "closed",
+    );
+    expect(mapCollegeListItem(window(day(20), day(40))).admissionStatus).toBe(
+      "upcoming",
+    );
   });
 
   it("carries the list fields through", () => {

@@ -238,6 +238,16 @@ export interface ApiCollegeListItem {
   total_reviews: number;
   average_rating: string;
   is_featured: boolean;
+  /** Trimmed application windows — the shape of `AdmissionWindowResponse`.
+   * `/colleges` sends these so a list row can derive its admission status;
+   * the full `ApiAdmission` rows still come from the detail fan-out. */
+  admissions?: ApiAdmissionWindow[];
+}
+
+export interface ApiAdmissionWindow {
+  application_start_date: string | null;
+  application_end_date: string | null;
+  entrance_exam: string | null;
 }
 
 export interface ApiCollegeCourse {

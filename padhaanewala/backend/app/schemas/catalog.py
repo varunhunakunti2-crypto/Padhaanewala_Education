@@ -62,6 +62,20 @@ class CollegeCourseResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class AdmissionWindowResponse(BaseModel):
+    """One published application window, trimmed for list views.
+
+    Only the two dates and the entrance exam: `/colleges` returns up to 100
+    rows and the full `AdmissionResponse` carries prose the list never
+    renders. The dates are what `deriveAdmissionStatus` reads, and they are
+    the whole reason this projection exists.
+    """
+
+    application_start_date: date | None = None
+    application_end_date: date | None = None
+    entrance_exam: str | None = None
+
+
 class CollegeListItemResponse(BaseModel):
     id: int
     college_id: str
@@ -76,6 +90,12 @@ class CollegeListItemResponse(BaseModel):
     total_reviews: int
     average_rating: Decimal
     is_featured: bool
+    # The published application windows across this college's courses. Omitting
+    # them made every list row report `"upcoming"`: `mapCollegeListItem` had
+    # nothing to pass to `deriveAdmissionStatus`, so the admission-status filter
+    # on a list page could never match "open" or "closed" -- a control that
+    # looked broken because it was.
+    admissions: list[AdmissionWindowResponse] = []
 
     model_config = {"from_attributes": True}
 

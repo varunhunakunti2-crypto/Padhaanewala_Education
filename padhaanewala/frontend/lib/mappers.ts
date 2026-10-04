@@ -292,13 +292,21 @@ export function mapFaqs(rows: ApiFaq[]): Faq[] {
  * and a card claiming "closed" for a college that never published dates would be
  * a worse lie than the old one.
  *
- * Known limitation: `mapCollegeListItem` passes no admissions, because `/colleges`
- * returns a narrower projection that does not include them. List views therefore
- * still report `"upcoming"` for every college, and the status filter on a list
- * page cannot narrow on this value until the list projection carries the dates.
+ * The argument is structural rather than `ApiAdmission`: the detail path hands
+ * over full admission rows, while `/colleges` returns a trimmed window that is
+ * two dates and an entrance exam. Both carry the two fields this reads, and
+ * taking the narrower type is what stopped `mapCollegeListItem` passing `[]` --
+ * which made every list row report `"upcoming"` and the status filter on a list
+ * page match nothing at all.
  */
+
+/** The only two fields the derivation reads. */
+export interface AdmissionWindowLike {
+  application_start_date?: string | null;
+  application_end_date?: string | null;
+}
 export function deriveAdmissionStatus(
-  admissions: ApiAdmission[],
+  admissions: readonly AdmissionWindowLike[],
   now: Date = new Date(),
 ): AdmissionStatus {
   let sawWindow = false;
@@ -476,8 +484,12 @@ export function mapCollege(bundle: ApiCollegeBundle): College {
  * enrichment fan-out is skipped — listing 10 colleges must not fire 90 requests.
  */
 export function mapCollegeListItem(item: ApiCollegeListItem): College {
+  // Pulled out before the spread: the windows are the list projection's own
+  // shape, not a field on `ApiCollegeDetail`, and leaving them in the detail
+  // object would have them masquerading as the full admission rows.
+  const { admissions: windows, ...rest } = item;
   const detail: ApiCollegeDetail = {
-    ...item,
+    ...rest,
     official_name: null,
     address: null,
     pincode: null,
@@ -497,7 +509,7 @@ export function mapCollegeListItem(item: ApiCollegeListItem): College {
     courses: [],
   };
 
-  return mapCollege({
+  const college = mapCollege({
     detail,
     placements: [],
     cutoffs: [],
@@ -506,9 +518,14 @@ export function mapCollegeListItem(item: ApiCollegeListItem): College {
     reviews: [],
     fees: [],
     seats: [],
+    // The card's admissions *section* still comes from the detail fan-out, and
+    // listing 10 colleges must not fire 90 requests to fill it. The status is
+    // different: one field that both the card and the filter key off, and the
+    // list projection now carries enough to compute it correctly.
     admissions: [],
     faqs: [],
   });
+  return { ...college, admissionStatus: deriveAdmissionStatus(windows ?? []) };
 }
 
 /* -------------------------------- exam ------------------------------- */

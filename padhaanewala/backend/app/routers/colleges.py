@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.database import get_db
 from app.dependencies import get_current_user, get_optional_current_user, require_role
 from app.models import (
+    Admission,
     College,
     CollegeCourse,
     Course,
@@ -22,6 +23,7 @@ from app.models import (
 )
 from app.roles import ADMIN_ROLES, CONTENT_ROLES, SUPER_ADMIN_ROLES
 from app.schemas.catalog import (
+    AdmissionWindowResponse,
     CollegeCourseResponse,
     CollegeCreate,
     CollegeDetailResponse,
@@ -46,7 +48,46 @@ def _slugify(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.strip().lower()).strip("-")
 
 
-def _to_list_item(college: College) -> CollegeListItemResponse:
+def _admission_windows(
+    db: Session, colleges: list[College]
+) -> dict[int, list[AdmissionWindowResponse]]:
+    """Every published application window for these colleges, in one query.
+
+    Read in a batch rather than per row: `admissions` hangs off
+    `college_courses`, so asking each college for its own windows is the N+1
+    that the list endpoints used to be free of only because they sent no
+    windows at all. A page of 100 rows must stay one extra query, not 101.
+    """
+    ids = [c.id for c in colleges]
+    if not ids:
+        return {}
+    rows = db.execute(
+        select(
+            CollegeCourse.college_id,
+            Admission.application_start_date,
+            Admission.application_end_date,
+            Admission.entrance_exam,
+        )
+        .join(Admission, Admission.college_course_id == CollegeCourse.id)
+        .where(CollegeCourse.college_id.in_(ids))
+        .order_by(Admission.id)
+    ).all()
+    windows: dict[int, list[AdmissionWindowResponse]] = {}
+    for college_id, start, end, exam in rows:
+        windows.setdefault(college_id, []).append(
+            AdmissionWindowResponse(
+                application_start_date=start,
+                application_end_date=end,
+                entrance_exam=exam,
+            )
+        )
+    return windows
+
+
+def _to_list_item(
+    college: College,
+    admissions: list[AdmissionWindowResponse] | None = None,
+) -> CollegeListItemResponse:
     return CollegeListItemResponse(
         id=college.id,
         college_id=college.college_id,
@@ -61,6 +102,7 @@ def _to_list_item(college: College) -> CollegeListItemResponse:
         total_reviews=college.total_reviews,
         average_rating=college.average_rating,
         is_featured=college.is_featured,
+        admissions=admissions or [],
     )
 
 
@@ -92,7 +134,8 @@ def list_colleges(
     colleges = (
         db.scalars(query.order_by(College.name).limit(limit).offset(offset)).all()
     )
-    return [_to_list_item(c) for c in colleges]
+    windows = _admission_windows(db, colleges)
+    return [_to_list_item(c, windows.get(c.id)) for c in colleges]
 
 
 @router.get("/search", response_model=SearchResult)
@@ -119,12 +162,16 @@ def search(
         college_query = college_query.where(College.state_id == state_id)
 
     colleges = db.scalars(college_query.limit(20)).all()
+    windows = _admission_windows(db, colleges)
 
     course_query = select(Course).where(Course.is_active, Course.name.ilike(term))
     courses = db.scalars(course_query.limit(10)).all()
 
     return SearchResult(
-        colleges=[_to_list_item(c) for c in colleges],
+        colleges=[
+            _to_list_item(c, windows.get(c.id))
+            for c in colleges
+        ],
         courses=[
             CourseResponse.model_validate(c, from_attributes=True) for c in courses
         ],
@@ -516,7 +563,9 @@ def _get_detail(college: College, db: Session) -> CollegeDetailResponse:
     issues its own `CollegeCourse` query rather than reading the relationship,
     so callers should not also eager-load it.
     """
-    base = _to_list_item(college)
+    base = _to_list_item(
+        college, _admission_windows(db, [college]).get(college.id)
+    )
     cc_rows = db.scalars(
         select(CollegeCourse)
         .options(selectinload(CollegeCourse.course))

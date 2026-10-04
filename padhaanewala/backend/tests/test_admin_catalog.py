@@ -565,6 +565,61 @@ def test_enrichment_crud():
         _cleanup_course(course.id)
 
 
+def test_list_projection_carries_admission_windows():
+    """The status filter on a list page is dead unless `/colleges` sends dates.
+
+    `mapCollegeListItem` used to pass `admissions: []` because the projection
+    had none, so every list row reported `"upcoming"` and filtering a list by
+    "open" or "closed" matched nothing -- a control that looked broken because
+    it was. The window has to survive both list endpoints, since the site uses
+    one for the catalogue page and the other for search-as-you-type.
+    """
+    college = _create_college(f"Window College {uuid.uuid4().hex[:6]}")
+    course = _create_course(f"Window Course {uuid.uuid4().hex[:6]}")
+    cc = _link(college.id, course.id)
+    try:
+        admin = _register_admin()
+        headers = _auth_headers(admin["access_token"])
+        created = client.post(
+            f"/api/v1/colleges/{college.slug}/admissions",
+            json={
+                "college_course_id": cc.id,
+                "application_start_date": "2026-05-01",
+                "application_end_date": "2026-07-31",
+                "entrance_exam": "JEE Main",
+            },
+            headers=headers,
+        )
+        assert created.status_code == 201, created.text
+
+        expected = [
+            {
+                "application_start_date": "2026-05-01",
+                "application_end_date": "2026-07-31",
+                "entrance_exam": "JEE Main",
+            }
+        ]
+
+        # The catalogue is seeded and far larger than one page, so assert the
+        # *shape* here and the data on the endpoint that can find this row.
+        listed = client.get("/api/v1/colleges", params={"limit": 3}).json()
+        assert listed and all("admissions" in c for c in listed)
+
+        found = client.get(
+            "/api/v1/colleges/search", params={"q": college.name}
+        ).json()
+        mine = [c for c in found["colleges"] if c["id"] == college.id]
+        assert len(mine) == 1, "search returned no window for the row it just wrote"
+        assert mine[0]["admissions"] == expected
+
+        # The detail path reads through the same builder, so it must agree.
+        detail = client.get(f"/api/v1/colleges/{college.slug}").json()
+        assert detail["admissions"] == expected
+    finally:
+        _cleanup_college(college.id)
+        _cleanup_course(course.id)
+
+
 def test_nested_read_filters():
     college = _create_college(f"Filter College {uuid.uuid4().hex[:6]}")
     course_a = _create_course(f"Filter Course A {uuid.uuid4().hex[:6]}")
