@@ -122,7 +122,12 @@ export function FilterChips<T extends string>({ options, value, onChange, counts
 }) {
   const render = (label: T | "all") => {
     const active = value === label;
-    const labelText = label === "all" ? "All" : label.charAt(0).toUpperCase() + label.slice(1);
+    // Underscores become spaces first so a snake_case key such as
+    // `in_progress` reads as "In progress" rather than "In_progress". A key
+    // without one behaves exactly as before, which matters because
+    // `AuditSection` passes full email addresses through here.
+    const readable = label.replace(/_/g, " ");
+    const labelText = label === "all" ? "All" : readable.charAt(0).toUpperCase() + readable.slice(1);
     return (
       <button
         key={label}

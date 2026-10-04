@@ -17,6 +17,7 @@ import {
   CounsellorsSection,
   CoursesSection,
   DashboardSection,
+  DataRequestsSection,
   ExamsSection,
   FaqsSection,
   LeadsSection,
@@ -143,6 +144,7 @@ export function AdminDashboard() {
           {section === "notifications" && <NotificationsSection />}
           {section === "leads" && <LeadsSection />}
           {section === "counsellors" && <CounsellorsSection />}
+          {section === "datarequests" && <DataRequestsSection />}
           {section === "media" && <MediaSection />}
           {section === "seo" && <SeoSection />}
           {section === "settings" && <SettingsSection />}
