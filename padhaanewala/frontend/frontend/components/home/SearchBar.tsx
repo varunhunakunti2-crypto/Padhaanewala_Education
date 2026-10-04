@@ -199,7 +199,7 @@ export function SearchBar({
             type="button"
             aria-label="Submit search"
             onClick={() => submit(value)}
-            className="mr-1.5 grid h-12 w-12 shrink-0 place-items-center rounded-full bg-warm-gradient text-white shadow-lg shadow-orange-500/40 transition hover:scale-[1.03] hover:brightness-110 active:scale-95 focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2"
+            className="mr-1.5 grid h-12 w-12 shrink-0 place-items-center rounded-full bg-warm-gradient text-white shadow-lg shadow-orange-500/40 transition-all duration-300 hover:scale-[1.05] hover:bg-purple-600 hover:bg-none hover:shadow-purple-600/50 active:scale-95 focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400 focus-visible:ring-offset-2"
           >
             <ArrowRight className="h-5 w-5" />
           </button>

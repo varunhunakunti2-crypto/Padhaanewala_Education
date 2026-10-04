@@ -15,71 +15,71 @@ import { SectionHeading } from "@/components/admin/primitives";
  * Notification broadcast log, backed by `GET/POST /api/v1/notifications`.
  *
  * The list endpoint is admin-only; students read their own via `/notifications/my`.
+ *
+ * ## This panel used to display three different things and none of them was the log
+ *
+ * 1. `adminApi.notifications()` called `GET /api/v1/notifications`, which did not
+ *    exist. The request 405'd, so the panel always rendered its error banner.
+ * 2. With no real rows, it fell back to **this browser's own** `cp_notifications`
+ *    localStorage inbox — so an admin with personal notifications in the browser
+ *    saw those presented as the platform-wide broadcast history, and an admin
+ *    without them saw nothing.
+ * 3. With neither, it rendered a hardcoded row reading "No notifications sent yet".
+ *    That row was indistinguishable from a genuinely empty log, which is the one
+ *    thing this screen exists to answer.
+ *
+ * All three are gone. The table now shows only what `GET /notifications` returns,
+ * an empty log renders `DataTable`'s own empty state, and a failed read renders
+ * the error and no table at all — because a broadcast log that cannot be read
+ * must not look like a broadcast log with nothing in it.
  */
 export function NotificationsSection() {
-  const { notifications, showToast } = useApp();
+  const { showToast } = useApp();
   const [sending, setSending] = useState(false);
   const [draft, setDraft] = useState({ title: "", message: "", type: "general" });
 
-  const { data, error, reload } = useAdminResource(() => adminApi.notifications(), {
-    forbiddenMessage: "You do not have permission to view the broadcast log.",
-    unreachableMessage: "Could not reach the notifications API.",
-  });
+  const { data, error, loading, reload } = useAdminResource(
+    () => adminApi.notifications(),
+    {
+      forbiddenMessage: "You do not have permission to view the broadcast log.",
+      unreachableMessage: "Could not reach the notifications API.",
+    },
+  );
 
   const rows = useMemo(
     () =>
       (data ?? []).map((n) => ({
         id: String(n.id),
         title: n.title,
-        message: n.message,
+        message: n.message ?? "",
         type: n.type,
+        recipient: n.username ?? `user #${n.user_id}`,
         status: n.is_read ? "Read" : "Unread",
         created: new Date(n.created_at).toLocaleString("en-IN"),
       })),
     [data],
   );
 
-  // Fall back to this browser's own inbox so the panel is never blank.
-  const local = useMemo(
-    () =>
-      notifications.map((n) => ({
-        id: n.id,
-        title: n.title,
-        message: n.message,
-        type: n.type,
-        status: n.read ? "Read" : "Unread",
-        created: n.date,
-      })),
-    [notifications],
-  );
-
-  const merged = rows.length
-    ? rows
-    : local.length
-      ? local
-      : [
-          {
-            id: "empty",
-            title: "No notifications sent yet",
-            message: "Compose a broadcast using the form above.",
-            type: "general",
-            status: "—",
-            created: "—",
-          },
-        ];
-
   const send = async () => {
     if (!draft.title.trim() || !draft.message.trim()) return;
     setSending(true);
     try {
-      await adminApi.createNotification({
+      // No `user_id`: this is a broadcast. The endpoint fans it out to every
+      // active student and reports how many rows it wrote, so the toast states
+      // the real audience instead of implying a delivery that may not have
+      // happened.
+      const result = await adminApi.createNotification({
         title: draft.title.trim(),
         message: draft.message.trim(),
         type: draft.type,
       });
       setDraft({ title: "", message: "", type: "general" });
       reload();
-      showToast({ title: "Notification sent", variant: "success" });
+      showToast({
+        title: "Broadcast sent",
+        description: `Delivered to ${result.created} active student account${result.created === 1 ? "" : "s"}.`,
+        variant: "success",
+      });
     } catch (err) {
       showToast({
         title: "Could not send notification",
@@ -95,8 +95,8 @@ export function NotificationsSection() {
     <div>
       <SectionHeading
         title="Push notifications"
-        description="Broadcast alerts to students"
-        count={rows.length || local.length}
+        description="Broadcast alerts to every active student account"
+        count={rows.length}
       />
 
       {error && (
@@ -148,28 +148,40 @@ export function NotificationsSection() {
         </div>
       </div>
 
-      <DataTable
-        columns={[
-          {
-            key: "title",
-            header: "Title",
-            render: (r) => <span className="font-semibold text-gray-900">{r.title}</span>,
-          },
-          { key: "message", header: "Message" },
-          { key: "type", header: "Type" },
-          { key: "created", header: "Created" },
-          {
-            key: "status",
-            header: "Status",
-            render: (r) => (
-              <Badge variant={r.status === "Unread" ? "yellow" : "gray"}>{r.status}</Badge>
-            ),
-          },
-        ]}
-        rows={merged}
-        searchKeys={["title", "message"]}
-        searchPlaceholder="Search notifications..."
-      />
+      {loading && rows.length === 0 ? (
+        <p className="rounded-2xl border border-dashed border-slate-200 py-12 text-center text-sm text-slate-400">
+          Loading broadcast log…
+        </p>
+      ) : (
+        <DataTable
+          columns={[
+            {
+              key: "title",
+              header: "Title",
+              render: (r) => <span className="font-semibold text-gray-900">{r.title}</span>,
+            },
+            { key: "message", header: "Message" },
+            { key: "type", header: "Type" },
+            { key: "recipient", header: "Recipient" },
+            { key: "created", header: "Created" },
+            {
+              key: "status",
+              header: "Status",
+              render: (r) => (
+                <Badge variant={r.status === "Unread" ? "yellow" : "gray"}>{r.status}</Badge>
+              ),
+            },
+          ]}
+          rows={rows}
+          searchKeys={["title", "message", "recipient"]}
+          searchPlaceholder="Search notifications..."
+          emptyState={
+            error
+              ? "The broadcast log could not be read."
+              : "No notifications sent yet."
+          }
+        />
+      )}
     </div>
   );
 }

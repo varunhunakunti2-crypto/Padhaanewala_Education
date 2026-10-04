@@ -4,9 +4,24 @@ import { useMemo, useState } from "react";
 import { Download } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { useApp } from "@/lib/context/AppContext";
-import { adminApi } from "@/lib/api";
+import { adminApi, type AdminAuditLog } from "@/lib/api";
 import { useAdminResource } from "@/components/admin/useAdminResource";
 import { SectionHeading, FilterChips } from "@/components/admin/primitives";
+
+/**
+ * The actor of an audit row.
+ *
+ * This reads `username`, which is the field the backend actually sends (a
+ * `users.display_name`, populated by `routers/audit.py::_to_response`). It was
+ * previously read as `user_email`, which does not exist on `AuditLogResponse`,
+ * so every row resolved to `undefined` and fell through to "system" — the actor
+ * filter collapsed to a single chip, and the CSV's `actor` column exported
+ * nothing. Declared at module scope so it is a stable reference inside the
+ * `useMemo` bodies below.
+ */
+function actorOf(log: AdminAuditLog): string {
+  return log.username ?? "system";
+}
 
 /** Audit trail from `GET /api/v1/audit-logs` (super_admin / admin only). */
 export function AuditSection() {
@@ -26,16 +41,19 @@ export function AuditSection() {
   const [actor, setActor] = useState<string | "all">("all");
 
   const actors = useMemo(
-    () => Array.from(new Set((logs ?? []).map((l) => l.user_email ?? "system"))).sort(),
+    () => Array.from(new Set((logs ?? []).map(actorOf))).sort(),
     [logs],
   );
 
-  const rows = (logs ?? []).filter((l) => actor === "all" || (l.user_email ?? "system") === actor);
+  const rows = useMemo(
+    () => (logs ?? []).filter((l) => actor === "all" || actorOf(l) === actor),
+    [logs, actor],
+  );
 
   const counts = useMemo(() => {
     const by: Record<string, number> = {};
     for (const l of logs ?? []) {
-      const key = l.user_email ?? "system";
+      const key = actorOf(l);
       by[key] = (by[key] ?? 0) + 1;
     }
     return by;
@@ -43,7 +61,7 @@ export function AuditSection() {
 
   const exportCsv = () => {
     if (!rows.length) return;
-    const header = "id,action,entity_type,entity_id,actor,created_at";
+    const header = "id,action,entity_type,entity_id,actor,ip_address,created_at";
     const body = rows
       .map((l) =>
         [
@@ -51,7 +69,8 @@ export function AuditSection() {
           JSON.stringify(l.action),
           l.entity_type ?? "",
           l.entity_id ?? "",
-          l.user_email ?? "system",
+          JSON.stringify(actorOf(l)),
+          l.ip_address ?? "",
           l.created_at,
         ].join(","),
       )
@@ -70,7 +89,7 @@ export function AuditSection() {
     <div>
       <SectionHeading
         title="Audit logs"
-        description="Every admin action, tracked"
+        description="College, blog, review and privilege changes are recorded. Enrichment, lead, banner, FAQ, media, SEO and notification writes are not yet."
         count={logs?.length}
         action={
           <Button type="button" size="sm" variant="secondary" onClick={exportCsv} disabled={!rows.length}>
@@ -110,8 +129,9 @@ export function AuditSection() {
               <div>
                 <p className="text-sm font-semibold text-gray-900">{l.action}</p>
                 <p className="text-xs text-slate-400">
-                  by {l.user_email ?? "system"}
+                  by {actorOf(l)}
                   {l.entity_type ? ` · ${l.entity_type}#${l.entity_id ?? "—"}` : ""}
+                  {l.ip_address ? ` · ${l.ip_address}` : ""}
                 </p>
               </div>
               <span className="text-xs text-slate-400">

@@ -1,12 +1,16 @@
 import re
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import require_role
-from app.models import University
+from app.dependencies import (
+    can_view_inactive,
+    get_optional_current_user,
+    require_role,
+)
+from app.models import University, User
 from app.schemas.catalog import (
     UniversityCreate,
     UniversityResponse,
@@ -34,17 +38,30 @@ def list_universities(
     # frontend's paged fetch, which assumes `limit`/`offset` are honoured —
     # without them that walk ignores `offset`, receives the same page forever and
     # only stops at the client's 5000-row ceiling.
+    # See `colleges.list_colleges` for why this exists: the console reads this
+    # public route to populate its university dropdown, and the unconditional
+    # `is_active` filter meant a deactivated university could not be re-selected
+    # or un-deactivated from there.
+    include_inactive: bool = False,
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    user: User | None = Depends(get_optional_current_user),
     db: Session = Depends(get_db),
 ):
-    return db.scalars(
-        select(University)
-        .where(University.is_active)
-        .order_by(University.name)
-        .limit(limit)
-        .offset(offset)
-    ).all()
+    if include_inactive and not can_view_inactive(user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="include_inactive requires admin permissions",
+        )
+
+    query = select(University)
+    if not include_inactive:
+        query = query.where(University.is_active)
+    return (
+        db.scalars(
+            query.order_by(University.name).limit(limit).offset(offset)
+        ).all()
+    )
 
 
 @router.get("/{university_ref}", response_model=UniversityResponse)

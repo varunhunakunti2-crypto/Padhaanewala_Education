@@ -200,6 +200,7 @@ describe("admin catalogue walk stays inside the backend's own caps", () => {
     "/scholarships",
     "/exams",
     "/faqs",
+    "/banners",
   ] as const;
 
   /**

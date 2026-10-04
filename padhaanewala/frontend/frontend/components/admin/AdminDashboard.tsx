@@ -40,7 +40,17 @@ import {
  */
 export function AdminDashboard() {
   const [section, setSection] = useState<SectionKey>("dashboard");
-  const { enquiries, profile } = useApp();
+  const { enquiries, roles } = useApp();
+
+  // The console header used to read `profile?.name || "Super Admin"`. `profile`
+  // is a `StudentProfile` hydrated from the `cp_profile` localStorage key, not
+  // an admin identity, so an admin without a student profile in that browser —
+  // which is every admin who signed up through a different route — was
+  // labelled "Super Admin" on screen. The role now comes from
+  // `GET /users/me/roles`, which is the same source the authorization guards
+  // use, so what the header says and what the API enforces cannot diverge.
+  const isSuperAdmin = roles.includes("super_admin");
+  const roleLabel = isSuperAdmin ? "Super Admin" : "Admin";
 
   const leads = useMemo(
     () =>
@@ -61,14 +71,16 @@ export function AdminDashboard() {
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="purple">Admin Console</Badge>
+            <Badge variant={isSuperAdmin ? "purple" : "gray"}>{roleLabel}</Badge>
           </div>
           <h1 className="mt-2 font-display text-2xl font-extrabold text-gray-900 sm:text-3xl">
             Padhaanewala Admin
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            Signed in as{" "}
-            <span className="font-semibold text-slate-700">{profile?.name || "Super Admin"}</span> ·
-            full platform control
+            Signed in as <span className="font-semibold text-slate-700">{roleLabel}</span> ·{" "}
+            {isSuperAdmin
+              ? "full platform control, including destructive catalog operations"
+              : "catalog and user management; destructive operations are super-admin only"}
           </p>
         </div>
         <Link

@@ -88,6 +88,11 @@ ADMIN_GATED_READS = [
     "/api/v1/audit-logs",
     "/api/v1/leads",
     "/api/v1/reviews/moderation",
+    # The admin broadcast log. This route did not exist until the Notifications
+    # panel was fixed; it is listed here so a regression to "public" is caught by
+    # the same assertion as every other admin read, rather than by a student
+    # discovering someone else's notification history.
+    "/api/v1/notifications",
 ]
 
 # Reads that are deliberately public because the same rows render on the

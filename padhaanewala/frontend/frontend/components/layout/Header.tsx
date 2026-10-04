@@ -2,10 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import {
   Menu,
   X,
-  GraduationCap,
   LayoutDashboard,
   ShieldCheck,
   Compass,
@@ -23,9 +23,14 @@ import { MORE_NAV, PRIMARY_NAV } from "@/lib/nav";
 export function Logo({ dark = false, showTagline = false }: { dark?: boolean; showTagline?: boolean }) {
   return (
     <Link href="/" className="flex items-center gap-2.5" aria-label="padhaanewala home">
-      <span className="relative grid h-9 w-9 place-items-center rounded-full bg-gradient-to-tr from-purple-600 to-indigo-500 text-white shadow-md shadow-purple-600/30">
-        <GraduationCap className="h-5 w-5" />
-      </span>
+      <Image
+        src="/logo.png"
+        alt="padhaanewala logo"
+        width={40}
+        height={40}
+        className="h-10 w-auto object-contain shrink-0"
+        priority
+      />
       <span className="leading-none">
         <span
           className={cn(

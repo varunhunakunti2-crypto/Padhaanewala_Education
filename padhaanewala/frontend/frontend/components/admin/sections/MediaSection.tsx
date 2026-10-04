@@ -66,7 +66,7 @@ export function MediaSection() {
   // button that 403s.
   const canWrite = CONTENT_ROLES.some((role) => roles.includes(role));
 
-  const { data, error, loading, reload } = useAdminResource<AdminMedia>(() => adminApi.media(), {
+  const { data, error, loading, reload } = useAdminResource<AdminMedia[]>(() => adminApi.media(), {
     unreachableMessage: "Could not reach the media API.",
   });
   const all = useMemo(() => data ?? [], [data]);

@@ -1,13 +1,17 @@
 ﻿import re
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
-from app.dependencies import require_role
-from app.models import Scholarship
+from app.dependencies import (
+    can_view_inactive,
+    get_optional_current_user,
+    require_role,
+)
+from app.models import Scholarship, User
 from app.schemas.catalog import (
     ScholarshipCreate,
     ScholarshipResponse,
@@ -54,15 +58,23 @@ def list_scholarships(
     category: str | None = None,
     ownership: str | None = None,
     upcoming: bool = False,
+    # See `list_colleges` for why this exists: the console reads this public route,
+    # and an unconditional `is_active` filter made deactivation a one-way door.
+    include_inactive: bool = False,
     limit: int = Query(50, ge=1, le=100),
     offset: int = 0,
+    user: User | None = Depends(get_optional_current_user),
     db: Session = Depends(get_db),
 ):
-    query = (
-        select(Scholarship)
-        .options(selectinload(Scholarship.state))
-        .where(Scholarship.is_active)
-    )
+    if include_inactive and not can_view_inactive(user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="include_inactive requires admin permissions",
+        )
+
+    query = select(Scholarship).options(selectinload(Scholarship.state))
+    if not include_inactive:
+        query = query.where(Scholarship.is_active)
     if q:
         term = f"%{q.strip()}%"
         query = query.where(

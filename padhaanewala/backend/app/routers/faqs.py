@@ -1,10 +1,14 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import require_role
-from app.models import FAQ
+from app.dependencies import (
+    can_view_inactive,
+    get_optional_current_user,
+    require_role,
+)
+from app.models import FAQ, User
 from app.schemas.content import FAQCreate, FAQResponse, FAQUpdate
 
 router = APIRouter(prefix="/api/v1/faqs", tags=["faqs"])
@@ -15,13 +19,26 @@ from app.roles import CONTENT_ROLES
 def list_faqs(
     entity_type: str | None = Query(None, max_length=50),
     entity_id: int | None = None,
+    # `include_inactive` was an unguarded public query parameter here, so
+    # `?include_inactive=true` would have returned unpublished answers to
+    # anonymous callers. It is gated, matching `routers/banners.py`.
+    include_inactive: bool = False,
     # No `limit` existed here, so the whole table was returned regardless of what
     # the caller asked for. See the same note in `universities.list_universities`.
     limit: int = Query(100, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    user: User | None = Depends(get_optional_current_user),
     db: Session = Depends(get_db),
 ):
-    query = select(FAQ).where(FAQ.is_active)
+    if include_inactive and not can_view_inactive(user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="include_inactive requires admin permissions",
+        )
+
+    query = select(FAQ)
+    if not include_inactive:
+        query = query.where(FAQ.is_active)
     if entity_type:
         query = query.where(FAQ.entity_type == entity_type)
     if entity_id is not None:
@@ -33,10 +50,34 @@ def list_faqs(
     ).all()
 
 @router.get("/{faq_id}", response_model=FAQResponse)
-def get_faq(faq_id: int, db: Session = Depends(get_db)):
+def get_faq(
+    faq_id: int,
+    include_inactive: bool = False,
+    user: User | None = Depends(get_optional_current_user),
+    db: Session = Depends(get_db),
+):
+    """Read one FAQ.
+
+    The `is_active` filter used to be unconditional, which made an unpublished
+    FAQ unreachable through the API even for the admin who had just hidden it —
+    the admin console's edit dialog loads the record through this endpoint, so a
+    hidden FAQ could be seen in no list, opened in no dialog, and only ever
+    re-created. `include_inactive` now lifts the filter for `CONTENT_ROLES`,
+    matching `routers/banners.py::get_banner`.
+    """
     faq = db.get(FAQ, faq_id)
-    if faq is None or not faq.is_active:
+    if faq is None:
         raise HTTPException(status_code=404, detail="FAQ not found")
+
+    privileged = can_view_inactive(user)
+    if include_inactive and not privileged:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="include_inactive requires admin permissions",
+        )
+    if not faq.is_active and not privileged:
+        raise HTTPException(status_code=404, detail="FAQ not found")
+
     return faq
 
 @router.post(

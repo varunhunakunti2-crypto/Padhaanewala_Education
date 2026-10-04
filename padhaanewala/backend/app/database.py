@@ -53,10 +53,32 @@ engine = create_engine(
 
 @event.listens_for(engine, "connect")
 def _set_search_path(dbapi_connection, connection_record) -> None:
-    with dbapi_connection.cursor() as cursor:
-        cursor.execute(
-            f'SET search_path TO "{SCHEMA}", public' if SCHEMA else "SET search_path TO public"
-        )
+    statement = (
+        f'SET search_path TO "{SCHEMA}", public' if SCHEMA else "SET search_path TO public"
+    )
+
+    # AUTOCOMMIT is load-bearing, not a convenience. psycopg2 opens an implicit
+    # transaction for any statement, and `QueuePool` issues ROLLBACK when a
+    # connection is returned. A plain `SET` therefore lives inside that implicit
+    # transaction, and the rollback silently reverts `search_path` to the server
+    # default. Only the *first* checkout of a given connection ever saw the
+    # configured schema; from the second checkout onward that connection resolved
+    # unqualified table names against `public`.
+    #
+    # With no schema configured the reverted value is still effectively `public`,
+    # which is why this stayed invisible outside the test suite. With
+    # PADHAANEWALA_SCHEMA set, schema isolation stopped holding as soon as the
+    # pool began reusing connections — reads and writes started landing in the
+    # wrong schema, and because the pool hands out whichever connection is idle,
+    # the breakage looked like nondeterministic, order-dependent test failures
+    # rather than the configuration fault it was.
+    previous_autocommit = dbapi_connection.autocommit
+    dbapi_connection.autocommit = True
+    try:
+        with dbapi_connection.cursor() as cursor:
+            cursor.execute(statement)
+    finally:
+        dbapi_connection.autocommit = previous_autocommit
 
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

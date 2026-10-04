@@ -18,7 +18,7 @@ import { SectionHeading, AddButton, RowActions, FilterChips } from "@/components
  */
 export function MockTestsSection() {
   const [difficulty, setDifficulty] = useState<string | "all">("all");
-  const { data, error, loading } = useAdminResource<ApiMockTest>(
+  const { data, error, loading } = useAdminResource<ApiMockTest[]>(
     () => adminApi.mockTests() as Promise<ApiMockTest[]>,
     { unreachableMessage: "Could not reach the mock tests API." },
   );

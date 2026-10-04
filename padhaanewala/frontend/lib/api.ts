@@ -879,6 +879,8 @@ export interface AdminUser {
   created_at: string;
   last_login_at: string | null;
   roles: string[];
+  /** The student's profile name, falling back to the email server-side. */
+  display_name: string;
 }
 
 export interface AdminReview {
@@ -1082,13 +1084,33 @@ export interface QuestionUpdatePayload extends QuestionPayload {
   is_active: boolean;
 }
 
+/**
+ * `AdminNotificationResponse` from `backend/app/schemas/content.py`.
+ *
+ * `message` is nullable on the wire (`NotificationResponse.message: str | None`),
+ * and `user_id`/`username` are present so the admin log can say who a
+ * notification went to — a delivery log that renders every row as anonymous is
+ * the same defect as an audit log that renders every actor as "system".
+ */
 export interface AdminNotification {
   id: number;
+  user_id: number;
+  username: string | null;
   title: string;
-  message: string;
+  message: string | null;
   type: string;
   is_read: boolean;
+  channel: string;
   created_at: string;
+}
+
+/**
+ * `NotificationBroadcastResult`. `created` is the recipient count, so the UI can
+ * report "sent to N students" instead of assuming the press did nothing.
+ */
+export interface AdminNotificationBroadcast {
+  created: number;
+  recipients: AdminNotification[];
 }
 
 export interface AdminBanner {
@@ -1099,6 +1121,14 @@ export interface AdminBanner {
   position: string;
   display_order: number;
   is_active: boolean;
+  /**
+   * The optional schedule window, returned by `BannerResponse` but previously
+   * absent from this type. The panel cannot tell a live banner from an expired
+   * or not-yet-started one without them, and "Active" was the only badge it
+   * could render.
+   */
+  start_date?: string | null;
+  end_date?: string | null;
 }
 
 /** `GET /api/v1/locations/states` — 36 rows, no pagination. */
@@ -1191,24 +1221,62 @@ export interface AdminBlog {
   category_name: string | null;
 }
 
+/**
+ * `AuditLogResponse` from `backend/app/schemas/content.py`, populated by
+ * `routers/audit.py::_to_response`.
+ *
+ * The actor field is `username` (a `users.display_name`), NOT `user_email`.
+ * This interface previously declared `user_email`, which the backend never
+ * sends, so every audit row resolved to `undefined` and the console rendered
+ * "by system" for all of them — including privileged actions with a real actor
+ * on record. `ip_address` was equally absent from the type and equally present
+ * in every response.
+ */
 export interface AdminAuditLog {
   id: number;
+  user_id: number | null;
+  username: string | null;
   action: string;
   entity_type: string | null;
-  entity_id: string | null;
+  entity_id: number | null;
+  old_value: Record<string, unknown> | null;
+  new_value: Record<string, unknown> | null;
+  ip_address: string | null;
   created_at: string;
-  user_email: string | null;
 }
 
 export interface AdminRole {
   id: number;
   name: string;
   description: string | null;
+  /**
+   * Whether the *calling* admin may grant this role, computed server-side by the
+   * same `outranks()` that `PATCH /users/{id}` enforces. Never derive this from
+   * the role's name or a client-side privilege table — that is how the console
+   * ends up offering a control whose only outcome is a 403.
+   */
+  grantable: boolean;
 }
 
 export interface AdminUpdateUserPayload {
   is_active?: boolean;
   role_ids?: number[];
+}
+
+/** A page of users plus the unpaged, filtered total. */
+export interface AdminUserPage {
+  items: AdminUser[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface AdminUserQuery {
+  search?: string;
+  role?: string;
+  is_active?: boolean;
+  limit?: number;
+  offset?: number;
 }
 
 /**
@@ -1347,7 +1415,22 @@ export interface AdminFaq {
 }
 
 export const adminApi = {
-  users: (params = "") => apiFetch<AdminUser[]>(`/users${params}`),
+  /**
+   * Filtering and paging happen on the server. The console can only ever hold one
+   * page, so a client-side "Inactive" filter would describe the page and not the
+   * account base. The response is a page + total rather than a bare array, so
+   * the UI can say "1–50 of 312" instead of implying the page is everything.
+   */
+  users: (query: AdminUserQuery = {}) => {
+    const params = new URLSearchParams();
+    if (query.search) params.set("search", query.search);
+    if (query.role) params.set("role", query.role);
+    if (query.is_active !== undefined) params.set("is_active", String(query.is_active));
+    if (query.limit !== undefined) params.set("limit", String(query.limit));
+    if (query.offset !== undefined) params.set("offset", String(query.offset));
+    const qs = params.toString();
+    return apiFetch<AdminUserPage>(`/users${qs ? `?${qs}` : ""}`);
+  },
 
   roles: () => apiFetch<AdminRole[]>("/roles"),
 
@@ -1394,8 +1477,24 @@ export const adminApi = {
       body: JSON.stringify({ status }),
     }),
 
-  /** Admin-only roster for the assign dropdown; 403s for a counsellor. */
-  counsellors: () => apiFetch<AdminCounsellor[]>("/counsellors"),
+  /**
+   * Admin-only roster for the assign dropdown; 403s for a counsellor.
+   *
+   * Walked rather than fetched once: the route defaults to `limit=50` and caps at
+   * 200, so a single call silently truncated the roster at 50 — and the leads
+   * panel uses this same method to populate its assign `<select>`, where a
+   * missing counsellor is a lead that cannot be handed over. `CATALOG_PAGE_SIZE`
+   * (100) is inside the cap.
+   *
+   * Defaults to active-only, which is what the assign dropdown needs: handing a
+   * lead to a deactivated counsellor is rejected by `PATCH /leads/{id}/assign`.
+   * The counsellors panel asks for `includeInactive` so a deactivated counsellor
+   * is still visible instead of vanishing from the roster.
+   */
+  counsellors: (opts: { includeInactive?: boolean } = {}) =>
+    fetchAllPages<AdminCounsellor>(
+      opts.includeInactive ? "/counsellors?include_inactive=true" : "/counsellors",
+    ),
 
   /**
    * The cross-paper question bank, walked to completion.
@@ -1446,7 +1545,27 @@ export const adminApi = {
       method: "DELETE",
     }),
 
-  banners: () => apiFetch<AdminBanner[]>("/banners"),
+  /**
+   * Every banner, including paused, expired and not-yet-scheduled ones.
+   *
+   * `include_inactive=true` is required here, not optional. `list_banners`
+   * filters `where(Banner.is_active)` *and* a start/end date window unless the
+   * flag is set, so the old flagless call could only ever return banners that
+   * were already live. The panel's Pause/Activate toggle was therefore
+   * unreachable in the paused direction: once a banner was paused it vanished
+   * from the console with no route back, and its Status badge — which reads
+   * `is_active` — was structurally always "Active". This is the same defect the
+   * FAQ client documents at {@link adminApi.faqs}.
+   *
+   * Both the list and the by-id handler 403 unless the caller holds
+   * `CONTENT_ROLES`, so the flag cannot be used to enumerate draft banners
+   * anonymously.
+   *
+   * Walked rather than fetched once: the route caps `limit` at 100, which is
+   * exactly `CATALOG_PAGE_SIZE`, and a plain call would silently truncate at the
+   * first 50.
+   */
+  banners: () => fetchAllPages<AdminBanner>("/banners?include_inactive=true"),
 
   createBanner: (payload: Partial<AdminBanner>) =>
     apiFetch<AdminBanner>("/banners", { method: "POST", body: JSON.stringify(payload) }),
@@ -1515,12 +1634,24 @@ export const adminApi = {
   /**
    * The whole catalogue, not the first page of it.
    *
-   * `GET /colleges` caps `limit` at 100 and offers nothing else — no search, no
-   * admin-only variant, no `include_inactive`. Fetching 100 of 331 colleges
-   * would show an admin a third of the records and label the count 100, which
-   * reads as "this is everything". So this walks the offsets.
+   * `GET /colleges` caps `limit` at 100 and offers no search and no admin-only
+   * variant. Fetching 100 of 331 colleges would show an admin a third of the
+   * records and label the count 100, which reads as "this is everything". So this
+   * walks the offsets.
+   *
+   * `include_inactive=true` is required, not optional. `list_colleges` filtered
+   * `College.is_active` unconditionally, so deactivating a college removed it from
+   * this console permanently — even though `is_active` is writable on update,
+   * there was no route back. `PUT /colleges/{ref}` also 404s on an inactive row
+   * for a caller without a content role, so it could not be un-deactivated
+   * through the same panel either.
+   *
+   * The server 403s the flag for anyone outside `CONTENT_ROLES`, so it cannot be
+   * used to enumerate draft colleges anonymously. Every caller of this method is
+   * an admin panel.
    */
-  colleges: () => fetchAllPages<ApiCollegeListItem>("/colleges"),
+  colleges: () =>
+    fetchAllPages<ApiCollegeListItem>("/colleges?include_inactive=true"),
 
   college: (ref: string | number) => apiFetch<ApiCollegeDetail>(`/colleges/${ref}`),
 
@@ -1557,7 +1688,8 @@ export const adminApi = {
   districts: (stateId: number) =>
     apiFetch<AdminDistrict[]>(`/locations/states/${stateId}/districts`),
 
-  universities: () => fetchAllPages<AdminUniversity>("/universities"),
+  universities: () =>
+    fetchAllPages<AdminUniversity>("/universities?include_inactive=true"),
 
   /**
    * The course list, shared by the college form's course picker, the media
@@ -1565,12 +1697,24 @@ export const adminApi = {
    * lookups because two of the three callers are not the courses panel; the
    * courses panel's own read is `adminApi.course(ref)` below.
    */
-  courses: () => fetchAllPages<AdminCourse>("/courses"),
+  courses: () => fetchAllPages<AdminCourse>("/courses?include_inactive=true"),
 
+  /**
+   * `GET /notifications` answers with an array and is admin-only. The route did
+   * not exist when this was written — the call 405'd, the panel showed its error
+   * banner, and the console substituted a hardcoded "No notifications sent yet"
+   * row, which is indistinguishable from a genuinely empty log.
+   */
   notifications: () => apiFetch<AdminNotification[]>("/notifications"),
 
-  createNotification: (payload: { user_id?: number | null; title: string; message: string; type?: string }) =>
-    apiFetch<AdminNotification>("/notifications", { method: "POST", body: JSON.stringify(payload) }),
+  /**
+   * Omitting `user_id` broadcasts to every active student; supplying one targets
+   * that account. `notifications.user_id` is `NOT NULL`, so a broadcast is
+   * fanned out into one row per recipient rather than stored as a single
+   * recipient-less message.
+   */
+  createNotification: (payload: { user_id?: number; title: string; message: string; type?: string }) =>
+    apiFetch<AdminNotificationBroadcast>("/notifications", { method: "POST", body: JSON.stringify(payload) }),
 
   auditLogs: (params = "") => apiFetch<AdminAuditLog[]>(`/audit-logs${params}`),
 
@@ -1604,10 +1748,23 @@ export const adminApi = {
   /** Removes the row and, for an uploaded file, the bytes on disk with it. */
   deleteMedia: (id: number) => apiFetch<void>(`/media/${id}`, { method: "DELETE" }),
 
-  faqs: () => fetchAllPages<AdminFaq>("/faqs"),
+  /**
+   * `include_inactive=true` is required here, not optional.
+   *
+   * `list_faqs` filters `where(FAQ.is_active)` unconditionally, so without the
+   * flag an admin listing FAQs never sees a hidden one — and because the edit
+   * dialog loads its record through `GET /faqs/{id}`, which 404'd on an inactive
+   * row, a hidden FAQ could not be reopened either. The panel's Status column
+   * rendered "Hidden" from a field that was structurally always `true`.
+   *
+   * Both endpoints 403 unless the caller holds `CONTENT_ROLES`, so the flag
+   * cannot be used to read unpublished answers anonymously.
+   */
+  faqs: () => fetchAllPages<AdminFaq>("/faqs?include_inactive=true"),
 
   /** `GET /faqs/{faq_id}` takes a plain integer. */
-  faq: (id: number) => apiFetch<AdminFaq>(`/faqs/${id}`),
+  faq: (id: number) =>
+    apiFetch<AdminFaq>(`/faqs/${id}?include_inactive=true`),
 
   createFaq: (payload: Record<string, unknown>) =>
     apiFetch<AdminFaq>("/faqs", { method: "POST", body: JSON.stringify(payload) }),
@@ -1655,7 +1812,8 @@ export const adminApi = {
 
   courseCategories: () => apiFetch<string[]>("/courses/categories"),
 
-  scholarships: () => fetchAllPages<AdminScholarship>("/scholarships"),
+  scholarships: () =>
+    fetchAllPages<AdminScholarship>("/scholarships?include_inactive=true"),
 
   scholarship: (ref: string | number) => apiFetch<AdminScholarship>(`/scholarships/${ref}`),
 
@@ -1670,7 +1828,7 @@ export const adminApi = {
 
   deleteScholarship: (ref: string | number) => apiFetch<void>(`/scholarships/${ref}`, { method: "DELETE" }),
 
-  exams: () => fetchAllPages<AdminExam>("/exams"),
+  exams: () => fetchAllPages<AdminExam>("/exams?include_inactive=true"),
 
   exam: (ref: string | number) => apiFetch<AdminExam>(`/exams/${ref}`),
 

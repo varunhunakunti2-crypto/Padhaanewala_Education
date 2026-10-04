@@ -58,6 +58,21 @@ interface FaqRow extends Omit<AdminFaq, "id"> {
  * accepts `CONTENT_ROLES`. `CATALOG_DELETE_ROLES` holds that asymmetry and
  * `useCatalogCrud` reads it, so this panel shows a Delete button to a content
  * manager where the other four do not.
+ *
+ * ## The Status column was structurally always "Active"
+ *
+ * `list_faqs` filtered `where(FAQ.is_active)` unconditionally, so a hidden FAQ
+ * appeared in no list — and because the edit dialog loads its record through
+ * `GET /faqs/{id}`, which also 404'd on an inactive row, it could not be reopened
+ * either. Hiding a FAQ therefore removed it from the admin console with no way
+ * back short of creating a replacement, while this column kept rendering a
+ * two-state badge whose "Hidden" branch was unreachable.
+ *
+ * Both endpoints now take `include_inactive`, gated on `CONTENT_ROLES` the same
+ * way `routers/banners.py` does it, and `adminApi.faqs()` / `adminApi.faq()`
+ * pass it. The gate matters: `include_inactive` was the exact shape of the
+ * original Phase 1.3 finding on `banners`, where an unguarded flag published
+ * draft content to anonymous callers.
  */
 export function FaqsSection() {
   const crud = useCatalogCrud<AdminFaq, FaqFormValues>({

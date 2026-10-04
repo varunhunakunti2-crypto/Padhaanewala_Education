@@ -220,7 +220,7 @@ export function QuestionsSection() {
 
   useEffect(loadFacets, [loadFacets]);
 
-  const { data, error, loading, reload } = useAdminResource<AdminQuestionListItem>(
+  const { data, error, loading, reload } = useAdminResource<AdminQuestionListItem[]>(
     () => adminApi.questions(filterQuery(applied)),
     {
       forbiddenMessage:

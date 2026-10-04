@@ -317,10 +317,18 @@ def test_notification_flow(student, admin_token):
         headers=admin_headers,
     )
     assert created.status_code == 201, created.text
-    assert created.json()["user_id"] == student_id
+    # `POST /notifications` answers with a broadcast result, not a bare row: it
+    # writes one row per recipient and a client cannot otherwise tell a targeted
+    # send (1) from a fan-out (N). `user_id` is therefore read off
+    # `recipients[0]`, and `created` is asserted to be 1 so a future change that
+    # silently turns a targeted send into a broadcast fails here.
+    body = created.json()
+    assert body["created"] == 1, body
+    assert len(body["recipients"]) == 1, body
+    assert body["recipients"][0]["user_id"] == student_id
 
     mine = client.get("/api/v1/notifications/my", headers=headers)
-    assert any(n["id"] == created.json()["id"] for n in mine.json())
+    assert any(n["id"] == body["recipients"][0]["id"] for n in mine.json())
 
     count = client.get("/api/v1/notifications/my/unread-count", headers=headers)
     assert count.status_code == 200
@@ -331,6 +339,71 @@ def test_notification_flow(student, admin_token):
 
     zero = client.get("/api/v1/notifications/my/unread-count", headers=headers)
     assert zero.json() == 0
+
+
+def test_admin_notification_log_names_the_recipient(admin_token, student):
+    """The log must say who received a notification.
+
+    An admin broadcast log that renders every row as an anonymous delivery is
+    the same defect as the audit log's "by system": the record exists but the one
+    field that makes it useful is dropped in transport.
+    """
+    student_id = int(
+        jwt.decode(student["token"], options={"verify_signature": False})["sub"]
+    )
+    client.post(
+        "/api/v1/notifications",
+        json={"user_id": student_id, "type": "exam", "title": "JEE Main date"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    log = client.get(
+        "/api/v1/notifications", headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    assert log.status_code == 200, log.text
+    row = next(r for r in log.json() if r["title"] == "JEE Main date")
+    assert row["username"], row
+    assert row["user_id"] == student_id
+
+
+def test_broadcast_reaches_every_active_student(admin_token, student):
+    """Omitting `user_id` is a broadcast, not a validation error.
+
+    The admin console's compose form is labelled "Send broadcast" and sends no
+    `user_id`. While `NotificationCreate.user_id` was required, that button
+    returned 422 on every press.
+    """
+    result = client.post(
+        "/api/v1/notifications",
+        json={"type": "scholarship", "title": "Scholarships open", "message": "Apply now."},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert result.status_code == 201, result.text
+    assert result.json()["created"] >= 1
+
+    mine = client.get(
+        "/api/v1/notifications/my", headers={"Authorization": f"Bearer {student['token']}"}
+    )
+    assert any(n["title"] == "Scholarships open" for n in mine.json())
+
+
+def test_notification_broadcast_is_audited(admin_token, student):
+    """A mass write to student accounts must leave a trail (Phase 4.4)."""
+    client.post(
+        "/api/v1/notifications",
+        json={"type": "general", "title": "Audited broadcast"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    log = client.get(
+        "/api/v1/audit-logs",
+        params={"action": "notification.broadcast"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert log.status_code == 200, log.text
+    assert log.json(), "broadcast wrote no audit row"
+    entry = log.json()[0]
+    assert entry["username"], entry
+    assert entry["new_value"]["title"] == "Audited broadcast"
+    assert entry["new_value"]["audience"].startswith("all_active_students:")
 
 
 def test_notification_read_all_admin_only(student):

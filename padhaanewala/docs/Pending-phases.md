@@ -2106,6 +2106,16 @@ and fails in a suite is usually telling you something real about the environment
 not about test order. Chasing ordering — `pytest-randomly`, `--forked`, reordering
 — would have hidden a stale database behind a green suite.
 
+**Superseded in part by BUG-12.** This entry resolved *these two tests*, and the
+rule it states — check the schema version before blaming ordering — is sound and
+was applied correctly when BUG-12 was found. But it should not be read as
+"order-dependent failures in this suite are always a stale database". A later
+pass produced **48** order-dependent failures with the schema already at head,
+and the cause was the connection pool (see BUG-12). The general rule is the one
+worth keeping: *a test that passes alone and fails in a suite is reporting on the
+environment* — and the environment includes the pool, not only the schema version,
+neither of which `alembic current` can see.
+
 ---
 
 # Bug register - fourth pass, 29 September 2026 (college admin CRUD)
@@ -2223,7 +2233,7 @@ Recorded so the next session does not re-verify it:
 ---
 
 Live issues, none of which are resolved by the phases above alone. Struck-through
-rows are closed — **the BUG-01…BUG-11 register is now empty**; what remains open
+rows are closed — **the BUG-01…BUG-12 register is now empty**; what remains open
 is unbuilt work (Phase 8, Phase 9) and a few standing hygiene/process items.
 
 | Risk | Severity | Note |
@@ -2235,7 +2245,7 @@ is unbuilt work (Phase 8, Phase 9) and a few standing hygiene/process items.
 | ~~No security headers, no CSP~~ | ~~High~~ | **FIXED** — Phase 5. Full stack in `proxy.ts`, per-path Permissions-Policy, ISR preserved. Residual: `'unsafe-inline'` in script-src (documented tradeoff) |
 | No rate limit on `/api/ai`; unbounded OpenAI spend | High | Phase 4 — `/api/ai` now caps input (500 chars), rate (12/min) and timeout (15s); a plan-level budget is still open |
 | Audit trail covers ~5% of mutations | High | Phase 4 |
-| Client-controlled `ip_address` on public endpoint | High | Phase 4 |
+| ~~Client-controlled `ip_address` on public endpoint~~ | ~~High~~ | **FIXED — see BUG-13.** `X-Forwarded-For` was gated on `TRUSTED_PROXY_HOPS`, but `X-Real-IP` was read *outside* that gate, so at the shipped default of `0` any caller chose its own attribution and could mint a fresh auth rate-limit bucket per request |
 | No children's-data controls (DPDP S.9) | High | Phase 9 |
 | Duplicate predictor logic in client and server | Medium | Phase 4, with BUG-02 |
 | ~~`error.tsx` claims a team was notified; nobody is~~ | ~~Medium~~ | **FIXED** — Phase 5.4. reportError → /api/errors → server log; onRequestError for server errors; global-error.tsx exists; copy no longer claims a delivery it cannot promise |
@@ -2253,5 +2263,302 @@ is unbuilt work (Phase 8, Phase 9) and a few standing hygiene/process items.
 | ~~Order-dependent numeric-grading / OTP-resend failures~~ | ~~Medium~~ | **RESOLVED** — not order-dependence. The scratch database was behind the code; migrated, both pass in the full suite. Passing in isolation had hidden it |
 | BUG-10: stale-database failures present as "passes alone, fails in suite" | Low | **PROCESS** — a now-fixed instance of this, kept as a rule: do not reach for test ordering when a test passes alone and fails in a suite. Check the schema version first |
 | ~~BUG-11: `PUT /colleges/{ref}` answered 200 for a field it never wrote~~ | ~~High~~ | **FIXED** — `accreditation_nba` was on the column and the response model but on neither request schema, so the admin form's control saved nothing. Found by replaying the form's real body against the real route, not by a unit test; the round trip is now asserted |
+| ~~BUG-12: pooled connections silently lost `search_path` on reuse~~ | ~~Critical~~ | **FIXED** — the `connect` listener's `SET` ran inside psycopg2's implicit transaction and the pool's ROLLBACK reverted it, so only a connection's *first* checkout had the configured schema. With `PADHAANEWALA_SCHEMA` set, reads and writes landed in `public` from the second checkout onward. Now set under autocommit; 3 regression tests in `tests/test_database_schema.py`, each verified to fail with the fix reverted |
 | 4.6 MB duplicated agent-skill bundles | Low | Hygiene |
 | Local development database sits behind the migration head | Low | **PROCESS** — the developer schema was at `b7c3d91e5a20` while the code was at `9f3c2a7e8d21`, which is what produced the "order-dependent" failures. Run `alembic upgrade head` after pulling migrations |
+| **Schema isolation depends on `search_path` surviving pool reuse** | **Medium** | **PROCESS** — BUG-12 is fixed, but the failure mode is invisible to `alembic current` and returns if the `connect` listener's statement is ever moved back inside a transaction. The three tests in `tests/test_database_schema.py` are the only guard; treat them as load-bearing rather than incidental |
+
+---
+
+# Bug register - fifth pass, 4 October 2026 (admin console role management, and a silent schema regression)
+
+This pass did two unrelated things: it finished the admin console's role
+management, and in the course of establishing a trustworthy test baseline it
+found that **48 backend failures and one root cause had been sitting in plain
+sight the whole time.** The role-management work is summarised at the end; BUG-12
+is the finding that matters.
+
+## BUG-12 - pooled connections silently lost `search_path` on reuse 🔴 CRITICAL - **FIXED**
+
+### What it was
+
+`app/database.py` applies the configured schema from a `connect` event listener,
+correctly, for the documented reasons (a transaction-mode pooler rejects
+`search_path` as a startup parameter; some managed hosts drop `public` from the
+session's default). The listener ran:
+
+```python
+with dbapi_connection.cursor() as cursor:
+    cursor.execute(f'SET search_path TO "{SCHEMA}", public' if SCHEMA else "SET search_path TO public")
+```
+
+**The statement was never made durable.** psycopg2 opens an implicit transaction
+for any statement, so that `SET` lived inside it — and `QueuePool` issues
+`ROLLBACK` whenever a connection is returned to the pool. The rollback reverted
+`search_path` to the server default. The consequence is the whole bug:
+
+- a connection's **first** checkout saw the configured schema;
+- **every checkout after that** saw `"$user", public`.
+
+Demonstrated in isolation, outside pytest, with nothing but sequential checkouts
+of the one global engine:
+
+```
+checkout 1 (fresh)       : test_suite, public
+checkout 2 (after close) : "$user", public
+checkout 3 (post-rollback): "$user", public
+```
+
+Why it was invisible for so long: **with no schema configured the reverted value
+is still effectively `public`.** A default deployment was always correct by
+accident. Schema isolation only breaks when `PADHAANEWALA_SCHEMA` is set — which
+is the entire test suite, and any environment that uses the isolation at all.
+
+### How it was found
+
+The full suite reported **48 failures** (25 failed, 23 errors) that all passed in
+isolation. That is BUG-10's exact shape, so BUG-10's rule was applied first: check
+the schema version before blaming ordering. The schema was at head. The rule came
+up empty, correctly.
+
+The traceback was the informative part:
+
+```
+File "app/services/otp_service.py", line 324, in issue
+    db.refresh(record)
+sqlalchemy.exc.InvalidRequestError: Could not refresh instance '<OtpRecord at 0x...>'
+```
+
+A rate-limiter test was the only thing that could precede it. Narrowing by
+pairing found a deterministic two-test reproducer, and the culprit was
+`test_concurrent_logins_never_exceed_the_limit` **alone** — it passes in
+isolation, and the *next* test fails:
+
+```
+pytest tests/test_ratelimit_redis_live.py::test_concurrent_logins_never_exceed_the_limit \
+       tests/test_rbac_rules.py::test_r2_5_registration_grants_exactly_student
+→ 1 passed, 1 error
+```
+
+Instrumenting `Session.refresh` ruled out the obvious explanations. The instance
+was `persistent: True`, `transient/detached/pending: False`, had an identity, was
+not deleted, and its session was `is_active: True` and mid-transaction on an open
+connection. Nothing was wrong with the object. Reading SQLAlchemy's `refresh()`
+showed the message means `load_on_ident` returned `None` — **the re-`SELECT`
+matched no row.**
+
+Querying both schemas for that primary key found the row, in the *other* schema
+than the one being searched:
+
+```
+search_path        : '"$user", public'
+pk_in_test_suite   : [(1, 'student.9540b341@example.com')]
+pk_in_public       : []
+```
+
+That is the bug, stated in one line: **the row had been written through one pooled
+connection and read back through another that was looking in the wrong schema.**
+
+### Why it presented as order-dependent flake
+
+Three things had to line up, and each one disguised the others:
+
+1. **The pool hands out whichever connection is idle.** Whether a given request
+   got a correctly-configured connection was a function of arrival order, so
+   correctness looked nondeterministic.
+2. **The trigger was a concurrency test.** Twenty simultaneous logins grew the
+   pool past its warm size, which is why one test appeared to poison the next. The
+   test was not leaking anything of its own; it changed *which* connection the
+   following request would be given.
+3. **The symptom was never a connection error.** Because the failure surfaced as
+   `db.refresh()` after a successful `commit()` — and `commit()` is precisely what
+   releases the connection, so the re-`SELECT` is the first statement to land on a
+   *different* connection than the `INSERT` did — it read as a missing row rather
+   than as a misrouted one.
+
+Note that it was never OTP-specific, despite the first traceback pointing at
+`OtpRecord`: once that call was instrumented past, the identical failure surfaced
+on `db.refresh(user)` in `register`. Anything that writes then re-reads was
+affected.
+
+### Fixed
+
+The listener now sets `search_path` under autocommit, so it cannot be rolled back,
+and restores the previous mode afterwards:
+
+```python
+previous_autocommit = dbapi_connection.autocommit
+dbapi_connection.autocommit = True
+try:
+    with dbapi_connection.cursor() as cursor:
+        cursor.execute(statement)
+finally:
+    dbapi_connection.autocommit = previous_autocommit
+```
+
+`tests/test_database_schema.py` pins it with three tests: `search_path` survives
+repeated reuse, survives an explicit `ROLLBACK` (the specific trigger), and — the
+observable consequence rather than the setting — a bare table name resolves to the
+configured schema's owning namespace. The third reads the owner from
+`pg_namespace` rather than from `regclass` text, because Postgres omits the schema
+qualifier from `regclass` whenever it is visible in `search_path`, which would make
+a correct connection indistinguishable from a reverted one.
+
+**Each of the three was verified to fail with the fix reverted and pass with it**,
+so they are guards rather than decoration:
+
+| Check | Before | After |
+|---|---|---|
+| Full suite | 494 passed, 25 failed, 23 errors | **544 passed, 1 skipped** |
+| Full suite, second consecutive run | — | **544 passed, 1 skipped** |
+| `test_ratelimit_redis_live.py` + `test_rbac_rules.py` | 10 failed, 16 errors | **49 passed, 1 skipped** |
+| `tests/test_database_schema.py`, fix reverted | 3 passed | **3 failed** (as required) |
+
+Two consecutive full green runs are the evidence that matters here. One green run
+would not have distinguished "fixed" from "re-seeded", which is the specific trap
+this bug sets.
+
+`alembic/env.py` was checked for the same pattern and is **not** affected: it
+passes `search_path` as a driver startup option via the URL, which is applied at
+connection time and is not transactional.
+
+### The lesson, and it is a companion to BUG-10's
+
+BUG-10 says: when a test passes alone and fails in a suite, check the schema
+version first. That rule was right, it was followed, and it came up empty — which
+is what made this bug findable at all.
+
+The companion rule is: **the environment includes the connection pool, not only
+the schema version.** `alembic current` reports what the database is; it cannot
+report what a given pooled connection will do. Every session-scoped setting a
+connection depends on — `search_path`, `statement_timeout`, a temp table, a
+`SET ROLE` — is invisible to it, and every one of them is a candidate for the same
+class of failure.
+
+The tell worth remembering is narrow and specific: **`db.refresh()` failing after
+a successful `db.commit()` is not a missing row, it is a second connection.** Any
+write-then-refresh in this codebase turns pool heterogeneity into a correctness
+bug rather than a throughput detail.
+
+The other lesson is about the comments in that file. The block above the listener
+explained *why* `search_path` is applied on connect, and it was entirely correct —
+PgBouncer really does reject the startup parameter, managed hosts really do drop
+`public`. The defect lived in the one dimension nobody had written down: not the
+mechanism, but the **durability** of the statement. A file can be thoroughly
+documented and still be wrong in the gap between what its comments explain and
+what they do not mention. The new comment says "AUTOCOMMIT is load-bearing, not a
+convenience" for that reason, because it otherwise reads as removable noise.
+
+---
+
+## Also completed in this pass
+
+Admin console role management, on top of a baseline established by fixing BUG-12:
+
+- `GET /api/v1/users` returns `{items,total,limit,offset}` with server-side
+  `search` (email, mobile, `StudentProfile.name`), `role`, `is_active`,
+  `limit` and `offset`. Admin users carry a truthful `display_name`.
+- `GET /api/v1/roles` returns a server-computed `grantable`, derived from the same
+  `outranks()` predicate that `PATCH /users/{id}` enforces, so the console cannot
+  offer a grant the write path would refuse. `PRIVILEGE_ORDER` is strongest-first
+  and the comparison is strict, so a plain `admin` cannot grant `admin` or
+  `super_admin`, and not even `super_admin` can grant `super_admin`.
+- `tests/test_auth.py` (40 tests) asserts, for every role, that the advertised
+  `grantable` matches what the write path actually accepts — so the two cannot
+  drift.
+- `StudentsSection.tsx` replaces the hardcoded admin toggle with a real role
+  editor over server-side search, filters and pagination, with stale-offset
+  protection. `useAdminResource` was generalised to arbitrary payload shapes with
+  a `reloadKey`; `lib/user-roles.ts` holds the tested role/page logic.
+
+Full-suite diff against a stashed baseline confirmed **zero new failures** from
+this work — the only failures present were the 48 that turned out to be BUG-12.
+
+| Check | Result |
+|---|---|
+| `backend/tests/test_auth.py` | **40 passed** |
+| Full backend suite | **544 passed, 1 skipped** (two consecutive runs) |
+| `npm test` (Vitest) | **227 passed** (9 files) |
+| `npm run typecheck` / `npm run lint` / `npm run build` | clean / clean / exit 0 |
+
+`POST /api/v1/notifications` was swept for callers of its changed response shape:
+one consumer, `adminApi.sendNotification`, already typed
+`AdminNotificationBroadcast`. The `cp_notifications` references and
+`lib/data/notifications.ts` are unrelated — student local state and the AI-chat
+stub respectively.
+
+## Standing note
+
+`frontend/frontend/components/home/SearchBar.tsx` was already modified in the
+working tree before this pass and was deliberately not touched.
+
+### BUG-13 - `X-Real-IP` was trusted outside the proxy gate 🔴 HIGH - **FIXED**
+
+Found while verifying whether the risk table's open `Client-controlled ip_address`
+row was still accurate. It was not stale, and it was worse than the row said.
+
+`client_ip` gated `X-Forwarded-For` on `TRUSTED_PROXY_HOPS > 0` correctly, then
+consulted a **second** forwarded header, `X-Real-IP`, *outside* that gate. At the
+shipped default of `TRUSTED_PROXY_HOPS = 0` that let any caller pick its own
+attribution:
+
+| Spoofed header | `client_ip` returned, before |
+|---|---|
+| `X-Real-IP: 1.2.3.4` | `1.2.3.4` |
+| `X-Real-IP: 9.9.9.9` | `9.9.9.9` |
+| `X-Real-IP: attacker-controlled-garbage` | `attacker-controlled-garbage` |
+
+Two impacts:
+
+- **Corrupted forensic record.** `audit_logs.ip_address` and
+  `enquiries.ip_address` accepted arbitrary text, not addresses — the exact
+  outcome the function's own docstring says it exists to prevent.
+- **Auth rate-limit bypass.** `_client_key` derives the throttle bucket from this
+  value, so varying the header minted a **fresh bucket per request**. The limiter
+  was cluster-wide (BUG-07) while its key was attacker-controlled.
+
+The docstring claimed *"At 0 the header is ignored entirely and the socket peer is
+authoritative"*, which was false for `X-Real-IP`.
+
+**Why the existing test missed it.** `test_data_integrity.py` asserts an
+`X-Forwarded-For` spoof is ignored at `hops = 0` — the header the code *did*
+ignore, so the test agreed with itself while the other header went untested. That
+is BUG-01, BUG-05, BUG-09 and BUG-11 again: a green assertion with nothing behind
+it. The defect was only ever visible at the boundary between the extractor and its
+two callers, and nothing covered that boundary.
+
+**Fixed** in two independent layers, because one is not enough:
+
+1. `X-Real-IP` now sits inside the `hops > 0` gate alongside `X-Forwarded-For`.
+2. Header candidates must parse as an IP address (`ipaddress.ip_address`).
+   Cleaning the text was never sufficient — `not-an-ip` is short, quote-free and
+   whitespace-free, and would still have been stored as an attribution.
+
+The socket peer is deliberately held to the **looser** standard, and enforcing
+strict validation there caused a real regression worth recording: `TestClient`
+presents itself as the string `testclient`, so seven audit-trail tests failed
+with `ip_address` recorded as `None`. Requiring a parseable IP on a value the
+caller cannot choose buys no security and destroys attribution, collapsing every
+such caller onto the single `unknown` throttle bucket. `_sanitize_peer` therefore
+keeps only the length and character checks.
+
+`tests/test_client_ip.py` (20 tests) covers both headers, both settings, and the
+rate-limit key. Each layer was verified to be independently load-bearing: removing
+the gate fails 4 tests, removing the IP validation fails 1 more.
+
+| Check | Result |
+|---|---|
+| Full backend suite | **564 passed, 1 skipped** |
+| `tests/test_client_ip.py`, gate removed | **4 failed** (as required) |
+| `tests/test_client_ip.py`, IP validation removed | **1 failed** (as required) |
+| Spoof probe at `hops = 0`, after | every spoof resolves to the socket peer; one bucket key |
+
+**Operational change:** behind a proxy with the default of `0`, requests are now
+attributed to the proxy rather than read from `X-Real-IP`. That is the safe
+direction to fail — set `TRUSTED_PROXY_HOPS` to the real hop count to restore
+attribution. Documented in `.env.example`.
+
+**The lesson:** a fix applied to the header the tests covered was mistaken for a
+fix applied to the behaviour. `X-Forwarded-For` was safe, the docstring said so,
+a test asserted so, and the risk table was marked done — while a second header
+sat three lines below the gate carrying the identical vulnerability.

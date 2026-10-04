@@ -76,7 +76,7 @@ export function CollegesSection() {
   const { showToast, roles } = useApp();
   const [sector, setSector] = useState<"Government" | "Private" | "all">("all");
 
-  const { data, error, loading, reload } = useAdminResource<ApiCollegeListItem>(
+  const { data, error, loading, reload } = useAdminResource<ApiCollegeListItem[]>(
     () => adminApi.colleges(),
     { unreachableMessage: "Could not reach the colleges API." },
   );

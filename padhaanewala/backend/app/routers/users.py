@@ -4,13 +4,14 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import get_current_user, require_role
-from app.models import Role, StudentProfile, User
+from app.models import Counsellor, Role, StudentProfile, User
 from app.roles import ADMIN_ROLES, RoleName, exceeds_ceiling, exceeds_removal_ceiling
 from app.schemas.auth import (
     AdminUpdateUserRequest,
     ChangePasswordRequest,
     ProfileResponse,
     UpdateProfileRequest,
+    UserAdminListResponse,
     UserAdminResponse,
     UserResponse,
     UserRolesResponse,
@@ -34,6 +35,7 @@ def _to_admin_view(user: User) -> UserAdminResponse:
         created_at=user.created_at,
         last_login_at=user.last_login_at,
         roles=sorted(role.name for role in user.roles),
+        display_name=user.display_name,
     )
 
 
@@ -137,22 +139,58 @@ def get_my_roles(user: User = Depends(get_current_user)):
     return UserRolesResponse(roles=sorted(role.name for role in user.roles))
 
 
-@router.get("", response_model=list[UserAdminResponse])
+@router.get("", response_model=UserAdminListResponse)
 def list_users_admin(
     search: str | None = Query(None, max_length=255),
+    role: str | None = Query(None, max_length=50),
+    is_active: bool | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     user: User = Depends(require_role(*ADMIN_ROLES)),
     db: Session = Depends(get_db),
 ):
-    query = select(User).order_by(User.id)
+    """Paged, filterable user listing for the admin console.
+
+    Filtering lives here rather than in the console because the console can only
+    ever see one page. A client-side "Inactive" chip over the first 50 users is a
+    filter on the page, not on the account base — it hides an unknown number of
+    deactivated accounts and reports counts that are wrong by whatever the page
+    size happens to be. `total` counts the filtered set so the UI can state
+    "1–50 of 312" instead of implying 50 is all of them.
+    """
+    # LEFT JOIN, not INNER: most accounts have no student profile yet (an admin
+    # promoting a freshly registered user is the common case), and an inner join
+    # would silently drop exactly the accounts an admin most wants to find.
+    query = select(User).outerjoin(StudentProfile, StudentProfile.user_id == User.id)
+
     if search:
-        like = f"%{search}%"
-        query = query.where(
-            (User.email.ilike(like)) | (User.mobile.ilike(like))
-        )
+        like = f"%{search.strip()}%"
+        if search.strip():
+            query = query.where(
+                (User.email.ilike(like))
+                | (User.mobile.ilike(like))
+                | (StudentProfile.name.ilike(like))
+            )
+
+    if role:
+        # An unknown role name must not silently return "everyone". Match it as a
+        # literal, so `role=nonsense` yields an empty page the admin can see is
+        # wrong, rather than an unfiltered dump that looks like a valid answer.
+        query = query.join(User.roles).where(Role.name == role.strip())
+
+    if is_active is not None:
+        query = query.where(User.is_active.is_(is_active))
+
+    query = query.order_by(User.id)
+
+    total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
     users = db.scalars(query.limit(limit).offset(offset)).all()
-    return [_to_admin_view(u) for u in users]
+    return UserAdminListResponse(
+        items=[_to_admin_view(u) for u in users],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get("/{user_id}", response_model=UserAdminResponse)
@@ -180,6 +218,73 @@ def _count_active_super_admins(db: Session, exclude_user_id: int | None = None) 
     if exclude_user_id is not None:
         query = query.where(User.id != exclude_user_id)
     return db.scalar(query) or 0
+
+
+#: Starting lead ceiling for a newly provisioned counsellor. Mirrors
+#: `Counsellor.max_leads`' column default, restated here so the number the admin
+#: console implies is visible in one place rather than only in the model.
+COUNSELLOR_DEFAULT_MAX_LEADS = 100
+
+
+def _sync_counsellor_profile(db: Session, user: User) -> None:
+    """Reconcile a user's ``counsellors`` row with their role and account state.
+
+    The role and the profile row were two halves of one fact with nothing
+    connecting them. ``POST/PATCH /users`` set the role and never touched
+    ``counsellors``, and no other code path inserts that row either -- only the
+    test helpers in ``tests/test_phase9.py`` do, by hand. The consequences were
+    silent and total: ``GET /counsellors`` was always empty, the admin console's
+    assign dropdown had nothing to offer, ``PATCH /leads/{id}/assign`` always
+    409'd, and the round-robin balancer in ``services/lead_handoff`` had an empty
+    pool to choose from. Nothing errored, so it read as "no counsellors hired yet"
+    rather than as a missing link in the chain.
+
+    Called after *both* the role branch and the ``is_active`` branch, because
+    ``PATCH /leads/{id}/assign`` gates on ``Counsellor.is_active`` alone and never
+    looks at the linked user. Reconciling on role change only would therefore let
+    an admin deactivate a counsellor's *account* while leaving the profile row
+    active -- still listed on the roster, still assignable, and the leads would
+    land with somebody who can no longer sign in. So the row is active only while
+    the account is active **and** the role is held.
+
+    Removing the role deactivates the row rather than deleting it, because
+    ``enquiries.counsellor_id`` references it and a hard delete would take the
+    assignment history with it.
+
+    ``Counsellor.is_active`` previously had no writer at all, so it was stuck at
+    its column default and there was no deliberate deactivation to preserve. It is
+    now derived: any direct write to the column is overwritten the next time this
+    runs. That is the trade for making the column mean something -- the alternative
+    is a second source of truth that can contradict the first.
+
+    Only ``RoleName.COUNSELLOR`` counts. ``counsellor_manager`` is in
+    ``DEAD_ROLES`` -- it grants no capability anywhere, so provisioning a profile
+    for it would put someone on the lead roster who cannot see a single lead.
+    """
+    holds_role = RoleName.COUNSELLOR.value in audit.role_names(user)
+    should_be_active = holds_role and bool(user.is_active)
+
+    profile = db.scalar(select(Counsellor).where(Counsellor.user_id == user.id))
+
+    if not holds_role:
+        if profile is not None and profile.is_active:
+            profile.is_active = False
+        return
+
+    if profile is None:
+        db.add(
+            Counsellor(
+                user_id=user.id,
+                # `display_name` is `student_profiles.name`, falling back to the
+                # email. `users` has no name column of its own, so this is the
+                # only name available without asking the admin for one.
+                name=user.display_name,
+                max_leads=COUNSELLOR_DEFAULT_MAX_LEADS,
+                is_active=should_be_active,
+            )
+        )
+    elif profile.is_active != should_be_active:
+        profile.is_active = should_be_active
 
 
 @router.patch("/{user_id}", response_model=UserAdminResponse)
@@ -314,6 +419,12 @@ def update_user_admin(
                 detail="Cannot deactivate the last active super_admin",
             )
         target.is_active = payload.is_active
+
+    # A role is the authorization half of a counsellor; the `counsellors` row is
+    # the workload half, and the leads CRM only ever reads the row. Reconciled
+    # after both branches, never inside either, because deactivating the account
+    # has to take the profile off the roster too.
+    _sync_counsellor_profile(db, target)
 
     db.flush()
     # R5.3 — every privilege change is logged. This is the trail that makes an

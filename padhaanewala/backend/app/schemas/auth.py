@@ -176,6 +176,21 @@ class RoleResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class AdminRoleResponse(RoleResponse):
+    """`RoleResponse` plus whether *this* caller may grant the role.
+
+    The privilege ceiling (R4.8) is enforced in `PATCH /users/{id}` by
+    `roles.exceeds_ceiling`. Recomputing it in the frontend would mean a second
+    implementation of the ordering in `PRIVILEGE_ORDER`, which is precisely how
+    the two drift apart — and the failure mode is a UI that offers a button the
+    API will reject with a 403. So the server, which holds the authoritative
+    ordering, states per role whether the caller may grant it, using the same
+    `outranks()` call the write path uses.
+    """
+
+    grantable: bool = False
+
+
 class UserRolesResponse(BaseModel):
     roles: list[str]
 
@@ -195,3 +210,23 @@ class UserAdminResponse(BaseModel):
     created_at: datetime
     last_login_at: datetime | None
     roles: list[str]
+    #: `User.display_name` — the student profile's name, falling back to the
+    #: email. The admin console used to render `email.split("@")[0]` as the
+    #: person's name, which is a truncation of an address rather than a name.
+    display_name: str
+
+
+class UserAdminListResponse(BaseModel):
+    """A page of users plus the unpaged total.
+
+    `GET /users` returned a bare `list[...]`, so the console could not tell
+    "50 users" from "50 users, out of many more" — it requested no limit at all
+    and rendered whatever arrived, so an admin managing more than 50 accounts
+    had no indication that the rest existed. `total` counts the *filtered* set,
+    not the page.
+    """
+
+    items: list[UserAdminResponse]
+    total: int
+    limit: int
+    offset: int

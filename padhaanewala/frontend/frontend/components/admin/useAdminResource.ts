@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { isForbidden } from "@/lib/api";
 
 interface ResourceState<T> {
-  data: T[] | null;
+  data: T | null;
   error: string | null;
   loading: boolean;
   reload: () => void;
@@ -17,17 +17,31 @@ interface ResourceState<T> {
  * arrives after unmount (or after a newer request) is discarded. The panel
  * components can therefore render a real loading / error / empty state instead
  * of the previous behaviour of showing fabricated placeholder rows.
+ *
+ * `T` is the resolved shape, not necessarily an array: `GET /users` returns a
+ * page envelope (`items` + `total`), and a hook hardcoded to `T[]` would force
+ * that endpoint to flatten its own total away. Existing callers passing
+ * `() => Promise<Row[]>` still infer `T = Row[]` unchanged.
+ *
+ * `reloadKey` re-runs the fetch when it changes, for panels whose query is
+ * server-side (search / filters / paging). It is a single string rather than a
+ * dependency array so it cannot be a fresh array identity on every render.
  */
 export function useAdminResource<T>(
-  loader: () => Promise<T[]>,
-  opts: { forbiddenMessage?: string; unreachableMessage?: string } = {},
+  loader: () => Promise<T>,
+  opts: {
+    forbiddenMessage?: string;
+    unreachableMessage?: string;
+    reloadKey?: string;
+  } = {},
 ): ResourceState<T> {
   const {
     forbiddenMessage = "You do not have permission to view this data.",
     unreachableMessage = "Could not reach the API.",
+    reloadKey,
   } = opts;
 
-  const [data, setData] = useState<T[] | null>(null);
+  const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Starts true so panels render a loading state on first paint without the
   // effect needing to synchronously set it (which causes a cascading render).
@@ -68,7 +82,7 @@ export function useAdminResource<T>(
     return () => {
       ignore = true;
     };
-  }, [nonce, forbiddenMessage, unreachableMessage]);
+  }, [nonce, forbiddenMessage, unreachableMessage, reloadKey]);
 
   return { data, error, loading, reload };
 }

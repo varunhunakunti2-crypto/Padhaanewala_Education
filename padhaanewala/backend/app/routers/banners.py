@@ -5,7 +5,11 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import get_optional_current_user, require_role
+from app.dependencies import (
+    can_view_inactive,
+    get_optional_current_user,
+    require_role,
+)
 from app.models import Banner, User
 from app.roles import CONTENT_ROLES
 from app.schemas.content import BannerCreate, BannerResponse, BannerUpdate
@@ -66,9 +70,7 @@ def list_banners(
     user: User | None = Depends(get_optional_current_user),
     db: Session = Depends(get_db),
 ):
-    privileged = user is not None and bool(
-        set(CONTENT_ROLES) & {role.name for role in user.roles}
-    )
+    privileged = can_view_inactive(user)
     if include_inactive and not privileged:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -104,9 +106,7 @@ def get_banner(
     if banner is None:
         raise HTTPException(status_code=404, detail="Banner not found")
 
-    privileged = user is not None and bool(
-        set(CONTENT_ROLES) & {role.name for role in user.roles}
-    )
+    privileged = can_view_inactive(user)
     if not include_inactive and not privileged:
         if not banner.is_active or not _is_visible(banner):
             raise HTTPException(status_code=404, detail="Banner not found")

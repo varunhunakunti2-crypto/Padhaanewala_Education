@@ -1,12 +1,16 @@
 ﻿import re
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import require_role
-from app.models import CollegeCourse, Course
+from app.dependencies import (
+    can_view_inactive,
+    get_optional_current_user,
+    require_role,
+)
+from app.models import CollegeCourse, Course, User
 from app.schemas.catalog import CourseCreate, CourseResponse, CourseUpdate
 from app.roles import ADMIN_ROLES, CONTENT_ROLES
 
@@ -29,11 +33,23 @@ def list_courses(
     q: str | None = None,
     category: str | None = None,
     degree: str | None = None,
+    # See `list_colleges` for why this exists: the console reads this public route,
+    # and an unconditional `is_active` filter made deactivation a one-way door.
+    include_inactive: bool = False,
     limit: int = Query(50, ge=1, le=100),
     offset: int = 0,
+    user: User | None = Depends(get_optional_current_user),
     db: Session = Depends(get_db),
 ):
-    query = select(Course).where(Course.is_active)
+    if include_inactive and not can_view_inactive(user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="include_inactive requires admin permissions",
+        )
+
+    query = select(Course)
+    if not include_inactive:
+        query = query.where(Course.is_active)
     if q:
         term = f"%{q.strip()}%"
         query = query.where(

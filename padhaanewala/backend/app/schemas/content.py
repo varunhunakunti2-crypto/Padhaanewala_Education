@@ -204,7 +204,19 @@ class SeoMetadataResponse(BaseModel):
 
 
 class NotificationCreate(BaseModel):
-    user_id: int
+    """Send a notification.
+
+    ``user_id`` is optional. Omitting it is a *broadcast*: one row is written per
+    active student, because ``notifications.user_id`` is ``NOT NULL`` with a
+    foreign key — there is no representation of "a message to everyone" in the
+    schema, and pretending otherwise by accepting a null would mean every read
+    path in the app had to handle a recipient-less row.
+
+    Naming a ``user_id`` targets that one account and is what the per-user
+    callers use.
+    """
+
+    user_id: int | None = None
     type: str = Field(max_length=50)
     title: str = Field(min_length=1, max_length=255)
     message: str | None = None
@@ -224,6 +236,28 @@ class NotificationResponse(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class AdminNotificationResponse(NotificationResponse):
+    """``NotificationResponse`` plus the recipient, for the admin broadcast log.
+
+    A log that cannot say who received a message is not much of a log, so the
+    recipient's display name travels with the row rather than being resolved by
+    a second request per entry.
+    """
+
+    username: str | None = None
+
+
+class NotificationBroadcastResult(BaseModel):
+    """What a broadcast actually did.
+
+    Returned instead of a bare row because a broadcast writes N rows and a
+    client that cannot tell 1 from 500 has no way to report it accurately.
+    """
+
+    created: int
+    recipients: list[AdminNotificationResponse]
 
 
 class AuditLogResponse(BaseModel):

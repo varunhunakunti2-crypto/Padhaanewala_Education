@@ -50,10 +50,10 @@ export function DashboardSection({ go }: { go: (s: SectionKey) => void }) {
   // `useAdminResource` as an unreachable API, so the deadline panel and the
   // "recently added" list were silently empty on every load. The `adminApi` walks
   // are held against the real `le=` bounds by `tests/page-size-contract.test.ts`.
-  const { data: scholarships } = useAdminResource<AdminScholarship>(() =>
+  const { data: scholarships } = useAdminResource<AdminScholarship[]>(() =>
     adminApi.scholarships(),
   );
-  const { data: colleges } = useAdminResource<ApiCollegeListItem>(() => adminApi.colleges());
+  const { data: colleges } = useAdminResource<ApiCollegeListItem[]>(() => adminApi.colleges());
 
   // "Now" is captured once at mount: reading the clock during render makes the
   // deadline list depend on when React happened to re-render.

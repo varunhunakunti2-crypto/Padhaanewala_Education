@@ -5,7 +5,12 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
-from app.dependencies import get_current_user, get_optional_current_user, require_role
+from app.dependencies import (
+    can_view_inactive,
+    get_current_user,
+    get_optional_current_user,
+    require_role,
+)
 from app.models import (
     College,
     CollegeCourse,
@@ -32,12 +37,10 @@ from app.utils import audit
 
 router = APIRouter(prefix="/api/v1/colleges", tags=["colleges"])
 
-
-def _can_view_inactive(user: User | None) -> bool:
-    """Only roles that can edit catalog rows may see unpublished ones."""
-    if user is None:
-        return False
-    return bool(set(CONTENT_ROLES) & {role.name for role in user.roles})
+# Only roles that can edit catalog rows may see unpublished ones. This used to be
+# a local `_can_view_inactive` here and an open-coded copy of the same predicate
+# in `banners.py` and `faqs.py`; it is now one shared helper in
+# `dependencies.can_view_inactive`.
 
 
 def _slugify(text: str) -> str:
@@ -67,30 +70,48 @@ def list_colleges(
     state_id: int | None = None,
     course_id: int | None = None,
     featured: bool | None = None,
+    # The console lists colleges straight from this public route, and this route
+    # filtered `College.is_active` unconditionally. So the moment an admin
+    # deactivated a college it disappeared from the panel with no route back --
+    # `is_active` is writable on update, which made deactivation a one-way door.
+    # The flag is gated by `can_view_inactive`, so it cannot be used to read draft
+    # colleges anonymously.
+    include_inactive: bool = False,
     limit: int = Query(50, ge=1, le=100),
     offset: int = 0,
+    user: User | None = Depends(get_optional_current_user),
     db: Session = Depends(get_db),
 ):
-    query = (
-        select(College)
-        .options(selectinload(College.state), selectinload(College.university))
-        .where(College.is_active)
+    if include_inactive and not can_view_inactive(user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="include_inactive requires admin permissions",
+        )
+
+    query = select(College).options(
+        selectinload(College.state), selectinload(College.university)
     )
+    if not include_inactive:
+        query = query.where(College.is_active)
     if state_id:
         query = query.where(College.state_id == state_id)
     if featured:
         query = query.where(College.is_featured)
     if course_id:
-        query = (
-            query.join(CollegeCourse, CollegeCourse.college_id == College.id)
-            .where(CollegeCourse.course_id == course_id, CollegeCourse.is_active)
-            .distinct()
-        )
+        query = query.join(CollegeCourse, CollegeCourse.college_id == College.id).distinct()
+        # The join row has its own `is_active`. Leaving it filtered while the
+        # college's own flag is lifted would show an admin a college that appears
+        # to offer no courses whenever the *link* was deactivated rather than the
+        # college -- so both lift together.
+        if not include_inactive:
+            query = query.where(CollegeCourse.is_active)
+        query = query.where(CollegeCourse.course_id == course_id)
 
     colleges = (
         db.scalars(query.order_by(College.name).limit(limit).offset(offset)).all()
     )
     return [_to_list_item(c) for c in colleges]
+
 
 
 @router.get("/search", response_model=SearchResult)
@@ -141,7 +162,7 @@ def get_college_courses(
     user: User | None = Depends(get_optional_current_user),
     db: Session = Depends(get_db),
 ):
-    if include_inactive and not _can_view_inactive(user):
+    if include_inactive and not can_view_inactive(user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="include_inactive requires admin permissions",

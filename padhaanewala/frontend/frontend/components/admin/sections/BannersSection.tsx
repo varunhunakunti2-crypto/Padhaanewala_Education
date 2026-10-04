@@ -17,6 +17,32 @@ const GRADIENTS = [
   "bg-gradient-to-br from-blue-700 to-cyan-600",
 ];
 
+/**
+ * What the public homepage would actually show for this banner right now.
+ *
+ * `is_active` alone is not the answer. `list_banners` hides a banner when it is
+ * inactive **or** when today falls outside its `start_date`/`end_date` window,
+ * and this panel now lists the inactive ones too — so a row can be paused,
+ * scheduled for next month, or expired while `is_active` is still `true`.
+ * Rendering the flag alone would label all three "Active", which is the same
+ * class of bug as the missing `include_inactive` in the first place.
+ */
+function bannerStatus(banner: AdminBanner): { label: string; variant: "green" | "gray" | "amber" } {
+  if (!banner.is_active) return { label: "Paused", variant: "gray" };
+
+  const today = new Date();
+  const todayUtc = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+  // `YYYY-MM-DD` sorts correctly as a string, and an absent bound means
+  // "unbounded on that side" — the same reading `_is_visible` gives a null date.
+  const bound = (value?: string | null) => (value ? Date.parse(`${value}T00:00:00Z`) : null);
+  const start = bound(banner.start_date);
+  const end = bound(banner.end_date);
+
+  if (start !== null && start > todayUtc) return { label: "Scheduled", variant: "amber" };
+  if (end !== null && end < todayUtc) return { label: "Expired", variant: "amber" };
+  return { label: "Live", variant: "green" };
+}
+
 /** Homepage banners backed by `GET/POST/PUT/DELETE /api/v1/banners`. */
 export function BannersSection() {
   const { data, error, loading, reload } = useAdminResource(
@@ -40,10 +66,12 @@ export function BannersSection() {
     setBusyId(banner.id);
     try {
       const updated = await adminApi.updateBanner(banner.id, { is_active: !banner.is_active });
-      reload(); void updated;
+      reload();
       showToast({
-        title: `${updated.is_active ? "Activated" : "Paused"} ${banner.title}`,
-        description: "Banner visibility updated.",
+        title: `${updated.is_active ? "Enabled" : "Paused"} ${banner.title}`,
+        // Not "visibility updated": enabling a banner whose schedule has expired
+        // leaves it off the homepage. Report the status the row now actually has.
+        description: `Banner is now ${bannerStatus(updated).label.toLowerCase()}.`,
         variant: "success",
       });
     } catch (err) {
@@ -184,10 +212,13 @@ export function BannersSection() {
               <p className="truncate text-xs text-slate-400">
                 {b.position} · order {b.display_order}
               </p>
+              {(b.start_date || b.end_date) && (
+                <p className="truncate text-xs text-slate-400">
+                  {b.start_date ?? "always"} → {b.end_date ?? "always"}
+                </p>
+              )}
               <div className="mt-3 flex items-center justify-between">
-                <Badge variant={b.is_active ? "green" : "gray"}>
-                  {b.is_active ? "Active" : "Paused"}
-                </Badge>
+                <Badge variant={bannerStatus(b).variant}>{bannerStatus(b).label}</Badge>
                 <div className="flex gap-1.5">
                   <Button
                     type="button"

@@ -127,7 +127,7 @@ export function useCatalogCrud<T extends { id: number }, V>(
   const { noun, entity, load, unreachableMessage, emptyValues, loadDetail, refFor, labelFor, build, create, update, remove, valuesFromRow } = opts;
 
   const { showToast, roles } = useApp();
-  const { data, error, loading, reload } = useAdminResource<T>(load, { unreachableMessage });
+  const { data, error, loading, reload } = useAdminResource<T[]>(load, { unreachableMessage });
 
   const canWrite = hasAnyRole(roles, CATALOG_WRITE_ROLES);
   const canDelete = hasAnyRole(roles, CATALOG_DELETE_ROLES[entity]);
