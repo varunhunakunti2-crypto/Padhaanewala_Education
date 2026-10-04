@@ -227,6 +227,34 @@ function triValue(value: TriState): boolean | null {
 export const COLLEGE_NAME_MIN = 2;
 export const COLLEGE_NAME_MAX = 255;
 
+/**
+ * Column widths for every free-text field on the college form, mirrored from
+ * `CollegeCreate` / `CollegeUpdate` in `app/schemas/catalog.py`.
+ *
+ * Without a cap on both sides, Pydantic accepts the string, PostgreSQL raises
+ * `value too long for type character varying(n)`, and the admin is shown
+ * "Something went wrong" — a 500 for what is a plain validation failure. The
+ * form refuses at the keyboard instead, and
+ * `tests/college-length-contract.test.ts` reads the Python and fails if the two
+ * ever drift, which is the same guard `page-size-contract.test.ts` applies to
+ * `?limit=`.
+ *
+ * `address` and `overview` are deliberately absent: both are `Text` columns
+ * with no width to exceed. `ownership` is absent too — the form renders it as a
+ * `<Select>` over four fixed options, so there is nothing to type past, and a
+ * cap with no input to apply it to would be a lie about what is guarded.
+ */
+export const COLLEGE_FIELD_MAX = {
+  official_name: 255,
+  college_type: 50,
+  city: 100,
+  pincode: 10,
+  website: 255,
+  email: 255,
+  phone: 20,
+  accreditation_naac: 20,
+} as const;
+
 function validateName(raw: string): { ok: true; value: string } | { ok: false; error: string } {
   const trimmed = raw.trim();
   if (trimmed === "") return { ok: false, error: "A college needs a name." };

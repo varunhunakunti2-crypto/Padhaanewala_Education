@@ -5,7 +5,12 @@ import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input, Label, Select } from "@/components/ui/FormField";
 import type { AdminCourse, AdminDistrict, AdminState, AdminUniversity } from "@/lib/api";
-import { EMPTY_COLLEGE_COURSE, type CollegeFormValues } from "@/lib/college-form";
+import {
+  COLLEGE_FIELD_MAX,
+  COLLEGE_NAME_MAX,
+  EMPTY_COLLEGE_COURSE,
+  type CollegeFormValues,
+} from "@/lib/college-form";
 
 /**
  * The field set for creating and editing a college.
@@ -118,13 +123,14 @@ export function CollegeFormFields({
             placeholder="Indian Institute of Technology Madras"
             required
             aria-required="true"
-            maxLength={255}
+            maxLength={COLLEGE_NAME_MAX}
           />
         </Field>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field id="college-official-name" label="Official name" hint="The name on the institution's own records, if it differs.">
             <Input
               id="college-official-name"
+              maxLength={COLLEGE_FIELD_MAX.official_name}
               value={values.official_name}
               onChange={(e) => set("official_name", e.target.value)}
             />
@@ -132,6 +138,7 @@ export function CollegeFormFields({
           <Field id="college-type" label="Institution type" hint="For example Institute, University, Polytechnic.">
             <Input
               id="college-type"
+              maxLength={COLLEGE_FIELD_MAX.college_type}
               value={values.college_type}
               onChange={(e) => set("college_type", e.target.value)}
             />
@@ -198,6 +205,7 @@ export function CollegeFormFields({
           <Field id="college-city" label="City">
             <Input
               id="college-city"
+              maxLength={COLLEGE_FIELD_MAX.city}
               value={values.city}
               onChange={(e) => set("city", e.target.value)}
             />
@@ -208,7 +216,7 @@ export function CollegeFormFields({
               value={values.pincode}
               onChange={(e) => set("pincode", e.target.value)}
               inputMode="numeric"
-              maxLength={10}
+              maxLength={COLLEGE_FIELD_MAX.pincode}
             />
           </Field>
         </div>
@@ -247,6 +255,7 @@ export function CollegeFormFields({
           <Field id="college-email" label="Email">
             <Input
               id="college-email"
+              maxLength={COLLEGE_FIELD_MAX.email}
               type="email"
               value={values.email}
               onChange={(e) => set("email", e.target.value)}
@@ -255,6 +264,7 @@ export function CollegeFormFields({
           <Field id="college-phone" label="Phone">
             <Input
               id="college-phone"
+              maxLength={COLLEGE_FIELD_MAX.phone}
               type="tel"
               value={values.phone}
               onChange={(e) => set("phone", e.target.value)}
@@ -263,6 +273,7 @@ export function CollegeFormFields({
           <Field id="college-website" label="Website" hint="Include the scheme, for example https://.">
             <Input
               id="college-website"
+              maxLength={COLLEGE_FIELD_MAX.website}
               type="url"
               value={values.website}
               onChange={(e) => set("website", e.target.value)}
@@ -287,6 +298,7 @@ export function CollegeFormFields({
           <Field id="college-naac" label="NAAC grade" hint="For example A++, A+, A, B++.">
             <Input
               id="college-naac"
+              maxLength={COLLEGE_FIELD_MAX.accreditation_naac}
               value={values.accreditation_naac}
               onChange={(e) => set("accreditation_naac", e.target.value)}
             />

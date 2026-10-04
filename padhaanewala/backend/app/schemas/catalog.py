@@ -171,22 +171,22 @@ class CollegeCourseCreate(BaseModel):
 
 class CollegeCreate(BaseModel):
     name: str = Field(min_length=2, max_length=255)
-    official_name: str | None = None
-    college_type: str | None = None
-    ownership: str | None = None
+    official_name: str | None = Field(default=None, max_length=255)
+    college_type: str | None = Field(default=None, max_length=50)
+    ownership: str | None = Field(default=None, max_length=50)
     university_id: int | None = None
     state_id: int | None = None
     district_id: int | None = None
-    city: str | None = None
+    city: str | None = Field(default=None, max_length=100)
     address: str | None = None
-    pincode: str | None = None
+    pincode: str | None = Field(default=None, max_length=10)
     lat: Decimal | None = None
     lng: Decimal | None = None
-    website: str | None = None
-    email: str | None = None
-    phone: str | None = None
+    website: str | None = Field(default=None, max_length=255)
+    email: str | None = Field(default=None, max_length=255)
+    phone: str | None = Field(default=None, max_length=20)
     established_year: int | None = None
-    accreditation_naac: str | None = None
+    accreditation_naac: str | None = Field(default=None, max_length=20)
     # Was missing from both request schemas while the column and the response
     # model both existed, so the admin form's NBA control sent a key that
     # Pydantic dropped: the PUT answered 200 and the value never changed.
@@ -198,23 +198,23 @@ class CollegeCreate(BaseModel):
 
 
 class CollegeUpdate(BaseModel):
-    name: str | None = None
-    official_name: str | None = None
-    college_type: str | None = None
-    ownership: str | None = None
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    official_name: str | None = Field(default=None, max_length=255)
+    college_type: str | None = Field(default=None, max_length=50)
+    ownership: str | None = Field(default=None, max_length=50)
     university_id: int | None = None
     state_id: int | None = None
     district_id: int | None = None
-    city: str | None = None
+    city: str | None = Field(default=None, max_length=100)
     address: str | None = None
-    pincode: str | None = None
+    pincode: str | None = Field(default=None, max_length=10)
     lat: Decimal | None = None
     lng: Decimal | None = None
-    website: str | None = None
-    email: str | None = None
-    phone: str | None = None
+    website: str | None = Field(default=None, max_length=255)
+    email: str | None = Field(default=None, max_length=255)
+    phone: str | None = Field(default=None, max_length=20)
     established_year: int | None = None
-    accreditation_naac: str | None = None
+    accreditation_naac: str | None = Field(default=None, max_length=20)
     accreditation_nba: bool | None = None
     overview: str | None = None
     facilities: dict[str, Any] | None = None
