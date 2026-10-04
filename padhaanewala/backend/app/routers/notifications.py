@@ -25,6 +25,39 @@ def _to_response(notification: Notification) -> NotificationResponse:
     )
 
 
+@router.get(
+    "",
+    response_model=list[NotificationResponse],
+    dependencies=[Depends(require_role(*ADMIN_ROLES))],
+)
+def all_notifications(
+    unread_only: bool = False,
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    """Every notification across every account, for the admin console.
+
+    The Notifications panel called `GET /notifications` and this route did not
+    exist, so the panel answered 404 and rendered "Could not reach the API" —
+    the fourth instance of the same defect, and the first where the *absent*
+    half was the backend's. `/my` is deliberately not a substitute: it is
+    self-scoped to the caller by `Notification.user_id == user.id`, so an admin
+    reading it would see their own notifications and no one else's, which looks
+    like a working panel showing nothing.
+
+    Capped like every other list route. An uncapped `GET` over a table that
+    grows one row per user per notification is a full dump by the end of a
+    marketing campaign.
+    """
+    query = select(Notification)
+    if unread_only:
+        query = query.where(Notification.is_read.is_(False))
+    notifications = db.scalars(
+        query.order_by(Notification.created_at.desc()).limit(limit)
+    ).all()
+    return [_to_response(n) for n in notifications]
+
+
 @router.get("/my", response_model=list[NotificationResponse])
 def my_notifications(
     unread_only: bool = False,
