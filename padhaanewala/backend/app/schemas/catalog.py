@@ -311,6 +311,11 @@ class ResultQuestionResponse(AttemptQuestionResponse):
     # the client cannot re-derive the verdict the server reached. Gated the same
     # way, so it appears only once the key does.
     tolerance: Decimal | None = None
+    # The grader's note, on the only question type where the key cannot speak
+    # for itself. Always safe to publish: it is written by a member of staff
+    # for the person reading the result, and withholding it would leave a mark
+    # nobody can argue with.
+    grader_feedback: str | None = None
 
 
 class TestAttemptResponse(BaseModel):
@@ -387,6 +392,76 @@ class AttemptDetailResponse(BaseModel):
 class TestResultResponse(BaseModel):
     attempt: TestAttemptResponse
     questions: list[ResultQuestionResponse]
+
+
+#: Longest grader note the API accepts. The column is unbounded `TEXT`, so the
+#: bound has to live here -- where an over-long note is a 422 -- rather than in
+#: the table, where it would be a 500 on an otherwise valid grade.
+GRADER_FEEDBACK_MAX_LENGTH = 2000
+
+
+class GradeAnswerRequest(BaseModel):
+    """A manual verdict on one answer.
+
+    `marks_awarded` is required rather than derived from `is_correct`, because
+    partial credit is the entire reason a human marks an essay: a rubric that
+    awards 3 of 5 cannot be expressed as correct/incorrect. `is_correct` is
+    optional and, when omitted, is inferred as "awarded something" -- a question
+    with no negative marking has exactly two meaningful verdicts, and making the
+    caller repeat the marks as a boolean would be a second thing to get wrong.
+    """
+
+    marks_awarded: Decimal = Field(..., ge=0)
+    is_correct: bool | None = None
+    grader_feedback: str | None = Field(
+        default=None, max_length=GRADER_FEEDBACK_MAX_LENGTH
+    )
+
+
+class ReviewableAnswerResponse(BaseModel):
+    """One answer awaiting (or holding) a human verdict, for the grading queue."""
+
+    question_id: int
+    question_text: str
+    question_type: str
+    selected_answer: str | None = None
+    #: The ceiling the grade is checked against -- the grader cannot award more
+    #: than the question is worth, so it is shown next to the box.
+    marks: Decimal
+    answered_at: datetime | None = None
+    is_correct: bool | None = None
+    marks_awarded: Decimal | None = None
+    grader_feedback: str | None = None
+    graded_at: datetime | None = None
+    graded_by: int | None = None
+
+
+class AttemptReviewResponse(BaseModel):
+    """An attempt plus the answers a member of staff has to look at."""
+
+    attempt: TestAttemptResponse
+    student_name: str | None = None
+    student_email: str | None = None
+    submitted_at: datetime | None = None
+    answers: list[ReviewableAnswerResponse] = []
+
+
+class GradedAnswerResponse(BaseModel):
+    """The graded answer together with the attempt's new totals.
+
+    The tallies come back with the verdict because they are the point of the
+    exercise: an isolated "3.0 saved" tells a grader nothing about whether the
+    attempt has finished being marked, while `pending_review_count` hitting zero
+    does.
+    """
+
+    question_id: int
+    is_correct: bool | None = None
+    marks_awarded: Decimal | None = None
+    grader_feedback: str | None = None
+    graded_by: int | None = None
+    graded_at: datetime | None = None
+    attempt: TestAttemptResponse
 
 
 class AdminQuestionResponse(BaseModel):
