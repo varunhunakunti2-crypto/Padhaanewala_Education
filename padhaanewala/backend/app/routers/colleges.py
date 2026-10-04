@@ -12,6 +12,7 @@ from app.dependencies import (
     require_role,
 )
 from app.models import (
+    Admission,
     College,
     CollegeCourse,
     Course,
@@ -20,11 +21,14 @@ from app.models import (
     NIRFRanking,
     OtherRanking,
     PlacementRecord,
+    Review,
+    SavedCollege,
     SeatMatrix,
     User,
 )
 from app.roles import ADMIN_ROLES, CONTENT_ROLES, SUPER_ADMIN_ROLES
 from app.schemas.catalog import (
+    AdmissionWindowResponse,
     CollegeCourseResponse,
     CollegeCreate,
     CollegeDetailResponse,
@@ -47,7 +51,46 @@ def _slugify(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.strip().lower()).strip("-")
 
 
-def _to_list_item(college: College) -> CollegeListItemResponse:
+def _admission_windows(
+    db: Session, colleges: list[College]
+) -> dict[int, list[AdmissionWindowResponse]]:
+    """Every published application window for these colleges, in one query.
+
+    Read in a batch rather than per row: `admissions` hangs off
+    `college_courses`, so asking each college for its own windows is the N+1
+    that the list endpoints used to be free of only because they sent no
+    windows at all. A page of 100 rows must stay one extra query, not 101.
+    """
+    ids = [c.id for c in colleges]
+    if not ids:
+        return {}
+    rows = db.execute(
+        select(
+            CollegeCourse.college_id,
+            Admission.application_start_date,
+            Admission.application_end_date,
+            Admission.entrance_exam,
+        )
+        .join(Admission, Admission.college_course_id == CollegeCourse.id)
+        .where(CollegeCourse.college_id.in_(ids))
+        .order_by(Admission.id)
+    ).all()
+    windows: dict[int, list[AdmissionWindowResponse]] = {}
+    for college_id, start, end, exam in rows:
+        windows.setdefault(college_id, []).append(
+            AdmissionWindowResponse(
+                application_start_date=start,
+                application_end_date=end,
+                entrance_exam=exam,
+            )
+        )
+    return windows
+
+
+def _to_list_item(
+    college: College,
+    admissions: list[AdmissionWindowResponse] | None = None,
+) -> CollegeListItemResponse:
     return CollegeListItemResponse(
         id=college.id,
         college_id=college.college_id,
@@ -62,6 +105,7 @@ def _to_list_item(college: College) -> CollegeListItemResponse:
         total_reviews=college.total_reviews,
         average_rating=college.average_rating,
         is_featured=college.is_featured,
+        admissions=admissions or [],
     )
 
 
@@ -110,7 +154,8 @@ def list_colleges(
     colleges = (
         db.scalars(query.order_by(College.name).limit(limit).offset(offset)).all()
     )
-    return [_to_list_item(c) for c in colleges]
+    windows = _admission_windows(db, colleges)
+    return [_to_list_item(c, windows.get(c.id)) for c in colleges]
 
 
 
@@ -138,12 +183,16 @@ def search(
         college_query = college_query.where(College.state_id == state_id)
 
     colleges = db.scalars(college_query.limit(20)).all()
+    windows = _admission_windows(db, colleges)
 
     course_query = select(Course).where(Course.is_active, Course.name.ilike(term))
     courses = db.scalars(course_query.limit(10)).all()
 
     return SearchResult(
-        colleges=[_to_list_item(c) for c in colleges],
+        colleges=[
+            _to_list_item(c, windows.get(c.id))
+            for c in colleges
+        ],
         courses=[
             CourseResponse.model_validate(c, from_attributes=True) for c in courses
         ],
@@ -223,7 +272,9 @@ def get_college(college_ref: str, db: Session = Depends(get_db)):
         .options(
             selectinload(College.state),
             selectinload(College.university),
-            selectinload(College.college_courses).selectinload(CollegeCourse.course),
+            # `college_courses` is deliberately absent: `_get_detail` queries the
+            # active links itself, and eager-loading them here would mean
+            # fetching every link twice.
         )
         .where(
             College.is_active,
@@ -233,43 +284,7 @@ def get_college(college_ref: str, db: Session = Depends(get_db)):
     if college is None:
         raise HTTPException(status_code=404, detail="College not found")
 
-    base = _to_list_item(college)
-    courses = []
-    for cc in college.college_courses:
-        if cc.is_active:
-            courses.append(
-                {
-                    "id": cc.id,
-                    "course_id": cc.course_id,
-                    "course_name": cc.course.name if cc.course else None,
-                    "annual_fee": cc.annual_fee,
-                    "total_fee": cc.total_fee,
-                    "intake_seats": cc.intake_seats,
-                    "admission_mode": cc.admission_mode,
-                    "entrance_exam": cc.entrance_exam,
-                }
-            )
-
-    return CollegeDetailResponse(
-        **base.model_dump(),
-        official_name=college.official_name,
-        address=college.address,
-        pincode=college.pincode,
-        lat=college.lat,
-        lng=college.lng,
-        website=college.website,
-        email=college.email,
-        phone=college.phone,
-        established_year=college.established_year,
-        accreditation_naac=college.accreditation_naac,
-        accreditation_nba=college.accreditation_nba,
-        overview=college.overview,
-        facilities=college.facilities,
-        state_id=college.state_id,
-        district_id=college.district_id,
-        university_id=college.university_id,
-        courses=courses,
-    )
+    return _get_detail(college, db)
 
 
 @router.post(
@@ -440,16 +455,28 @@ def delete_college(
     if college is None:
         raise HTTPException(status_code=404, detail="College not found")
 
-    # 4.4/4.5 — the most destructive endpoint in the app. Record who did it,
-    # from where, and exactly how many dependent rows the cascade is about to
-    # destroy — after the commit that number is unrecoverable.
-    cascading = {
+    _refuse_if_detaching_would_collide(db, college)
+
+    # The most destructive endpoint in the app. Record who did it and from
+    # where, plus exactly what the delete does to dependent rows — because the
+    # two outcomes are no longer the same and conflating them hides the
+    # difference from whoever reads this log at 3am.
+    #
+    # `detached` rows survive with a NULL college_id (ON DELETE SET NULL, see
+    # migration b4e8f2a71d09); they are recoverable by re-linking. `destroyed`
+    # rows are genuinely gone, and that number is unrecoverable after the
+    # commit. Only NOT NULL config children still cascade.
+    detached = {
         "cutoffs": _count_for(db, Cutoff, college.id),
         "placements": _count_for(db, PlacementRecord, college.id),
         "nirf_rankings": _count_for(db, NIRFRanking, college.id),
         "other_rankings": _count_for(db, OtherRanking, college.id),
         "seat_matrix": _count_for(db, SeatMatrix, college.id),
+    }
+    destroyed = {
         "college_courses": _count_for(db, CollegeCourse, college.id),
+        "reviews": _count_for(db, Review, college.id),
+        "saved_colleges": _count_for(db, SavedCollege, college.id),
     }
     audit.record(
         db,
@@ -461,15 +488,70 @@ def delete_college(
         old_value={
             "slug": college.slug,
             "name": college.name,
-            "cascading_rows": cascading,
+            "detached_rows": detached,
+            "destroyed_rows": destroyed,
         },
     )
     db.delete(college)
     db.commit()
 
 
+def _refuse_if_detaching_would_collide(db: Session, college: College) -> None:
+    """Refuse a delete that would detach a cutoff onto an existing orphan.
+
+    `uq_cutoff_identity_coalesce` collapses a NULL college_id to the sentinel
+    0, so two cutoffs that were distinguished only by their college become
+    indistinguishable once both are detached. If an unattributed cutoff with the
+    same identity already exists, PostgreSQL raises UniqueViolation inside the
+    delete and the request 500s — correct in direction (nothing is lost) but
+    opaque to whoever clicked the button.
+
+    Refusing up front with a 409 turns that into an actionable answer. The
+    alternative of letting it through is not on the table: catching the error
+    and retrying would mean inventing one of the two rows, which is a data
+    decision this endpoint has no business making silently.
+    """
+    orphans = (
+        select(
+            func.coalesce(Cutoff.course_id, 0),
+            func.coalesce(Cutoff.branch, ""),
+            Cutoff.exam_name,
+            Cutoff.year,
+            func.coalesce(Cutoff.round, ""),
+            func.coalesce(Cutoff.quota, ""),
+            Cutoff.category,
+        )
+        .where(Cutoff.college_id.is_(None))
+        .intersect(
+            select(
+                func.coalesce(Cutoff.course_id, 0),
+                func.coalesce(Cutoff.branch, ""),
+                Cutoff.exam_name,
+                Cutoff.year,
+                func.coalesce(Cutoff.round, ""),
+                func.coalesce(Cutoff.quota, ""),
+                Cutoff.category,
+            ).where(Cutoff.college_id == college.id)
+        )
+    )
+    if db.execute(orphans.limit(1)).first() is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Cannot delete this college: detaching its cutoffs would collide "
+                "with cutoff rows that are already unattributed, because they "
+                "are identical apart from the college. Resolve those duplicate "
+                "cutoffs first."
+            ),
+        )
+
+
 def _count_for(db: Session, model, college_id: int) -> int:
-    """How many rows of `model` reference this college and would cascade away."""
+    """How many rows of `model` reference this college.
+
+    Whether those rows are destroyed or merely detached depends on the FK's
+    ON DELETE rule, so the caller decides which bucket to file the number in.
+    """
     return (
         db.scalar(
             select(func.count())
@@ -488,7 +570,23 @@ def _find_college(db: Session, ref: str) -> College | None:
 
 
 def _get_detail(college: College, db: Session) -> CollegeDetailResponse:
-    base = _to_list_item(college)
+    """The only place a `CollegeDetailResponse` is built.
+
+    Four endpoints return one: GET, POST, PUT and (historically) a private
+    helper. They used to be built in two places, and the two drifted: the read
+    path assembled `courses` as unvalidated dicts while the write path used
+    `CollegeCourseResponse`. Nothing tied the field lists together, so adding a
+    field to the schema updated the write path and left the public GET returning
+    the old shape — an admin shown "Saved" against a field the page never
+    displays.
+
+    Callers must therefore not build this response themselves. Note that this
+    issues its own `CollegeCourse` query rather than reading the relationship,
+    so callers should not also eager-load it.
+    """
+    base = _to_list_item(
+        college, _admission_windows(db, [college]).get(college.id)
+    )
     cc_rows = db.scalars(
         select(CollegeCourse)
         .options(selectinload(CollegeCourse.course))

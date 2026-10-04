@@ -7,10 +7,12 @@ from app.models.college_course import CollegeCourse
 from app.models.consent import ConsentRecord
 from app.models.course import Course
 from app.models.cutoff import Cutoff
+from app.models.data_request import DataRequest
 from app.models.enquiry import Enquiry, LeadNote, LeadStatusHistory
 from app.models.exam import Exam
 from app.models.faq import FAQ
 from app.models.fee import Fee
+from app.models.guardian_consent import GuardianConsent
 from app.models.location import City, District, State
 from app.models.media import Media
 from app.models.mock_test import MockTest, TestAnswer, TestAttempt, TestQuestion
@@ -48,11 +50,13 @@ __all__ = [
     "Counsellor",
     "Course",
     "Cutoff",
+    "DataRequest",
     "District",
     "Enquiry",
     "Exam",
     "FAQ",
     "Fee",
+    "GuardianConsent",
     "LeadNote",
     "LeadStatusHistory",
     "Media",

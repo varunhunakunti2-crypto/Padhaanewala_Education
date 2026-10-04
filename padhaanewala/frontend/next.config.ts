@@ -3,7 +3,12 @@ import type { NextConfig } from "next";
 const backendUrl = (
   process.env.BACKEND_URL ||
   process.env.NEXT_PUBLIC_API_URL ||
-  "http://localhost:8000"
+  // 127.0.0.1 and not `localhost`: the dev API is uvicorn bound to the IPv4
+  // loopback, while `localhost` resolves to ::1 first and is answered by
+  // whatever else is publishing :8000 (a Docker wildcard bind claims it). The
+  // proxy then forwards every /api/v1 call to that other service and gets its
+  // 404 back, which reads as "the API is broken" rather than "wrong port".
+  "http://127.0.0.1:8000"
 ).replace(/\/api\/v1$/, "");
 
 /**

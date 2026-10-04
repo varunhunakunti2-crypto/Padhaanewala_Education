@@ -5,6 +5,7 @@ import { ArrowRight, Bell, Bookmark, GraduationCap, Scale, Search } from "lucide
 import { useApp } from "@/lib/context/AppContext";
 import { DASHBOARD_NAV } from "@/lib/nav";
 import { SITE } from "@/lib/site";
+import { PrivacyPanel } from "@/components/compliance/PrivacyPanel";
 
 /**
  * Signed-in account page: the colleges the user saved, and the notifications we
@@ -277,6 +278,16 @@ export default function DashboardExplorer() {
               ))
             )}
           </div>
+        </div>
+        {/* privacy — DPDP s.9 consent status and the data-principal request channel */}
+        <div className={`mt-5 overflow-hidden rounded-[22px] ${T.card}`}>
+          <div className={`flex items-center justify-between border-b px-6 py-4 ${T.divider}`}>
+            <h2 className={`font-display text-[17px] font-extrabold tracking-tight ${T.heading}`}>
+              Privacy and data
+            </h2>
+            <span className={`text-[13px] ${T.muted}`}>DPDP Act, 2023</span>
+          </div>
+          <PrivacyPanel />
         </div>
       </main>
     </div>

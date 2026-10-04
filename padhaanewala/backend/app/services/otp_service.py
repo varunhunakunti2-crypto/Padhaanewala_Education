@@ -42,12 +42,18 @@ MOBILE_VERIFICATION = "mobile_verification"
 LOGIN = "login"
 EMAIL_VERIFICATION = "email_verification"
 PASSWORD_RESET = "password_reset"
+# Phase 9.1 — proves a parent or guardian controls the contact channel they
+# claim to control, which is what makes the consent they give *verifiable* under
+# DPDP s.9(2). Carried by SMS for the same reason the login OTP is: the guardian
+# is not the account holder, so there is no verified session to fall back on and
+# possession of the handset is the only evidence available.
+GUARDIAN_CONSENT = "guardian_consent"
 
 OtpPurpose = str
 
 #: Purposes whose secret is a 6-digit number. The other two carry a random URL
 #: token inside a link instead.
-SMS_PURPOSES = frozenset({MOBILE_VERIFICATION, LOGIN})
+SMS_PURPOSES = frozenset({MOBILE_VERIFICATION, LOGIN, GUARDIAN_CONSENT})
 
 #: bcrypt's input is capped at 72 bytes; well clear of a 6-digit code or a
 #: 43-character `token_urlsafe(32)`.

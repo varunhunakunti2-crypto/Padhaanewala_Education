@@ -1,7 +1,7 @@
 ﻿import re
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
@@ -14,6 +14,7 @@ from app.dependencies import (
 from app.models import Exam, User
 from app.schemas.catalog import ExamCreate, ExamResponse, ExamUpdate
 from app.roles import ADMIN_ROLES, CONTENT_ROLES
+from app.utils import audit
 
 router = APIRouter(prefix="/api/v1/exams", tags=["exams"])
 
@@ -111,12 +112,31 @@ def _find_exam(db: Session, ref: str) -> Exam | None:
     status_code=201,
     dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
-def create_exam(payload: ExamCreate, db: Session = Depends(get_db)):
+def create_exam(
+    payload: ExamCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(*CONTENT_ROLES)),
+):
     slug = _slugify(payload.name)
     if db.scalar(select(Exam).where(Exam.slug == slug)):
         raise HTTPException(status_code=400, detail="Exam with this name exists")
     exam = Exam(**payload.model_dump(exclude={"name"}), name=payload.name, slug=slug)
     db.add(exam)
+    # 4.4 — exams were mutated with no audit row at all, so an exam date or
+    # deadline could be changed with nothing in the trail to say who moved it.
+    # Flushed first so `exam.id` exists to stamp, and written after the slug
+    # check so a refused create leaves no phantom entry.
+    db.flush()
+    audit.record(
+        db,
+        request=request,
+        action="create_exam",
+        entity_type="exam",
+        entity_id=exam.id,
+        actor=user,
+        new_value=payload.model_dump(),
+    )
     db.commit()
     db.refresh(exam)
     return exam
@@ -128,13 +148,21 @@ def create_exam(payload: ExamCreate, db: Session = Depends(get_db)):
     dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def update_exam(
-    exam_ref: str, payload: ExamUpdate, db: Session = Depends(get_db)
+    exam_ref: str,
+    payload: ExamUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(*CONTENT_ROLES)),
 ):
     exam = _find_exam(db, exam_ref)
     if exam is None:
         raise HTTPException(status_code=404, detail="Exam not found")
 
     data = payload.model_dump(exclude_unset=True)
+    # Captured before the setattr loop so the trail holds the values the edit
+    # actually replaced, narrowed to the keys the caller sent — a full dump
+    # would log untouched columns as changes and make the row unreadable.
+    old_value = {field: getattr(exam, field) for field in data}
     if "name" in data and data["name"] != exam.name:
         slug = _slugify(data["name"])
         if db.scalar(select(Exam).where(Exam.slug == slug, Exam.id != exam.id)):
@@ -142,6 +170,16 @@ def update_exam(
         exam.slug = slug
     for field, value in data.items():
         setattr(exam, field, value)
+    audit.record(
+        db,
+        request=request,
+        action="update_exam",
+        entity_type="exam",
+        entity_id=exam.id,
+        actor=user,
+        old_value=old_value,
+        new_value=data,
+    )
     db.commit()
     db.refresh(exam)
     return exam
@@ -152,9 +190,31 @@ def update_exam(
     status_code=204,
     dependencies=[Depends(require_role(*ADMIN_ROLES))],
 )
-def delete_exam(exam_ref: str, db: Session = Depends(get_db)):
+def delete_exam(
+    exam_ref: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(*ADMIN_ROLES)),
+):
     exam = _find_exam(db, exam_ref)
     if exam is None:
         raise HTTPException(status_code=404, detail="Exam not found")
+    # Enough of the row to reconstruct what existed, read before the delete so
+    # the values are not fetched from an expired instance afterwards.
+    audit.record(
+        db,
+        request=request,
+        action="delete_exam",
+        entity_type="exam",
+        entity_id=exam.id,
+        actor=user,
+        old_value={
+            "name": exam.name,
+            "slug": exam.slug,
+            "exam_type": exam.exam_type,
+            "exam_date": exam.exam_date,
+            "is_active": exam.is_active,
+        },
+    )
     db.delete(exam)
     db.commit()

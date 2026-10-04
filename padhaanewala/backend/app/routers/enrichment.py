@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
@@ -15,6 +15,7 @@ from app.models import (
     OtherRanking,
     PlacementRecord,
     SeatMatrix,
+    User,
 )
 from app.schemas.enrichment import (
     AdmissionCreate,
@@ -40,6 +41,7 @@ from app.schemas.enrichment import (
     SeatMatrixResponse,
     SeatMatrixUpdate,
 )
+from app.utils import audit
 
 router = APIRouter(prefix="/api/v1/colleges", tags=["college-enrichment"])
 catalog_router = APIRouter(prefix="/api/v1", tags=["catalog-data"])
@@ -64,16 +66,57 @@ def _course_name(db: Session, course_id: int | None) -> str | None:
         return None
     return db.scalar(select(Course.name).where(Course.id == course_id))
 
+
+def _course_names_by_id(db: Session, rows) -> dict[int, str]:
+    """course_id -> name for every course referenced by `rows`, in one query.
+
+    `_course_name` costs one query per row. The catalogue routers cap `limit` at
+    500, so serialising a page of cutoffs, placements or seat matrices that way
+    issued up to 501 queries for one HTTP request. The ids in a page are few and
+    repeat heavily, which is exactly the case `IN (...)` is for.
+    """
+    ids = {r.course_id for r in rows if r.course_id is not None}
+    if not ids:
+        return {}
+    return dict(
+        db.execute(select(Course.id, Course.name).where(Course.id.in_(ids))).all()
+    )
+
+
+def _course_names_by_college_course(db: Session, rows) -> dict[int, str]:
+    """college_course_id -> course name for every link referenced by `rows`.
+
+    Fees and admissions identify a course indirectly, through the college-course
+    link, so they need the join rather than a `course_id` on the row itself. Same
+    per-row-query problem, same fix.
+    """
+    ids = {r.college_course_id for r in rows if r.college_course_id is not None}
+    if not ids:
+        return {}
+    return dict(
+        db.execute(
+            select(CollegeCourse.id, Course.name)
+            .join(Course, CollegeCourse.course_id == Course.id)
+            .where(CollegeCourse.id.in_(ids))
+        ).all()
+    )
+
 # ---------------------------------------------------------------- Cutoffs ----
 
-def _to_cutoff(db: Session, cutoff: Cutoff) -> CutoffResponse:
+def _to_cutoff(
+    db: Session, cutoff: Cutoff, course_names: dict[int, str] | None = None
+) -> CutoffResponse:
     college_name = cutoff.college.name if cutoff.college else None
     return CutoffResponse(
         id=cutoff.id,
         college_id=cutoff.college_id,
         college_name=college_name,
         course_id=cutoff.course_id,
-        course_name=_course_name(db, cutoff.course_id),
+        course_name=(
+            course_names.get(cutoff.course_id)
+            if course_names is not None
+            else _course_name(db, cutoff.course_id)
+        ),
         branch=cutoff.branch,
         exam_name=cutoff.exam_name,
         year=cutoff.year,
@@ -121,7 +164,8 @@ def list_cutoffs(
         .where(*conditions)
         .order_by(Cutoff.year.desc(), Cutoff.exam_name, Cutoff.category)
     ).all()
-    return [_to_cutoff(db, c) for c in cutoffs]
+    course_names = _course_names_by_id(db, cutoffs)
+    return [_to_cutoff(db, c, course_names) for c in cutoffs]
 
 @router.post(
     "/{college_ref}/cutoffs",
@@ -130,7 +174,11 @@ def list_cutoffs(
     dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def create_cutoff(
-    college_ref: str, payload: CutoffCreate, db: Session = Depends(get_db)
+    college_ref: str,
+    payload: CutoffCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(*CONTENT_ROLES)),
 ):
     college = _find_college_by_ref(db, college_ref)
     if college is None:
@@ -153,6 +201,20 @@ def create_cutoff(
 
     cutoff = Cutoff(**payload.model_dump(), college_id=college.id)
     db.add(cutoff)
+    # 4.4 — flushed first so `cutoff.id` exists to stamp on the audit row, and
+    # written after the duplicate check above, so a refused create leaves no
+    # trail entry describing a row that was never inserted. Same ordering as
+    # `create_college`.
+    db.flush()
+    audit.record(
+        db,
+        request=request,
+        action="create_cutoff",
+        entity_type="cutoff",
+        entity_id=cutoff.id,
+        actor=user,
+        new_value=payload.model_dump(),
+    )
     db.commit()
     db.refresh(cutoff)
     return _to_cutoff(db, cutoff)
@@ -166,13 +228,29 @@ def update_cutoff(
     college_ref: str,
     cutoff_id: int,
     payload: CutoffUpdate,
+    request: Request,
     db: Session = Depends(get_db),
+    user: User = Depends(require_role(*CONTENT_ROLES)),
 ):
     college = _find_college_by_ref(db, college_ref)
     if college is None:
         raise HTTPException(status_code=404, detail="College not found")
     cutoff = _find_cutoff(db, college, cutoff_id)
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    data = payload.model_dump(exclude_unset=True)
+    # 4.4 — old values read before the `setattr` loop below, so the row
+    # describes the edit and not its result; `exclude_unset` is what keeps the
+    # fields the caller never sent out of the diff. Same shape as `update_blog`.
+    audit.record(
+        db,
+        request=request,
+        action="update_cutoff",
+        entity_type="cutoff",
+        entity_id=cutoff.id,
+        actor=user,
+        old_value={field: getattr(cutoff, field) for field in data},
+        new_value=data,
+    )
+    for field, value in data.items():
         setattr(cutoff, field, value)
     db.commit()
     db.refresh(cutoff)
@@ -184,23 +262,49 @@ def update_cutoff(
     dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def delete_cutoff(
-    college_ref: str, cutoff_id: int, db: Session = Depends(get_db)
+    college_ref: str,
+    cutoff_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(*CONTENT_ROLES)),
 ):
     college = _find_college_by_ref(db, college_ref)
     if college is None:
         raise HTTPException(status_code=404, detail="College not found")
     cutoff = _find_cutoff(db, college, cutoff_id)
+    # 4.4 — enough of the cutoff's identity to say what was removed, read while
+    # the row still exists; after `db.delete` there is nothing left to ask.
+    audit.record(
+        db,
+        request=request,
+        action="delete_cutoff",
+        entity_type="cutoff",
+        entity_id=cutoff.id,
+        actor=user,
+        old_value={
+            "college_id": cutoff.college_id,
+            "course_id": cutoff.course_id,
+            "exam_name": cutoff.exam_name,
+            "year": cutoff.year,
+            "category": cutoff.category,
+        },
+    )
     db.delete(cutoff)
     db.commit()
 
 # -------------------------------------------------------------------- Fees ----
 
-def _to_fee(db: Session, fee: Fee) -> FeeResponse:
-    course_name = db.execute(
-        select(Course.name)
-        .join(CollegeCourse, CollegeCourse.course_id == Course.id)
-        .where(CollegeCourse.id == fee.college_course_id)
-    ).scalar_one_or_none()
+def _to_fee(
+    db: Session, fee: Fee, course_names: dict[int, str] | None = None
+) -> FeeResponse:
+    if course_names is not None:
+        course_name = course_names.get(fee.college_course_id)
+    else:
+        course_name = db.execute(
+            select(Course.name)
+            .join(CollegeCourse, CollegeCourse.course_id == Course.id)
+            .where(CollegeCourse.id == fee.college_course_id)
+        ).scalar_one_or_none()
     return FeeResponse(
         id=fee.id,
         college_course_id=fee.college_course_id,
@@ -262,7 +366,8 @@ def list_fees(
     fees = db.scalars(
         select(Fee).where(*conditions).order_by(Fee.academic_year.desc())
     ).all()
-    return [_to_fee(db, f) for f in fees]
+    course_names = _course_names_by_college_course(db, fees)
+    return [_to_fee(db, f, course_names) for f in fees]
 
 @router.post(
     "/{college_ref}/fees",
@@ -271,7 +376,11 @@ def list_fees(
     dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def create_fee(
-    college_ref: str, payload: FeeCreate, db: Session = Depends(get_db)
+    college_ref: str,
+    payload: FeeCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(*CONTENT_ROLES)),
 ):
     college = _find_college_by_ref(db, college_ref)
     if college is None:
@@ -292,6 +401,19 @@ def create_fee(
 
     fee = Fee(**payload.model_dump())
     db.add(fee)
+    # 4.4 — flushed so `fee.id` exists for the audit row. Both the ownership
+    # check and the duplicate check have already refused what they should, so
+    # the trail only ever records a create that the commit actually lands.
+    db.flush()
+    audit.record(
+        db,
+        request=request,
+        action="create_fee",
+        entity_type="fee",
+        entity_id=fee.id,
+        actor=user,
+        new_value=payload.model_dump(),
+    )
     db.commit()
     db.refresh(fee)
     return _to_fee(db, fee)
@@ -305,7 +427,9 @@ def update_fee(
     college_ref: str,
     fee_id: int,
     payload: FeeUpdate,
+    request: Request,
     db: Session = Depends(get_db),
+    user: User = Depends(require_role(*CONTENT_ROLES)),
 ):
     college = _find_college_by_ref(db, college_ref)
     if college is None:
@@ -314,6 +438,20 @@ def update_fee(
     data = payload.model_dump(exclude_unset=True)
     if "college_course_id" in data:
         _verify_college_course(db, college, data["college_course_id"])
+    # 4.4 — after the ownership check, so re-pointing a fee at another
+    # college's course is refused before anything is logged. Old values are
+    # read before the `setattr` loop below: the row must describe the edit,
+    # not its result.
+    audit.record(
+        db,
+        request=request,
+        action="update_fee",
+        entity_type="fee",
+        entity_id=fee.id,
+        actor=user,
+        old_value={field: getattr(fee, field) for field in data},
+        new_value=data,
+    )
     for field, value in data.items():
         setattr(fee, field, value)
     db.commit()
@@ -325,23 +463,51 @@ def update_fee(
     status_code=204,
     dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
-def delete_fee(college_ref: str, fee_id: int, db: Session = Depends(get_db)):
+def delete_fee(
+    college_ref: str,
+    fee_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(*CONTENT_ROLES)),
+):
     college = _find_college_by_ref(db, college_ref)
     if college is None:
         raise HTTPException(status_code=404, detail="College not found")
     fee = _find_fee(db, college, fee_id)
+    # 4.4 — which course's fee, for which year, read while the row still
+    # exists; after `db.delete` there is nothing left to ask.
+    audit.record(
+        db,
+        request=request,
+        action="delete_fee",
+        entity_type="fee",
+        entity_id=fee.id,
+        actor=user,
+        old_value={
+            "college_course_id": fee.college_course_id,
+            "academic_year": fee.academic_year,
+        },
+    )
     db.delete(fee)
     db.commit()
 
 # ------------------------------------------------------------- Placements ----
 
-def _to_placement(db: Session, placement: PlacementRecord) -> PlacementResponse:
+def _to_placement(
+    db: Session,
+    placement: PlacementRecord,
+    course_names: dict[int, str] | None = None,
+) -> PlacementResponse:
     return PlacementResponse(
         id=placement.id,
         college_id=placement.college_id,
         college_name=placement.college.name if placement.college else None,
         course_id=placement.course_id,
-        course_name=_course_name(db, placement.course_id),
+        course_name=(
+            course_names.get(placement.course_id)
+            if course_names is not None
+            else _course_name(db, placement.course_id)
+        ),
         branch=placement.branch,
         academic_year=placement.academic_year,
         total_graduating=placement.total_graduating,
@@ -391,7 +557,8 @@ def list_placements(
         .where(*conditions)
         .order_by(PlacementRecord.academic_year.desc())
     ).all()
-    return [_to_placement(db, p) for p in placements]
+    course_names = _course_names_by_id(db, placements)
+    return [_to_placement(db, p, course_names) for p in placements]
 
 @router.post(
     "/{college_ref}/placements",
@@ -400,13 +567,31 @@ def list_placements(
     dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def create_placement(
-    college_ref: str, payload: PlacementCreate, db: Session = Depends(get_db)
+    college_ref: str,
+    payload: PlacementCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(*CONTENT_ROLES)),
 ):
     college = _find_college_by_ref(db, college_ref)
     if college is None:
         raise HTTPException(status_code=404, detail="College not found")
     placement = PlacementRecord(**payload.model_dump(), college_id=college.id)
     db.add(placement)
+    # 4.4 — flushed so `placement.id` exists for the audit row. This handler
+    # has no duplicate check, so the flush is also where a constraint would
+    # refuse the row: either way the trail and the row are one transaction and
+    # cannot disagree about what happened.
+    db.flush()
+    audit.record(
+        db,
+        request=request,
+        action="create_placement",
+        entity_type="placement_record",
+        entity_id=placement.id,
+        actor=user,
+        new_value=payload.model_dump(),
+    )
     db.commit()
     db.refresh(placement)
     return _to_placement(db, placement)
@@ -420,13 +605,29 @@ def update_placement(
     college_ref: str,
     placement_id: int,
     payload: PlacementUpdate,
+    request: Request,
     db: Session = Depends(get_db),
+    user: User = Depends(require_role(*CONTENT_ROLES)),
 ):
     college = _find_college_by_ref(db, college_ref)
     if college is None:
         raise HTTPException(status_code=404, detail="College not found")
     placement = _find_placement(db, college, placement_id)
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    data = payload.model_dump(exclude_unset=True)
+    # 4.4 — old values read before the `setattr` loop below, so the row
+    # describes the edit and not its result; placement figures are the numbers
+    # students compare, so the before side has to survive the change.
+    audit.record(
+        db,
+        request=request,
+        action="update_placement",
+        entity_type="placement_record",
+        entity_id=placement.id,
+        actor=user,
+        old_value={field: getattr(placement, field) for field in data},
+        new_value=data,
+    )
+    for field, value in data.items():
         setattr(placement, field, value)
     db.commit()
     db.refresh(placement)
@@ -438,12 +639,31 @@ def update_placement(
     dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def delete_placement(
-    college_ref: str, placement_id: int, db: Session = Depends(get_db)
+    college_ref: str,
+    placement_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(*CONTENT_ROLES)),
 ):
     college = _find_college_by_ref(db, college_ref)
     if college is None:
         raise HTTPException(status_code=404, detail="College not found")
     placement = _find_placement(db, college, placement_id)
+    # 4.4 — which year's numbers for which course, read while the row still
+    # exists; after `db.delete` there is nothing left to ask.
+    audit.record(
+        db,
+        request=request,
+        action="delete_placement",
+        entity_type="placement_record",
+        entity_id=placement.id,
+        actor=user,
+        old_value={
+            "college_id": placement.college_id,
+            "course_id": placement.course_id,
+            "academic_year": placement.academic_year,
+        },
+    )
     db.delete(placement)
     db.commit()
 
@@ -557,7 +777,11 @@ def list_rankings(
     dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def create_nirf_ranking(
-    college_ref: str, payload: NIRFRankingCreate, db: Session = Depends(get_db)
+    college_ref: str,
+    payload: NIRFRankingCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(*CONTENT_ROLES)),
 ):
     college = _find_college_by_ref(db, college_ref)
     if college is None:
@@ -576,6 +800,19 @@ def create_nirf_ranking(
         )
     ranking = NIRFRanking(**payload.model_dump(), college_id=college.id)
     db.add(ranking)
+    # 4.4 — flushed so `ranking.id` exists for the audit row, and written after
+    # the duplicate check, so a refused create leaves no trail entry for a row
+    # that was never inserted. Same ordering as `create_college`.
+    db.flush()
+    audit.record(
+        db,
+        request=request,
+        action="create_nirf_ranking",
+        entity_type="nirf_ranking",
+        entity_id=ranking.id,
+        actor=user,
+        new_value=payload.model_dump(),
+    )
     db.commit()
     db.refresh(ranking)
     return _to_nirf(db, ranking)
@@ -589,13 +826,29 @@ def update_nirf_ranking(
     college_ref: str,
     rank_id: int,
     payload: NIRFRankingUpdate,
+    request: Request,
     db: Session = Depends(get_db),
+    user: User = Depends(require_role(*CONTENT_ROLES)),
 ):
     college = _find_college_by_ref(db, college_ref)
     if college is None:
         raise HTTPException(status_code=404, detail="College not found")
     ranking = _find_nirf(db, college, rank_id)
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    data = payload.model_dump(exclude_unset=True)
+    # 4.4 — old values read before the `setattr` loop below, so the row
+    # describes the edit and not its result; a rank that is quietly revised
+    # must be investigable from the trail alone.
+    audit.record(
+        db,
+        request=request,
+        action="update_nirf_ranking",
+        entity_type="nirf_ranking",
+        entity_id=ranking.id,
+        actor=user,
+        old_value={field: getattr(ranking, field) for field in data},
+        new_value=data,
+    )
+    for field, value in data.items():
         setattr(ranking, field, value)
     db.commit()
     db.refresh(ranking)
@@ -607,12 +860,32 @@ def update_nirf_ranking(
     dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def delete_nirf_ranking(
-    college_ref: str, rank_id: int, db: Session = Depends(get_db)
+    college_ref: str,
+    rank_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(*CONTENT_ROLES)),
 ):
     college = _find_college_by_ref(db, college_ref)
     if college is None:
         raise HTTPException(status_code=404, detail="College not found")
     ranking = _find_nirf(db, college, rank_id)
+    # 4.4 — which year and category was dropped, read while the row still
+    # exists; after `db.delete` there is nothing left to ask.
+    audit.record(
+        db,
+        request=request,
+        action="delete_nirf_ranking",
+        entity_type="nirf_ranking",
+        entity_id=ranking.id,
+        actor=user,
+        old_value={
+            "college_id": ranking.college_id,
+            "category": ranking.category,
+            "year": ranking.year,
+            "rank": ranking.rank,
+        },
+    )
     db.delete(ranking)
     db.commit()
 
@@ -623,13 +896,30 @@ def delete_nirf_ranking(
     dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def create_other_ranking(
-    college_ref: str, payload: OtherRankingCreate, db: Session = Depends(get_db)
+    college_ref: str,
+    payload: OtherRankingCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(*CONTENT_ROLES)),
 ):
     college = _find_college_by_ref(db, college_ref)
     if college is None:
         raise HTTPException(status_code=404, detail="College not found")
     ranking = OtherRanking(**payload.model_dump(), college_id=college.id)
     db.add(ranking)
+    # 4.4 — flushed so `ranking.id` exists for the audit row. Logged whole
+    # (`payload.model_dump()`), as `create_college` does: an audit column that
+    # silently omits a field is how a value ends up saved by nobody.
+    db.flush()
+    audit.record(
+        db,
+        request=request,
+        action="create_other_ranking",
+        entity_type="other_ranking",
+        entity_id=ranking.id,
+        actor=user,
+        new_value=payload.model_dump(),
+    )
     db.commit()
     db.refresh(ranking)
     return _to_other(db, ranking)
@@ -643,13 +933,29 @@ def update_other_ranking(
     college_ref: str,
     rank_id: int,
     payload: OtherRankingUpdate,
+    request: Request,
     db: Session = Depends(get_db),
+    user: User = Depends(require_role(*CONTENT_ROLES)),
 ):
     college = _find_college_by_ref(db, college_ref)
     if college is None:
         raise HTTPException(status_code=404, detail="College not found")
     ranking = _find_other(db, college, rank_id)
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    data = payload.model_dump(exclude_unset=True)
+    # 4.4 — old values read before the `setattr` loop below, so the row
+    # describes the edit and not its result; `exclude_unset` keeps the fields
+    # the caller never sent out of the diff.
+    audit.record(
+        db,
+        request=request,
+        action="update_other_ranking",
+        entity_type="other_ranking",
+        entity_id=ranking.id,
+        actor=user,
+        old_value={field: getattr(ranking, field) for field in data},
+        new_value=data,
+    )
+    for field, value in data.items():
         setattr(ranking, field, value)
     db.commit()
     db.refresh(ranking)
@@ -661,24 +967,50 @@ def update_other_ranking(
     dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def delete_other_ranking(
-    college_ref: str, rank_id: int, db: Session = Depends(get_db)
+    college_ref: str,
+    rank_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(*CONTENT_ROLES)),
 ):
     college = _find_college_by_ref(db, college_ref)
     if college is None:
         raise HTTPException(status_code=404, detail="College not found")
     ranking = _find_other(db, college, rank_id)
+    # 4.4 — which body's ranking for which year was dropped, read while the
+    # row still exists; after `db.delete` there is nothing left to ask.
+    audit.record(
+        db,
+        request=request,
+        action="delete_other_ranking",
+        entity_type="other_ranking",
+        entity_id=ranking.id,
+        actor=user,
+        old_value={
+            "college_id": ranking.college_id,
+            "ranking_body": ranking.ranking_body,
+            "year": ranking.year,
+            "rank": ranking.rank,
+        },
+    )
     db.delete(ranking)
     db.commit()
 
 # ------------------------------------------------------------ Seat matrix ----
 
-def _to_seat_matrix(db: Session, seat: SeatMatrix) -> SeatMatrixResponse:
+def _to_seat_matrix(
+    db: Session, seat: SeatMatrix, course_names: dict[int, str] | None = None
+) -> SeatMatrixResponse:
     return SeatMatrixResponse(
         id=seat.id,
         college_id=seat.college_id,
         college_name=seat.college.name if seat.college else None,
         course_id=seat.course_id,
-        course_name=_course_name(db, seat.course_id),
+        course_name=(
+            course_names.get(seat.course_id)
+            if course_names is not None
+            else _course_name(db, seat.course_id)
+        ),
         branch=seat.branch,
         exam=seat.exam,
         total_seats=seat.total_seats,
@@ -728,7 +1060,8 @@ def list_seat_matrix(
         .where(*conditions)
         .order_by(SeatMatrix.year.desc())
     ).all()
-    return [_to_seat_matrix(db, s) for s in seats]
+    course_names = _course_names_by_id(db, seats)
+    return [_to_seat_matrix(db, s, course_names) for s in seats]
 
 @router.post(
     "/{college_ref}/seat-matrix",
@@ -737,13 +1070,30 @@ def list_seat_matrix(
     dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def create_seat_matrix(
-    college_ref: str, payload: SeatMatrixCreate, db: Session = Depends(get_db)
+    college_ref: str,
+    payload: SeatMatrixCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(*CONTENT_ROLES)),
 ):
     college = _find_college_by_ref(db, college_ref)
     if college is None:
         raise HTTPException(status_code=404, detail="College not found")
     seat = SeatMatrix(**payload.model_dump(), college_id=college.id)
     db.add(seat)
+    # 4.4 — flushed so `seat.id` exists for the audit row. Intake numbers are
+    # what the predictor reads, so the trail has to be able to name the exact
+    # row a set of numbers arrived on.
+    db.flush()
+    audit.record(
+        db,
+        request=request,
+        action="create_seat_matrix",
+        entity_type="seat_matrix",
+        entity_id=seat.id,
+        actor=user,
+        new_value=payload.model_dump(),
+    )
     db.commit()
     db.refresh(seat)
     return _to_seat_matrix(db, seat)
@@ -757,13 +1107,29 @@ def update_seat_matrix(
     college_ref: str,
     seat_id: int,
     payload: SeatMatrixUpdate,
+    request: Request,
     db: Session = Depends(get_db),
+    user: User = Depends(require_role(*CONTENT_ROLES)),
 ):
     college = _find_college_by_ref(db, college_ref)
     if college is None:
         raise HTTPException(status_code=404, detail="College not found")
     seat = _find_seat_matrix(db, college, seat_id)
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    data = payload.model_dump(exclude_unset=True)
+    # 4.4 — old values read before the `setattr` loop below, so the row
+    # describes the edit and not its result; seat counts are compared across
+    # years by applicants, so the before side has to survive the change.
+    audit.record(
+        db,
+        request=request,
+        action="update_seat_matrix",
+        entity_type="seat_matrix",
+        entity_id=seat.id,
+        actor=user,
+        old_value={field: getattr(seat, field) for field in data},
+        new_value=data,
+    )
+    for field, value in data.items():
         setattr(seat, field, value)
     db.commit()
     db.refresh(seat)
@@ -775,34 +1141,62 @@ def update_seat_matrix(
     dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def delete_seat_matrix(
-    college_ref: str, seat_id: int, db: Session = Depends(get_db)
+    college_ref: str,
+    seat_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(*CONTENT_ROLES)),
 ):
     college = _find_college_by_ref(db, college_ref)
     if college is None:
         raise HTTPException(status_code=404, detail="College not found")
     seat = _find_seat_matrix(db, college, seat_id)
+    # 4.4 — which course's intake, for which exam and year, read while the row
+    # still exists; after `db.delete` there is nothing left to ask.
+    audit.record(
+        db,
+        request=request,
+        action="delete_seat_matrix",
+        entity_type="seat_matrix",
+        entity_id=seat.id,
+        actor=user,
+        old_value={
+            "college_id": seat.college_id,
+            "course_id": seat.course_id,
+            "exam": seat.exam,
+            "year": seat.year,
+        },
+    )
     db.delete(seat)
     db.commit()
 
 # ------------------------------------------------------------ Admissions ----
 
 def _course_name_via_college_course(
-    db: Session, college_course_id: int | None
+    db: Session,
+    college_course_id: int | None,
+    course_names: dict[int, str] | None = None,
 ) -> str | None:
     if college_course_id is None:
         return None
+    if course_names is not None:
+        return course_names.get(college_course_id)
     return db.execute(
         select(Course.name)
         .join(CollegeCourse, CollegeCourse.course_id == Course.id)
         .where(CollegeCourse.id == college_course_id)
     ).scalar_one_or_none()
 
-def _to_admission(db: Session, admission: Admission) -> AdmissionResponse:
+def _to_admission(
+    db: Session,
+    admission: Admission,
+    course_names: dict[int, str] | None = None,
+) -> AdmissionResponse:
     return AdmissionResponse(
         id=admission.id,
         college_course_id=admission.college_course_id,
         course_name=_course_name_via_college_course(
-            db, admission.college_course_id
+            db, admission.college_course_id, course_names
         ),
         admission_information=admission.admission_information,
         eligibility_details=admission.eligibility_details,
@@ -840,7 +1234,8 @@ def list_admissions(
     admissions = db.scalars(
         select(Admission).where(*conditions).order_by(Admission.id)
     ).all()
-    return [_to_admission(db, a) for a in admissions]
+    course_names = _course_names_by_college_course(db, admissions)
+    return [_to_admission(db, a, course_names) for a in admissions]
 
 @router.post(
     "/{college_ref}/admissions",
@@ -849,7 +1244,11 @@ def list_admissions(
     dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def create_admission(
-    college_ref: str, payload: AdmissionCreate, db: Session = Depends(get_db)
+    college_ref: str,
+    payload: AdmissionCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(*CONTENT_ROLES)),
 ):
     college = _find_college_by_ref(db, college_ref)
     if college is None:
@@ -857,6 +1256,19 @@ def create_admission(
     _verify_college_course(db, college, payload.college_course_id)
     admission = Admission(**payload.model_dump())
     db.add(admission)
+    # 4.4 — flushed so `admission.id` exists for the audit row, after the
+    # ownership check above, so a payload pointing at another college's course
+    # is refused before any trail entry is written.
+    db.flush()
+    audit.record(
+        db,
+        request=request,
+        action="create_admission",
+        entity_type="admission",
+        entity_id=admission.id,
+        actor=user,
+        new_value=payload.model_dump(),
+    )
     db.commit()
     db.refresh(admission)
     return _to_admission(db, admission)
@@ -870,7 +1282,9 @@ def update_admission(
     college_ref: str,
     admission_id: int,
     payload: AdmissionUpdate,
+    request: Request,
     db: Session = Depends(get_db),
+    user: User = Depends(require_role(*CONTENT_ROLES)),
 ):
     college = _find_college_by_ref(db, college_ref)
     if college is None:
@@ -879,6 +1293,20 @@ def update_admission(
     data = payload.model_dump(exclude_unset=True)
     if "college_course_id" in data:
         _verify_college_course(db, college, data["college_course_id"])
+    # 4.4 — after the ownership check, so re-pointing admission info at another
+    # college's course is refused before anything is logged. Old values are
+    # read before the `setattr` loop below: the row must describe the edit,
+    # not its result.
+    audit.record(
+        db,
+        request=request,
+        action="update_admission",
+        entity_type="admission",
+        entity_id=admission.id,
+        actor=user,
+        old_value={field: getattr(admission, field) for field in data},
+        new_value=data,
+    )
     for field, value in data.items():
         setattr(admission, field, value)
     db.commit()
@@ -891,12 +1319,30 @@ def update_admission(
     dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def delete_admission(
-    college_ref: str, admission_id: int, db: Session = Depends(get_db)
+    college_ref: str,
+    admission_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(*CONTENT_ROLES)),
 ):
     college = _find_college_by_ref(db, college_ref)
     if college is None:
         raise HTTPException(status_code=404, detail="College not found")
     admission = _find_admission(db, college, admission_id)
+    # 4.4 — whose admissions info this was, read while the row still exists;
+    # after `db.delete` there is nothing left to ask.
+    audit.record(
+        db,
+        request=request,
+        action="delete_admission",
+        entity_type="admission",
+        entity_id=admission.id,
+        actor=user,
+        old_value={
+            "college_course_id": admission.college_course_id,
+            "entrance_exam": admission.entrance_exam,
+        },
+    )
     db.delete(admission)
     db.commit()
 
@@ -967,7 +1413,8 @@ def catalog_cutoffs(
         limit,
         offset,
     )
-    return [_to_cutoff(db, c) for c in cutoffs]
+    course_names = _course_names_by_id(db, cutoffs)
+    return [_to_cutoff(db, c, course_names) for c in cutoffs]
 
 @catalog_router.get("/fees", response_model=list[FeeResponse])
 def catalog_fees(
@@ -1000,7 +1447,8 @@ def catalog_fees(
         limit,
         offset,
     )
-    return [_to_fee(db, f) for f in fees]
+    course_names = _course_names_by_college_course(db, fees)
+    return [_to_fee(db, f, course_names) for f in fees]
 
 @catalog_router.get("/placements", response_model=list[PlacementResponse])
 def catalog_placements(
@@ -1027,7 +1475,8 @@ def catalog_placements(
         limit,
         offset,
     )
-    return [_to_placement(db, p) for p in placements]
+    course_names = _course_names_by_id(db, placements)
+    return [_to_placement(db, p, course_names) for p in placements]
 
 @catalog_router.get("/rankings", response_model=list[RankingResponse])
 def catalog_rankings(
@@ -1138,7 +1587,8 @@ def catalog_seat_matrix(
         limit,
         offset,
     )
-    return [_to_seat_matrix(db, s) for s in seats]
+    course_names = _course_names_by_id(db, seats)
+    return [_to_seat_matrix(db, s, course_names) for s in seats]
 
 @catalog_router.get("/admissions", response_model=list[AdmissionResponse])
 def catalog_admissions(
@@ -1165,4 +1615,5 @@ def catalog_admissions(
         limit,
         offset,
     )
-    return [_to_admission(db, a) for a in admissions]
+    course_names = _course_names_by_college_course(db, admissions)
+    return [_to_admission(db, a, course_names) for a in admissions]

@@ -1,11 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import require_role
-from app.models import SeoMetadata
+from app.models import SeoMetadata, User
 from app.schemas.content import SeoMetadataResponse, SeoMetadataUpsert
+from app.utils import audit
 
 router = APIRouter(prefix="/api/v1/seo", tags=["seo"])
 
@@ -76,7 +77,9 @@ def upsert_seo(
     entity_type: str,
     entity_id: int,
     payload: SeoMetadataUpsert,
+    request: Request,
     db: Session = Depends(get_db),
+    user: User = Depends(require_role(*SEO_ROLES)),
 ):
     seo = db.scalar(
         select(SeoMetadata).where(
@@ -88,9 +91,32 @@ def upsert_seo(
             entity_type=entity_type, entity_id=entity_id, **payload.model_dump()
         )
         db.add(seo)
+        # 4.4 — this PUT is an upsert, so which branch ran is itself the
+        # change: a fresh row is flushed for its id and logged whole, as
+        # `create_college` does.
+        db.flush()
+        old_value = None
+        new_value = payload.model_dump()
     else:
-        for field, value in payload.model_dump(exclude_unset=True).items():
+        data = payload.model_dump(exclude_unset=True)
+        # 4.4 — old values read before the `setattr` loop, so the row
+        # describes the edit and not its result; the console prefills from the
+        # record, so only what the caller actually sent belongs in the diff.
+        old_value = {field: getattr(seo, field) for field in data}
+        new_value = data
+        for field, value in data.items():
             setattr(seo, field, value)
+
+    audit.record(
+        db,
+        request=request,
+        action="upsert_seo",
+        entity_type="seo",
+        entity_id=seo.id,
+        actor=user,
+        old_value=old_value,
+        new_value=new_value,
+    )
     db.commit()
     db.refresh(seo)
     return _to_response(seo)
@@ -100,7 +126,13 @@ def upsert_seo(
     status_code=204,
     dependencies=[Depends(require_role(*SEO_ROLES))],
 )
-def delete_seo(entity_type: str, entity_id: int, db: Session = Depends(get_db)):
+def delete_seo(
+    entity_type: str,
+    entity_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(*SEO_ROLES)),
+):
     seo = db.scalar(
         select(SeoMetadata).where(
             SeoMetadata.entity_type == entity_type, SeoMetadata.entity_id == entity_id
@@ -108,5 +140,21 @@ def delete_seo(entity_type: str, entity_id: int, db: Session = Depends(get_db)):
     )
     if seo is None:
         raise HTTPException(status_code=404, detail="SEO metadata not found")
+    # 4.4 — whose metadata this was, read while the row still exists; after
+    # `db.delete` there is nothing left to ask. The row's own `entity_type` /
+    # `entity_id` name the target, which is why they appear inside `old_value`.
+    audit.record(
+        db,
+        request=request,
+        action="delete_seo",
+        entity_type="seo",
+        entity_id=seo.id,
+        actor=user,
+        old_value={
+            "entity_type": seo.entity_type,
+            "entity_id": seo.entity_id,
+            "meta_title": seo.meta_title,
+        },
+    )
     db.delete(seo)
     db.commit()

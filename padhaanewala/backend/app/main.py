@@ -23,6 +23,7 @@ audit,
     banners,
     blogs,
     colleges,
+    compliance,
     consent,
     courses,
     counsellors,
@@ -116,6 +117,7 @@ app.include_router(roles.router)
 app.include_router(locations.router)
 app.include_router(universities.router)
 app.include_router(colleges.router)
+app.include_router(compliance.router)
 app.include_router(courses.router)
 app.include_router(consent.router)
 app.include_router(enquiries.router)

@@ -2,13 +2,15 @@ import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 
 import { ResetPasswordForm } from "@/components/auth/ResetPasswordForm";
+import { pageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
-  title: "Choose a new password | Padhaanewala",
+// A one-shot credential must not be indexed or archived.
+export const metadata: Metadata = pageMetadata({
+  title: "Choose a new password",
   description: "Set a new password for your Padhaanewala account.",
-  // A one-shot credential must not be indexed or archived.
-  robots: { index: false, follow: false },
-};
+  path: "/reset-password",
+  noindex: true,
+});
 
 export default async function ResetPasswordPage({
   searchParams,

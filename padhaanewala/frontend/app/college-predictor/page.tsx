@@ -1,20 +1,16 @@
 import type { Metadata } from "next";
 import { PredictorForm } from "@/components/predictor/PredictorForm";
 import { resolveColleges } from "@/lib/content";
-import { BETA_NOINDEX } from "@/lib/nav";
-import { SITE } from "@/lib/site";
+import { pageMetadata } from "@/lib/seo";
 
 export async function generateMetadata(): Promise<Metadata> {
-  return {
+  return pageMetadata({
     title: "AI College Predictor",
-    description: `Enter your entrance exam rank, course preference, state and budget to get a personalised list of colleges matching your profile. Use ${SITE.name}'s AI College Predictor.`,
-    openGraph: {
-      title: `AI College Predictor — ${SITE.name}`,
-      description:
-        "Find colleges matching your rank, course and location preferences with data-driven prediction.",
-    },
-    ...BETA_NOINDEX,
-  };
+    description:
+      "Enter your entrance exam rank, course, state and budget to get a personalised shortlist of colleges that match your profile.",
+    path: "/college-predictor",
+    noindex: true,
+  });
 }
 
 export default async function PredictorPage() {

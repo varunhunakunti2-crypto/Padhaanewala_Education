@@ -16,6 +16,7 @@ def _create_authenticated_student():
             "email": email,
             "mobile": f"9{uuid.uuid4().int % 1_000_000_000:09d}",
             "password": "Password123!",
+            "age_band": "18_plus",
         },
     )
     assert reg.status_code == 201

@@ -1,6 +1,6 @@
 import re
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -17,6 +17,7 @@ from app.schemas.catalog import (
     UniversityUpdate,
 )
 from app.roles import ADMIN_ROLES, CONTENT_ROLES
+from app.utils import audit
 
 router = APIRouter(prefix="/api/v1/universities", tags=["universities"])
 
@@ -78,7 +79,12 @@ def get_university(university_ref: str, db: Session = Depends(get_db)):
     status_code=201,
     dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
-def create_university(payload: UniversityCreate, db: Session = Depends(get_db)):
+def create_university(
+    payload: UniversityCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(*CONTENT_ROLES)),
+):
     slug = _slugify(payload.name)
     if db.scalar(select(University).where(University.slug == slug)):
         raise HTTPException(status_code=400, detail="University with this name exists")
@@ -86,6 +92,20 @@ def create_university(payload: UniversityCreate, db: Session = Depends(get_db)):
         **payload.model_dump(exclude={"name"}), name=payload.name, slug=slug
     )
     db.add(university)
+    # 4.4 — universities were mutated with no audit row, so the institution
+    # behind every college link could be added or dropped untraceably. Flushed
+    # first so `university.id` exists to stamp, and written after the slug
+    # check so a refused create leaves no phantom entry.
+    db.flush()
+    audit.record(
+        db,
+        request=request,
+        action="create_university",
+        entity_type="university",
+        entity_id=university.id,
+        actor=user,
+        new_value=payload.model_dump(),
+    )
     db.commit()
     db.refresh(university)
     return university
@@ -97,13 +117,21 @@ def create_university(payload: UniversityCreate, db: Session = Depends(get_db)):
     dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def update_university(
-    university_ref: str, payload: UniversityUpdate, db: Session = Depends(get_db)
+    university_ref: str,
+    payload: UniversityUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(*CONTENT_ROLES)),
 ):
     university = _find_university(db, university_ref)
     if university is None:
         raise HTTPException(status_code=404, detail="University not found")
 
     data = payload.model_dump(exclude_unset=True)
+    # Captured before the setattr loop so the trail holds the values the edit
+    # actually replaced, narrowed to the keys the caller sent — a full dump
+    # would log untouched columns as changes and make the row unreadable.
+    old_value = {field: getattr(university, field) for field in data}
     if "name" in data and data["name"] != university.name:
         slug = _slugify(data["name"])
         if db.scalar(
@@ -117,6 +145,16 @@ def update_university(
         university.slug = slug
     for field, value in data.items():
         setattr(university, field, value)
+    audit.record(
+        db,
+        request=request,
+        action="update_university",
+        entity_type="university",
+        entity_id=university.id,
+        actor=user,
+        old_value=old_value,
+        new_value=data,
+    )
     db.commit()
     db.refresh(university)
     return university
@@ -127,9 +165,30 @@ def update_university(
     status_code=204,
     dependencies=[Depends(require_role(*ADMIN_ROLES))],
 )
-def delete_university(university_ref: str, db: Session = Depends(get_db)):
+def delete_university(
+    university_ref: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(*ADMIN_ROLES)),
+):
     university = _find_university(db, university_ref)
     if university is None:
         raise HTTPException(status_code=404, detail="University not found")
+    # Enough of the row to reconstruct what existed, read before the delete so
+    # the values are not fetched from an expired instance afterwards.
+    audit.record(
+        db,
+        request=request,
+        action="delete_university",
+        entity_type="university",
+        entity_id=university.id,
+        actor=user,
+        old_value={
+            "name": university.name,
+            "slug": university.slug,
+            "type": university.type,
+            "is_active": university.is_active,
+        },
+    )
     db.delete(university)
     db.commit()

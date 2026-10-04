@@ -3,7 +3,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
@@ -15,11 +15,15 @@ from app.schemas.catalog import (
     AdminQuestionResponse,
     AttemptDetailResponse,
     AttemptQuestionResponse,
+    AttemptReviewResponse,
+    GradeAnswerRequest,
+    GradedAnswerResponse,
     MockTestAdminDetailResponse,
     MockTestCreate,
     MockTestResponse,
     MockTestUpdate,
     ResultQuestionResponse,
+    ReviewableAnswerResponse,
     SaveAnswerRequest,
     StartAttemptResponse,
     SubmitAttemptRequest,
@@ -29,6 +33,7 @@ from app.schemas.catalog import (
     TestQuestionUpdate,
     TestResultResponse,
 )
+from app.utils import audit
 
 router = APIRouter(prefix="/api/v1/mock-tests", tags=["mock-tests"])
 
@@ -176,21 +181,41 @@ def _finalize_if_expired(db: Session, attempt: TestAttempt) -> bool:
         return True
     return False
 
+def _answers_by_question(db: Session, attempt: TestAttempt) -> dict[int, TestAnswer]:
+    """Every stored answer for an attempt, keyed by question id.
+
+    Read with an explicit query rather than `attempt.answers`: `_save_answer`
+    inserts with `db.add()`, which does not append to a relationship collection
+    that was loaded earlier in the same request, so a lazy-loaded `attempt.answers`
+    can be missing the very rows this request just wrote. `_build_result` already
+    queried for exactly this reason; sharing it means the result screen and the
+    grader are reading from the same place.
+    """
+    return {
+        a.question_id: a
+        for a in db.scalars(
+            select(TestAnswer).where(TestAnswer.attempt_id == attempt.id)
+        ).all()
+    }
+
+
 def _grade_attempt(db: Session, attempt: TestAttempt) -> None:
+    """Autograde every answer, then rebuild the attempt's totals.
+
+    The verdict half is this function's alone: it is the only code allowed to
+    derive `is_correct` from the key. The tally half lives in
+    `_recompute_attempt_totals`, which is called last, so a manual grade made
+    weeks later recomputes the same numbers the autograder wrote and the two
+    can never drift apart.
+    """
     db.flush()
     questions = _active_questions(db, attempt.mock_test_id)
-    answers = {a.question_id: a for a in attempt.answers}
-    score = Decimal(0)
-    correct = 0
-    incorrect = 0
-    pending = 0
-    unanswered = 0
+    answers = _answers_by_question(db, attempt)
     for q in questions:
         answer = answers.get(q.id)
         if answer is None or _is_blank(answer.selected_answer):
             # Never answered. A blank submission is an omission rather than a
             # wrong answer, so it must not pick up negative marking.
-            unanswered += 1
             if answer is not None:
                 answer.is_correct = None
                 answer.marks_awarded = None
@@ -203,10 +228,48 @@ def _grade_attempt(db: Session, attempt: TestAttempt) -> None:
             # key, a `numeric` published without a numeric_answer. The student
             # did answer, so this is its own tally -- no marks, no verdict, and
             # no negative marking, but also not an unattempted question.
+            # `_recompute_attempt_totals` counts it as pending; nothing here
+            # gives it a verdict, because there is nothing to compare it with.
             answer.marks_awarded = None
-            pending += 1
             continue
         answer.marks_awarded = _marks_for(attempt, q, answer.is_correct)
+    _recompute_attempt_totals(db, attempt)
+    attempt.status = "submitted"
+    attempt.submitted_at = datetime.now(timezone.utc)
+
+def _recompute_attempt_totals(db: Session, attempt: TestAttempt) -> None:
+    """Rebuild score, the four tallies and the percentage from stored verdicts.
+
+    Deliberately **not** by re-running the autograder. `_grade_attempt`
+    re-derives every verdict and every mark from the answer key, which is right
+    at submission time and destructive afterwards: it would overwrite a grader's
+    partial credit with the key's binary answer the next time anything recounted
+    the attempt. Reading what is already on the row means a manual grade survives
+    every later recount.
+
+    Everything else -- the four-way partition, the clamped percentage -- is
+    identical to what `_grade_attempt` wrote, because the student's result screen
+    must not change shape depending on whether a human has touched it. This
+    function owns no state of its own: it does not re-grade, and it does not move
+    `status` or `submitted_at`.
+    """
+    db.flush()
+    questions = _active_questions(db, attempt.mock_test_id)
+    answers = _answers_by_question(db, attempt)
+    score = Decimal(0)
+    correct = 0
+    incorrect = 0
+    pending = 0
+    unanswered = 0
+    for q in questions:
+        answer = answers.get(q.id)
+        if answer is None or _is_blank(answer.selected_answer):
+            unanswered += 1
+            continue
+        if answer.is_correct is None:
+            # Awaiting a human, or an answer the key still cannot decide.
+            pending += 1
+            continue
         if answer.is_correct:
             correct += 1
         else:
@@ -238,8 +301,6 @@ def _grade_attempt(db: Session, attempt: TestAttempt) -> None:
         )
     else:
         attempt.percentage = Decimal(0)
-    attempt.status = "submitted"
-    attempt.submitted_at = datetime.now(timezone.utc)
 
 def _is_blank(value: str | None) -> bool:
     """True when a submission carries no answer at all.
@@ -417,7 +478,12 @@ def list_mock_tests(
     status_code=201,
     dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
-def create_mock_test(payload: MockTestCreate, db: Session = Depends(get_db)):
+def create_mock_test(
+    payload: MockTestCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(*CONTENT_ROLES)),
+):
     slug = _slugify(payload.name)
     if db.scalar(select(MockTest).where(MockTest.slug == slug)):
         raise HTTPException(status_code=400, detail="Mock test with this name exists")
@@ -425,6 +491,16 @@ def create_mock_test(payload: MockTestCreate, db: Session = Depends(get_db)):
         **payload.model_dump(exclude={"name"}), name=payload.name, slug=slug
     )
     db.add(mock_test)
+    db.flush()
+    audit.record(
+        db,
+        request=request,
+        action="create_mock_test",
+        entity_type="mock_test",
+        entity_id=mock_test.id,
+        actor=user,
+        new_value=payload.model_dump(),
+    )
     db.commit()
     db.refresh(mock_test)
     # This endpoint only creates the paper; questions are attached separately,
@@ -437,7 +513,11 @@ def create_mock_test(payload: MockTestCreate, db: Session = Depends(get_db)):
     dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def update_mock_test(
-    mock_test_ref: str, payload: MockTestUpdate, db: Session = Depends(get_db)
+    mock_test_ref: str,
+    payload: MockTestUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(*CONTENT_ROLES)),
 ):
     mock_test = _find_mock_test_admin(db, mock_test_ref)
     if mock_test is None:
@@ -455,8 +535,19 @@ def update_mock_test(
                 status_code=400, detail="Mock test with this name exists"
             )
         mock_test.slug = slug
+    old_value = {field: getattr(mock_test, field) for field in data}
     for field, value in data.items():
         setattr(mock_test, field, value)
+    audit.record(
+        db,
+        request=request,
+        action="update_mock_test",
+        entity_type="mock_test",
+        entity_id=mock_test.id,
+        actor=user,
+        old_value=old_value,
+        new_value=data,
+    )
     db.commit()
     db.refresh(mock_test)
 
@@ -468,11 +559,28 @@ def update_mock_test(
     status_code=204,
     dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
-def delete_mock_test(mock_test_ref: str, db: Session = Depends(get_db)):
+def delete_mock_test(
+    mock_test_ref: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(*CONTENT_ROLES)),
+):
     mock_test = _find_mock_test_admin(db, mock_test_ref)
     if mock_test is None:
         raise HTTPException(status_code=404, detail="Mock test not found")
     mock_test.is_active = False
+    # Soft delete: the attempt history hanging off this paper is a student's
+    # record of work they did, so the row survives and only stops being listed.
+    audit.record(
+        db,
+        request=request,
+        action="delete_mock_test",
+        entity_type="mock_test",
+        entity_id=mock_test.id,
+        actor=user,
+        old_value={"is_active": True},
+        new_value={"is_active": False},
+    )
     db.commit()
 
 @router.get("/{mock_test_ref}/questions", response_model=list[TestQuestionResponse])
@@ -565,7 +673,11 @@ def _check_gradeable(data: dict) -> None:
     dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def create_mock_test_question(
-    mock_test_ref: str, payload: TestQuestionCreate, db: Session = Depends(get_db)
+    mock_test_ref: str,
+    payload: TestQuestionCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(*CONTENT_ROLES)),
 ):
     mock_test = _find_mock_test_admin(db, mock_test_ref)
     if mock_test is None:
@@ -578,6 +690,16 @@ def create_mock_test_question(
 
     question = TestQuestion(mock_test_id=mock_test.id, **data)
     db.add(question)
+    db.flush()
+    audit.record(
+        db,
+        request=request,
+        action="create_mock_test_question",
+        entity_type="test_question",
+        entity_id=question.id,
+        actor=user,
+        new_value=data,
+    )
     db.commit()
     db.refresh(question)
     return question
@@ -592,7 +714,9 @@ def update_mock_test_question(
     mock_test_ref: str,
     question_id: int,
     payload: TestQuestionUpdate,
+    request: Request,
     db: Session = Depends(get_db),
+    user: User = Depends(require_role(*CONTENT_ROLES)),
 ):
     question = _find_question(db, mock_test_ref, question_id)
     data = payload.model_dump(exclude_unset=True)
@@ -607,8 +731,22 @@ def update_mock_test_question(
         }
     )
 
+    old_value = {field: getattr(question, field) for field in data}
     for field, value in data.items():
         setattr(question, field, value)
+    # Changing an answer key rewrites what every future attempt scores against,
+    # and can retroactively change nothing about attempts already graded -- which
+    # is exactly why the before-state is worth an audit row.
+    audit.record(
+        db,
+        request=request,
+        action="update_mock_test_question",
+        entity_type="test_question",
+        entity_id=question.id,
+        actor=user,
+        old_value=old_value,
+        new_value=data,
+    )
     db.commit()
     db.refresh(question)
     return question
@@ -620,7 +758,11 @@ def update_mock_test_question(
     dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def delete_mock_test_question(
-    mock_test_ref: str, question_id: int, db: Session = Depends(get_db)
+    mock_test_ref: str,
+    question_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(*CONTENT_ROLES)),
 ):
     """Soft delete, matching what ``DELETE /{mock_test_ref}`` does to a paper.
 
@@ -632,6 +774,16 @@ def delete_mock_test_question(
     """
     question = _find_question(db, mock_test_ref, question_id)
     question.is_active = False
+    audit.record(
+        db,
+        request=request,
+        action="delete_mock_test_question",
+        entity_type="test_question",
+        entity_id=question.id,
+        actor=user,
+        old_value={"is_active": True},
+        new_value={"is_active": False},
+    )
     db.commit()
 
 
@@ -956,12 +1108,7 @@ def get_attempt_result(
 
 def _build_result(attempt: TestAttempt, db: Session) -> TestResultResponse:
     questions = _active_questions(db, attempt.mock_test_id)
-    answers = {
-        a.question_id: a
-        for a in db.scalars(
-            select(TestAnswer).where(TestAnswer.attempt_id == attempt.id)
-        ).all()
-    }
+    answers = _answers_by_question(db, attempt)
     grade_by_question = {
         a.question_id: (a.is_correct, a.marks_awarded)
         for a in answers.values()
@@ -987,6 +1134,9 @@ def _build_result(attempt: TestAttempt, db: Session) -> TestResultResponse:
                     else None
                 ),
                 explanation=q.explanation if show_key else None,
+                grader_feedback=answers[q.id].grader_feedback
+                if q.id in answers
+                else None,
             )
             for q in questions
         ],
@@ -1105,6 +1255,226 @@ def admin_get_mock_test(mock_test_ref: str, db: Session = Depends(get_db)):
             for q in questions
         ],
     )
+
+def _reviewable_answer(
+    answer: TestAnswer, question: TestQuestion
+) -> ReviewableAnswerResponse:
+    return ReviewableAnswerResponse(
+        question_id=question.id,
+        question_text=question.question_text,
+        question_type=question.question_type,
+        selected_answer=answer.selected_answer,
+        marks=question.marks,
+        answered_at=answer.answered_at,
+        is_correct=answer.is_correct,
+        marks_awarded=answer.marks_awarded,
+        grader_feedback=answer.grader_feedback,
+        graded_at=answer.graded_at,
+        graded_by=answer.graded_by,
+    )
+
+
+@router.get(
+    "/admin/review-attempts",
+    response_model=list[AttemptReviewResponse],
+    dependencies=[Depends(require_role(*CONTENT_ROLES))],
+)
+def admin_list_attempts_for_review(
+    pending_only: bool = True,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = 0,
+    db: Session = Depends(get_db),
+):
+    """Submitted attempts, oldest first, with the answers a human must decide.
+
+    The queue is the point of this endpoint, so `pending_only` defaults to
+    `true`: an attempt whose `pending_review_count` is 0 owes nobody anything,
+    and mixing those in would make marking look slower than it is. Pass
+    `pending_only=false` to audit work that has already been marked.
+
+    Oldest first because the SLA is the student's: a script written in March
+    that is still unmarked in June should be the first row a grader sees, not
+    the last.
+
+    The path is `/admin/review-attempts` rather than the more obvious
+    `/admin/attempts`: the latter is structurally identical to
+    `GET /{mock_test_ref}/attempts`, which is declared first and would answer
+    404 for every request after failing to find a paper called "admin". The
+    `/admin/*` namespace is already reserved by `/admin/all`, so this stays
+    inside it without ever racing a parametric route.
+    """
+    query = (
+        select(TestAttempt)
+        .options(
+            selectinload(TestAttempt.mock_test),
+            # `display_name` is a property that reads `student_profile`, so
+            # loading the user alone would move the N+1 one level down -- the
+            # exact shape that made the audit-log list 53 queries for 25 rows.
+            selectinload(TestAttempt.user).selectinload(User.student_profile),
+        )
+        .where(TestAttempt.status == "submitted")
+    )
+    if pending_only:
+        query = query.where(TestAttempt.pending_review_count > 0)
+
+    attempts = db.scalars(
+        query.order_by(TestAttempt.submitted_at.asc().nulls_last())
+        .limit(limit)
+        .offset(offset)
+    ).all()
+
+    # One query for every answer on the page, not one per attempt: at the 200-row
+    # cap the per-attempt form is 201 queries for a page of nothing.
+    attempt_ids = [a.id for a in attempts]
+    answers_by_attempt: dict[int, list[TestAnswer]] = {}
+    if attempt_ids:
+        for row in db.scalars(
+            select(TestAnswer)
+            .options(selectinload(TestAnswer.question))
+            .where(TestAnswer.attempt_id.in_(attempt_ids))
+        ).all():
+            answers_by_attempt.setdefault(row.attempt_id, []).append(row)
+
+    reviews: list[AttemptReviewResponse] = []
+    for attempt in attempts:
+        # A question left blank has nothing to mark, and neither has one that
+        # already carries a verdict when the caller asked for the open queue.
+        reviewable = [
+            a
+            for a in answers_by_attempt.get(attempt.id, [])
+            if a.question is not None
+            and not _is_blank(a.selected_answer)
+            and (a.is_correct is None or not pending_only)
+        ]
+        reviews.append(
+            AttemptReviewResponse(
+                attempt=_attempt_view(attempt),
+                student_name=(
+                    attempt.user.display_name if attempt.user else None
+                ),
+                student_email=attempt.user.email if attempt.user else None,
+                submitted_at=attempt.submitted_at,
+                answers=[_reviewable_answer(a, a.question) for a in reviewable],
+            )
+        )
+    return reviews
+
+
+@router.post(
+    "/admin/review-attempts/{attempt_id}/answers/{question_id}/grade",
+    response_model=GradedAnswerResponse,
+    dependencies=[Depends(require_role(*CONTENT_ROLES))],
+)
+def grade_answer(
+    attempt_id: int,
+    question_id: int,
+    payload: GradeAnswerRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    grader: User = Depends(require_role(*CONTENT_ROLES)),
+):
+    """Record a human verdict on one answer and recount the attempt.
+
+    This is the write path `pending_review_count` always implied and never had.
+    The counter was introduced so that an essay stopped being reported as
+    unattempted, but nothing could ever decrement it: the essay stayed at zero
+    marks for the life of the account and the attempt's total silently excluded
+    it. Grading here is idempotent -- re-marking overwrites and audits the
+    previous verdict rather than refusing, because a second reader disagreeing
+    with the first is a normal event, not an error.
+
+    Three refusals, each for a different reason:
+      * an attempt still in progress has not been submitted, so there is
+        nothing final to mark;
+      * an answer row that does not exist means the student never responded,
+        and inventing a grade for a question nobody answered would inflate the
+        score with a mark for silence;
+      * more marks than the question is worth is caught here rather than by a
+        CHECK constraint, so the caller gets a 422 naming the ceiling instead
+        of a 500.
+    """
+    attempt = db.get(TestAttempt, attempt_id)
+    if attempt is None:
+        raise HTTPException(status_code=404, detail="Attempt not found")
+    if attempt.status != "submitted":
+        raise HTTPException(
+            status_code=409, detail="Attempt has not been submitted yet"
+        )
+
+    question = db.scalar(
+        select(TestQuestion).where(
+            TestQuestion.id == question_id,
+            TestQuestion.mock_test_id == attempt.mock_test_id,
+        )
+    )
+    if question is None:
+        raise HTTPException(status_code=404, detail="Question not found for this attempt")
+
+    answer = db.scalar(
+        select(TestAnswer).where(
+            TestAnswer.attempt_id == attempt.id,
+            TestAnswer.question_id == question.id,
+        )
+    )
+    if answer is None or _is_blank(answer.selected_answer):
+        raise HTTPException(
+            status_code=409, detail="There is no answer on this attempt to grade"
+        )
+    if payload.marks_awarded > question.marks:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"marks_awarded cannot exceed the {question.marks} marks "
+                f"this question is worth"
+            ),
+        )
+
+    old_verdict = {
+        "is_correct": answer.is_correct,
+        "marks_awarded": answer.marks_awarded,
+    }
+    answer.is_correct = (
+        payload.is_correct
+        if payload.is_correct is not None
+        else payload.marks_awarded > 0
+    )
+    answer.marks_awarded = payload.marks_awarded
+    answer.grader_feedback = payload.grader_feedback
+    answer.graded_by = grader.id
+    answer.graded_at = datetime.now(timezone.utc)
+
+    # Recount rather than re-grade: see `_recompute_attempt_totals`.
+    _recompute_attempt_totals(db, attempt)
+
+    audit.record(
+        db,
+        request=request,
+        action="grade_answer",
+        entity_type="test_answer",
+        entity_id=answer.id,
+        actor=grader,
+        old_value=old_verdict,
+        new_value={
+            "is_correct": answer.is_correct,
+            "marks_awarded": answer.marks_awarded,
+            "grader_feedback": answer.grader_feedback,
+            "attempt_id": attempt.id,
+            "pending_review_count": attempt.pending_review_count,
+        },
+    )
+    db.commit()
+    db.refresh(answer)
+
+    return GradedAnswerResponse(
+        question_id=question.id,
+        is_correct=answer.is_correct,
+        marks_awarded=answer.marks_awarded,
+        grader_feedback=answer.grader_feedback,
+        graded_by=answer.graded_by,
+        graded_at=answer.graded_at,
+        attempt=_attempt_view(attempt),
+    )
+
 
 @router.get("/{mock_test_ref}", response_model=MockTestResponse)
 def get_mock_test(mock_test_ref: str, db: Session = Depends(get_db)):

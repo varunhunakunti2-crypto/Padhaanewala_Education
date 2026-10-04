@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -10,6 +10,7 @@ from app.dependencies import (
 )
 from app.models import FAQ, User
 from app.schemas.content import FAQCreate, FAQResponse, FAQUpdate
+from app.utils import audit
 
 router = APIRouter(prefix="/api/v1/faqs", tags=["faqs"])
 
@@ -86,9 +87,26 @@ def get_faq(
     status_code=201,
     dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
-def create_faq(payload: FAQCreate, db: Session = Depends(get_db)):
+def create_faq(
+    payload: FAQCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(*CONTENT_ROLES)),
+):
     faq = FAQ(**payload.model_dump())
     db.add(faq)
+    # 4.4 — flushed so `faq.id` exists for the audit row; the commit below
+    # lands the row and its trail entry together, as `create_college` does.
+    db.flush()
+    audit.record(
+        db,
+        request=request,
+        action="create_faq",
+        entity_type="faq",
+        entity_id=faq.id,
+        actor=user,
+        new_value=payload.model_dump(),
+    )
     db.commit()
     db.refresh(faq)
     return faq
@@ -99,12 +117,30 @@ def create_faq(payload: FAQCreate, db: Session = Depends(get_db)):
     dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def update_faq(
-    faq_id: int, payload: FAQUpdate, db: Session = Depends(get_db)
+    faq_id: int,
+    payload: FAQUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(*CONTENT_ROLES)),
 ):
     faq = db.get(FAQ, faq_id)
     if faq is None:
         raise HTTPException(status_code=404, detail="FAQ not found")
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    data = payload.model_dump(exclude_unset=True)
+    # 4.4 — old values read before the `setattr` loop below, so the row
+    # describes the edit and not its result; `exclude_unset` keeps the fields
+    # the caller never sent out of the diff. Same shape as `update_blog`.
+    audit.record(
+        db,
+        request=request,
+        action="update_faq",
+        entity_type="faq",
+        entity_id=faq.id,
+        actor=user,
+        old_value={field: getattr(faq, field) for field in data},
+        new_value=data,
+    )
+    for field, value in data.items():
         setattr(faq, field, value)
     db.commit()
     db.refresh(faq)
@@ -115,9 +151,29 @@ def update_faq(
     status_code=204,
     dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
-def delete_faq(faq_id: int, db: Session = Depends(get_db)):
+def delete_faq(
+    faq_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(*CONTENT_ROLES)),
+):
     faq = db.get(FAQ, faq_id)
     if faq is None:
         raise HTTPException(status_code=404, detail="FAQ not found")
+    # 4.4 — the question itself plus what it was attached to, read while the
+    # row still exists; after `db.delete` there is nothing left to ask.
+    audit.record(
+        db,
+        request=request,
+        action="delete_faq",
+        entity_type="faq",
+        entity_id=faq.id,
+        actor=user,
+        old_value={
+            "question": faq.question,
+            "entity_type": faq.entity_type,
+            "entity_id": faq.entity_id,
+        },
+    )
     db.delete(faq)
     db.commit()

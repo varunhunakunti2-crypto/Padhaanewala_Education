@@ -15,12 +15,27 @@ interface ModalProps {
 export function Modal({ open, onClose, title, children, className }: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
 
+  // Read through a ref so the effect below is tied to `open` and nothing else.
+  //
+  // `onClose` is almost always an inline arrow — `() => setOpen(false)`, or a
+  // `closeDialog` declared in the parent's body — so it is a *new function on
+  // every render* of that parent. Depending on it meant this effect re-ran
+  // whenever the dialog's contents re-rendered, and its last statement is
+  // `panelRef.current?.focus()`. The result was that typing one character in
+  // any modal moved focus out of the input and onto the panel: one letter per
+  // click, in every admin form on the site. The cleanup also churned
+  // `body.style.overflow` and the Escape listener on every keystroke.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
   useEffect(() => {
     if (!open) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") onCloseRef.current();
     };
     window.addEventListener("keydown", onKey);
     panelRef.current?.focus();
@@ -28,7 +43,7 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
       document.body.style.overflow = prev;
       window.removeEventListener("keydown", onKey);
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 

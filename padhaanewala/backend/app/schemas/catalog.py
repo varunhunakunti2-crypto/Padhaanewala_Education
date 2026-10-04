@@ -1,8 +1,8 @@
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.models.mock_test import SELECTED_ANSWER_MAX_LENGTH
 from app.question_types import QuestionType
@@ -62,6 +62,20 @@ class CollegeCourseResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class AdmissionWindowResponse(BaseModel):
+    """One published application window, trimmed for list views.
+
+    Only the two dates and the entrance exam: `/colleges` returns up to 100
+    rows and the full `AdmissionResponse` carries prose the list never
+    renders. The dates are what `deriveAdmissionStatus` reads, and they are
+    the whole reason this projection exists.
+    """
+
+    application_start_date: date | None = None
+    application_end_date: date | None = None
+    entrance_exam: str | None = None
+
+
 class CollegeListItemResponse(BaseModel):
     id: int
     college_id: str
@@ -76,6 +90,12 @@ class CollegeListItemResponse(BaseModel):
     total_reviews: int
     average_rating: Decimal
     is_featured: bool
+    # The published application windows across this college's courses. Omitting
+    # them made every list row report `"upcoming"`: `mapCollegeListItem` had
+    # nothing to pass to `deriveAdmissionStatus`, so the admission-status filter
+    # on a list page could never match "open" or "closed" -- a control that
+    # looked broken because it was.
+    admissions: list[AdmissionWindowResponse] = []
 
     model_config = {"from_attributes": True}
 
@@ -151,22 +171,22 @@ class CollegeCourseCreate(BaseModel):
 
 class CollegeCreate(BaseModel):
     name: str = Field(min_length=2, max_length=255)
-    official_name: str | None = None
-    college_type: str | None = None
-    ownership: str | None = None
+    official_name: str | None = Field(default=None, max_length=255)
+    college_type: str | None = Field(default=None, max_length=50)
+    ownership: str | None = Field(default=None, max_length=50)
     university_id: int | None = None
     state_id: int | None = None
     district_id: int | None = None
-    city: str | None = None
+    city: str | None = Field(default=None, max_length=100)
     address: str | None = None
-    pincode: str | None = None
+    pincode: str | None = Field(default=None, max_length=10)
     lat: Decimal | None = None
     lng: Decimal | None = None
-    website: str | None = None
-    email: str | None = None
-    phone: str | None = None
+    website: str | None = Field(default=None, max_length=255)
+    email: str | None = Field(default=None, max_length=255)
+    phone: str | None = Field(default=None, max_length=20)
     established_year: int | None = None
-    accreditation_naac: str | None = None
+    accreditation_naac: str | None = Field(default=None, max_length=20)
     # Was missing from both request schemas while the column and the response
     # model both existed, so the admin form's NBA control sent a key that
     # Pydantic dropped: the PUT answered 200 and the value never changed.
@@ -178,23 +198,23 @@ class CollegeCreate(BaseModel):
 
 
 class CollegeUpdate(BaseModel):
-    name: str | None = None
-    official_name: str | None = None
-    college_type: str | None = None
-    ownership: str | None = None
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    official_name: str | None = Field(default=None, max_length=255)
+    college_type: str | None = Field(default=None, max_length=50)
+    ownership: str | None = Field(default=None, max_length=50)
     university_id: int | None = None
     state_id: int | None = None
     district_id: int | None = None
-    city: str | None = None
+    city: str | None = Field(default=None, max_length=100)
     address: str | None = None
-    pincode: str | None = None
+    pincode: str | None = Field(default=None, max_length=10)
     lat: Decimal | None = None
     lng: Decimal | None = None
-    website: str | None = None
-    email: str | None = None
-    phone: str | None = None
+    website: str | None = Field(default=None, max_length=255)
+    email: str | None = Field(default=None, max_length=255)
+    phone: str | None = Field(default=None, max_length=20)
     established_year: int | None = None
-    accreditation_naac: str | None = None
+    accreditation_naac: str | None = Field(default=None, max_length=20)
     accreditation_nba: bool | None = None
     overview: str | None = None
     facilities: dict[str, Any] | None = None
@@ -311,6 +331,11 @@ class ResultQuestionResponse(AttemptQuestionResponse):
     # the client cannot re-derive the verdict the server reached. Gated the same
     # way, so it appears only once the key does.
     tolerance: Decimal | None = None
+    # The grader's note, on the only question type where the key cannot speak
+    # for itself. Always safe to publish: it is written by a member of staff
+    # for the person reading the result, and withholding it would leave a mark
+    # nobody can argue with.
+    grader_feedback: str | None = None
 
 
 class TestAttemptResponse(BaseModel):
@@ -387,6 +412,76 @@ class AttemptDetailResponse(BaseModel):
 class TestResultResponse(BaseModel):
     attempt: TestAttemptResponse
     questions: list[ResultQuestionResponse]
+
+
+#: Longest grader note the API accepts. The column is unbounded `TEXT`, so the
+#: bound has to live here -- where an over-long note is a 422 -- rather than in
+#: the table, where it would be a 500 on an otherwise valid grade.
+GRADER_FEEDBACK_MAX_LENGTH = 2000
+
+
+class GradeAnswerRequest(BaseModel):
+    """A manual verdict on one answer.
+
+    `marks_awarded` is required rather than derived from `is_correct`, because
+    partial credit is the entire reason a human marks an essay: a rubric that
+    awards 3 of 5 cannot be expressed as correct/incorrect. `is_correct` is
+    optional and, when omitted, is inferred as "awarded something" -- a question
+    with no negative marking has exactly two meaningful verdicts, and making the
+    caller repeat the marks as a boolean would be a second thing to get wrong.
+    """
+
+    marks_awarded: Decimal = Field(..., ge=0)
+    is_correct: bool | None = None
+    grader_feedback: str | None = Field(
+        default=None, max_length=GRADER_FEEDBACK_MAX_LENGTH
+    )
+
+
+class ReviewableAnswerResponse(BaseModel):
+    """One answer awaiting (or holding) a human verdict, for the grading queue."""
+
+    question_id: int
+    question_text: str
+    question_type: str
+    selected_answer: str | None = None
+    #: The ceiling the grade is checked against -- the grader cannot award more
+    #: than the question is worth, so it is shown next to the box.
+    marks: Decimal
+    answered_at: datetime | None = None
+    is_correct: bool | None = None
+    marks_awarded: Decimal | None = None
+    grader_feedback: str | None = None
+    graded_at: datetime | None = None
+    graded_by: int | None = None
+
+
+class AttemptReviewResponse(BaseModel):
+    """An attempt plus the answers a member of staff has to look at."""
+
+    attempt: TestAttemptResponse
+    student_name: str | None = None
+    student_email: str | None = None
+    submitted_at: datetime | None = None
+    answers: list[ReviewableAnswerResponse] = []
+
+
+class GradedAnswerResponse(BaseModel):
+    """The graded answer together with the attempt's new totals.
+
+    The tallies come back with the verdict because they are the point of the
+    exercise: an isolated "3.0 saved" tells a grader nothing about whether the
+    attempt has finished being marked, while `pending_review_count` hitting zero
+    does.
+    """
+
+    question_id: int
+    is_correct: bool | None = None
+    marks_awarded: Decimal | None = None
+    grader_feedback: str | None = None
+    graded_by: int | None = None
+    graded_at: datetime | None = None
+    attempt: TestAttemptResponse
 
 
 class AdminQuestionResponse(BaseModel):
@@ -694,6 +789,25 @@ class EnquiryCreate(BaseModel):
     utm_campaign: str | None = Field(default=None, max_length=100)
     utm_content: str | None = Field(default=None, max_length=100)
     device_type: str | None = Field(default=None, max_length=20)
+    # Phase 9.1 — required, no default. This endpoint is unauthenticated, so the
+    # account age gate cannot reach it, and it is the widest collector of minors'
+    # personal data on the site. "Optional, defaulting to adult" would be the same
+    # decorative gate the account-side one avoids.
+    age_band: Literal["under_18", "18_plus"]
+    # Required by the validator below when `age_band` is `under_18`. The callback
+    # has to be placed to an adult, and the row has to record whose authority it
+    # was placed under.
+    guardian_contact: str | None = Field(default=None, max_length=255)
+
+    @model_validator(mode="after")
+    def require_guardian_for_minors(self) -> "EnquiryCreate":
+        if self.age_band == "under_18" and not (self.guardian_contact or "").strip():
+            raise ValueError(
+                "A parent or guardian's phone number or email is required when the "
+                "student is under 18"
+            )
+        return self
+
     # `ip_address` is deliberately absent (4.1): this is an unauthenticated
     # endpoint, so a caller-supplied value is a lie about provenance and is
     # rejected rather than silently dropped. The server derives it from the

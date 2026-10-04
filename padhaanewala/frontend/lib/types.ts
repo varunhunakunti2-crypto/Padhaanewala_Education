@@ -286,6 +286,18 @@ export interface BlogPost {
   readTime: string;
   tags: string[];
   featured?: boolean;
+  /**
+   * Editorial SEO overrides, read from the blog's own `meta_title`,
+   * `meta_description` and `canonical_url` columns.
+   *
+   * These were accepted by `POST/PUT /blogs` and then silently dropped here, so
+   * an editor could fill in the SEO fields in the admin panel and see nothing
+   * change in the page source. Optional, because a post that has none falls back
+   * to its title and excerpt.
+   */
+  metaTitle?: string;
+  metaDescription?: string;
+  canonicalUrl?: string;
 }
 
 export interface AdmissionEnquiry {

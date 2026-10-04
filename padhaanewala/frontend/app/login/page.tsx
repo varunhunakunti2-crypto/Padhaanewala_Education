@@ -28,6 +28,8 @@ import {
   storeAuth,
   storeUser,
   toStudentProfile,
+  type AgeBand,
+  type AuthTokens,
 } from "@/lib/api";
 
 type Mode = "login" | "signup" | "otp";
@@ -49,7 +51,19 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
-  const [errors, setErrors] = useState<{ name?: string; mobile?: string; email?: string; password?: string }>({});
+// Signup only, and deliberately not defaulted: `RegisterRequest.age_band` has no
+// default on the server either, because an account whose age is unknown would
+// have to be treated as either adult or blocked, and the first of those is the
+// failure DPDP s.9 exists to close. Empty means "not asked yet", so the form
+// cannot be submitted before the question is answered.
+const [ageBand, setAgeBand] = useState<AgeBand | "">("");
+  const [errors, setErrors] = useState<{
+  name?: string;
+  mobile?: string;
+  email?: string;
+  password?: string;
+  age?: string;
+}>({});
   const [serverError, setServerError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -77,6 +91,9 @@ export default function LoginPage() {
     if (mode !== "otp" && password.length < 8) errs.password = mode === "signup" ? "Password must be at least 8 characters." : "Please enter your password.";
     if (mode === "otp" && otpStage === "mobile" && !/^[6-9]\d{9}$/.test(mobile)) errs.mobile = "Enter a valid 10-digit Indian mobile number.";
     if (mode === "otp" && otpStage === "code" && !/^\d{4,8}$/.test(otpCode)) errs.password = "Enter the code from your SMS.";
+    // Without this the register call omits the field entirely and the server
+    // answers 422 — the failure this whole block was added to prevent.
+    if (mode === "signup" && ageBand === "") errs.age = "Please tell us whether you are under 18.";
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -182,12 +199,25 @@ export default function LoginPage() {
       return;
     }
 
+    // `validate` already rejected an unanswered band, so the guard inside the
+    // signup branch below is unreachable. It is there to narrow the type rather
+    // than to default the band to adult, which is the exact shortcut
+    // `RegisterRequest.age_band` was written without a default to forbid.
+
     setLoading(true);
     try {
-      const tokens =
-        mode === "login"
-          ? await authApi.login({ email, password })
-          : await authApi.register({ name, email, mobile, password });
+      // An if/else rather than a ternary so the age band narrows *inside* the
+      // signup branch. The unreachable guard below is the point: without it the
+      // only way to satisfy the type would be to default the band to adult,
+      // which is precisely what `RegisterRequest.age_band` having no default is
+      // written to forbid.
+      let tokens: AuthTokens;
+      if (mode === "login") {
+        tokens = await authApi.login({ email, password });
+      } else {
+        if (ageBand === "") return;
+        tokens = await authApi.register({ name, email, mobile, password, age_band: ageBand });
+      }
       storeAuth(tokens);
       setUnverifiedEmail(null);
       await finishLogin(
@@ -469,6 +499,54 @@ export default function LoginPage() {
               </div>
               {errors.password && <p className="mt-1 text-xs text-red-500">{errors.password}</p>}
             </div>
+          )}
+
+          {mode === "signup" && (
+            <fieldset className="rounded-xl border border-gray-200 px-4 py-3.5">
+              <legend className="px-1 text-sm font-medium text-gray-700">
+                Are you under 18?
+              </legend>
+              <p className="mb-2.5 text-xs leading-relaxed text-gray-500">
+                We ask only this, because Indian law treats personal data of a
+                person under 18 differently. We never ask for your date of birth.
+              </p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {(
+                  [
+                    { value: "18_plus" as AgeBand, label: "I am 18 or older" },
+                    { value: "under_18" as AgeBand, label: "I am under 18" },
+                  ]
+                ).map((option) => (
+                  <label
+                    key={option.value}
+                    className={cn(
+                      "flex cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-2.5 text-sm transition",
+                      ageBand === option.value
+                        ? "border-purple-400 bg-purple-50 text-purple-900"
+                        : "border-gray-200 text-gray-700 hover:border-purple-300",
+                    )}
+                  >
+                    <input
+                      type="radio"
+                      name="signup-age"
+                      value={option.value}
+                      checked={ageBand === option.value}
+                      onChange={() => {
+                        setAgeBand(option.value);
+                        setErrors((e) => ({ ...e, age: undefined }));
+                      }}
+                      className="h-4 w-4 border-gray-300 accent-purple-600"
+                    />
+                    {option.label}
+                  </label>
+                ))}
+              </div>
+              {errors.age && (
+                <p className="mt-2 text-xs text-red-500" role="alert">
+                  {errors.age}
+                </p>
+              )}
+            </fieldset>
           )}
 
           <Button

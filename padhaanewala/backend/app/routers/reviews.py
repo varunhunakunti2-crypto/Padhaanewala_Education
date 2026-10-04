@@ -5,7 +5,11 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
-from app.dependencies import get_current_user, require_role
+from app.dependencies import (
+    get_current_user,
+    require_processing_consent,
+    require_role,
+)
 from app.models import College, Course, Review, User
 from app.schemas.content import (
     ReviewCreate,
@@ -111,7 +115,10 @@ def my_reviews(
 def submit_review(
     payload: ReviewCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    #: Phase 9.1 — a published review names a course of study and a year, which is
+    #: personal data about a person who may be a minor, and it is published to
+    #: every visitor. Gated for the same reason as the rest of the write surface.
+    user: User = Depends(require_processing_consent),
 ):
     college = db.get(College, payload.college_id)
     if college is None:
@@ -202,6 +209,7 @@ def moderate_review(
 @router.delete("/{review_id}", status_code=204)
 def delete_review(
     review_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(require_role(*ADMIN_ROLES)),
 ):
@@ -209,6 +217,24 @@ def delete_review(
     if review is None:
         raise HTTPException(status_code=404, detail="Review not found")
     college_id = review.college_id
+    # 4.4/4.5 — moderation was audited but the harder action was not: an admin
+    # destroying a review left no row saying who did it or what the review said.
+    # Captured before the delete so the text is on the trail after it is gone.
+    audit.record(
+        db,
+        request=request,
+        action="delete_review",
+        entity_type="review",
+        entity_id=review.id,
+        actor=user,
+        old_value={
+            "college_id": review.college_id,
+            "student_id": review.student_id,
+            "rating": review.rating,
+            "status": review.status,
+            "review_text": review.review_text,
+        },
+    )
     db.delete(review)
     db.commit()
     _recalc_rating(db, college_id)

@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, require_processing_consent
 from app.models import College, SavedCollege, StudentProfile, User
 from app.schemas.catalog import CollegeListItemResponse
 
@@ -83,7 +83,11 @@ def list_saved_colleges(
 @router.post("", response_model=SavedCollegeResponse, status_code=201)
 def save_college(
     college_id: int,
-    user: User = Depends(get_current_user),
+    #: Phase 9.1 — a shortlist is a record of this user's interests, so writing one
+    #: is processing personal data and is gated for a minor without verifiable
+    #: parental consent. Reading the list is not: s.8(5) has to stay available
+    #: after consent is withdrawn, or a subject cannot see what is held about them.
+    user: User = Depends(require_processing_consent),
     db: Session = Depends(get_db),
 ):
     profile = _get_student_profile(user, db)

@@ -18,6 +18,7 @@ def _make_admin_token() -> str:
             "email": email,
             "mobile": f"9{uuid.uuid4().int % 1_000_000_000:09d}",
             "password": "SecurePass123!",
+            "age_band": "18_plus",
         },
     )
     assert response.status_code == 201

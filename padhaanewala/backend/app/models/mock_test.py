@@ -222,6 +222,24 @@ class TestAnswer(Base):
     answered_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Manual grading. `_grade_attempt` leaves an `essay` at `is_correct = NULL`
+    # forever, because there is nothing in the paper to compare a written answer
+    # against -- `pending_review_count` records that the verdict is owed, but
+    # until these columns existed nothing could ever pay it, so an essay was
+    # permanently unscored and the student's total silently excluded it.
+    #
+    # SET NULL rather than CASCADE on the grader: deleting a staff account must
+    # not delete the evidence that somebody marked the work. The verdict and the
+    # marks are the record; who applied them is provenance.
+    graded_by: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    graded_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Shown to the student with their result. It is the only channel through
+    # which a human can explain a mark on a question the key could not decide.
+    grader_feedback: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.now
     )

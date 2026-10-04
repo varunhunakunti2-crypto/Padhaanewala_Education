@@ -17,10 +17,12 @@ from app.models import college as college_models  # noqa: F401
 from app.models import consent as consent_models  # noqa: F401
 from app.models import cutoff as cutoff_models  # noqa: F401
 from app.models import course as course_models  # noqa: F401
+from app.models import data_request as data_request_models  # noqa: F401
 from app.models import enquiry as enquiry_models  # noqa: F401
 from app.models import exam as exam_models  # noqa: F401
 from app.models import faq as faq_models  # noqa: F401
 from app.models import fee as fee_models  # noqa: F401
+from app.models import guardian_consent as guardian_consent_models  # noqa: F401
 from app.models import location as location_models  # noqa: F401
 from app.models import media as media_models  # noqa: F401
 from app.models import mock_test as mock_test_models  # noqa: F401

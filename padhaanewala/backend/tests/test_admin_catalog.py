@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from app.database import SessionLocal
 from app.main import app
-from app.models import College, CollegeCourse, Course, Role, User
+from app.models import College, CollegeCourse, Course, Cutoff, MockTest, Role, User
 
 client = TestClient(app)
 
@@ -24,6 +24,7 @@ def _register_user() -> dict:
         "email": _unique("admin"),
         "mobile": _unique_mobile(),
         "password": "SecurePass123!",
+        "age_band": "18_plus",
     }
     response = client.post("/api/v1/auth/register", json=payload)
     assert response.status_code == 201
@@ -80,6 +81,28 @@ def _cleanup_college(college_id: int) -> None:
             db.execute(
                 delete(CollegeCourse).where(CollegeCourse.college_id == college_id)
             )
+
+        # The five enrichment tables are ON DELETE SET NULL, not CASCADE
+        # (migration b4e8f2a71d09). Deleting the college now *detaches* its
+        # historical rows instead of destroying them, so a cleanup that relies
+        # on the old cascade silently left orphans behind — and once an orphan
+        # exists, the next run's identical cutoff collides with it on
+        # `uq_cutoff_identity_coalesce` and the suite fails far from the cause.
+        # A test fixture owns the rows it creates, so it deletes them itself.
+        from app.models import NIRFRanking, OtherRanking, PlacementRecord, SeatMatrix
+
+        db.execute(delete(Cutoff).where(Cutoff.college_id == college_id))
+        db.execute(
+            delete(PlacementRecord).where(PlacementRecord.college_id == college_id)
+        )
+        db.execute(
+            delete(SeatMatrix).where(SeatMatrix.college_id == college_id)
+        )
+        db.execute(delete(NIRFRanking).where(NIRFRanking.college_id == college_id))
+        db.execute(
+            delete(OtherRanking).where(OtherRanking.college_id == college_id)
+        )
+
         college = db.get(College, college_id)
         if college:
             db.delete(college)
@@ -362,10 +385,26 @@ def test_mock_test_admin_crud():
     public = client.get(f"/api/v1/mock-tests/{body['slug']}")
     assert public.status_code == 404
 
-    admin_list = client.get("/api/v1/mock-tests/admin/all", headers=headers).json()
+    # Filtered rather than paged: the list orders by name and caps at 50, so
+    # once enough papers exist in the scratch schema this row is no longer on
+    # page 1 and the assertion fails for a reason that has nothing to do with
+    # the delete. Querying for it is what the assertion actually means.
+    admin_list = client.get(
+        "/api/v1/mock-tests/admin/all", params={"q": body["name"]}, headers=headers
+    ).json()
     match = [t for t in admin_list if t["slug"] == body["slug"]]
     assert len(match) == 1
     assert match[0]["is_active"] is False
+
+    # `DELETE` is a soft delete by design, so this row otherwise outlives the
+    # run. Three full runs took the scratch schema to 56 papers, which is past
+    # the 50-row page the assertion above used to read -- removing it here is
+    # what keeps the next run independent of how many have gone before.
+    with SessionLocal() as db:
+        row = db.scalar(select(MockTest).where(MockTest.slug == body["slug"]))
+        if row is not None:
+            db.delete(row)
+            db.commit()
 
 
 def test_enrichment_requires_admin():
@@ -521,6 +560,61 @@ def test_enrichment_crud():
         assert cutoff_delete.status_code == 204
 
         assert client.get(f"{base}/cutoffs").json() == []
+    finally:
+        _cleanup_college(college.id)
+        _cleanup_course(course.id)
+
+
+def test_list_projection_carries_admission_windows():
+    """The status filter on a list page is dead unless `/colleges` sends dates.
+
+    `mapCollegeListItem` used to pass `admissions: []` because the projection
+    had none, so every list row reported `"upcoming"` and filtering a list by
+    "open" or "closed" matched nothing -- a control that looked broken because
+    it was. The window has to survive both list endpoints, since the site uses
+    one for the catalogue page and the other for search-as-you-type.
+    """
+    college = _create_college(f"Window College {uuid.uuid4().hex[:6]}")
+    course = _create_course(f"Window Course {uuid.uuid4().hex[:6]}")
+    cc = _link(college.id, course.id)
+    try:
+        admin = _register_admin()
+        headers = _auth_headers(admin["access_token"])
+        created = client.post(
+            f"/api/v1/colleges/{college.slug}/admissions",
+            json={
+                "college_course_id": cc.id,
+                "application_start_date": "2026-05-01",
+                "application_end_date": "2026-07-31",
+                "entrance_exam": "JEE Main",
+            },
+            headers=headers,
+        )
+        assert created.status_code == 201, created.text
+
+        expected = [
+            {
+                "application_start_date": "2026-05-01",
+                "application_end_date": "2026-07-31",
+                "entrance_exam": "JEE Main",
+            }
+        ]
+
+        # The catalogue is seeded and far larger than one page, so assert the
+        # *shape* here and the data on the endpoint that can find this row.
+        listed = client.get("/api/v1/colleges", params={"limit": 3}).json()
+        assert listed and all("admissions" in c for c in listed)
+
+        found = client.get(
+            "/api/v1/colleges/search", params={"q": college.name}
+        ).json()
+        mine = [c for c in found["colleges"] if c["id"] == college.id]
+        assert len(mine) == 1, "search returned no window for the row it just wrote"
+        assert mine[0]["admissions"] == expected
+
+        # The detail path reads through the same builder, so it must agree.
+        detail = client.get(f"/api/v1/colleges/{college.slug}").json()
+        assert detail["admissions"] == expected
     finally:
         _cleanup_college(college.id)
         _cleanup_course(course.id)

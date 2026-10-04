@@ -12,13 +12,16 @@ import {
 import { Badge } from "@/components/ui/Badge";
 import { SectionHeading } from "@/components/ui/SectionHeading";
 import { AdmissionHelpButton } from "@/components/admission/AdmissionForm";
+import { JsonLd } from "@/components/seo/JsonLd";
 import { resolveBlogPosts } from "@/lib/content";
+import { breadcrumbLd, ldGraph, pageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMetadata({
   title: "Resources",
   description:
     "College admission guides, entrance exam tips, counselling strategies and career advice — all curated for Indian students.",
-};
+  path: "/resources",
+});
 
 /**
  * Mock tests, the AI college predictor and the AI assistant were three of these
@@ -40,8 +43,16 @@ export default async function ResourcesPage() {
   const { data: posts } = await resolveBlogPosts();
   const guides = posts.slice(0, 6);
 
+  const jsonLd = ldGraph([
+    breadcrumbLd([
+      { name: "Home", path: "/" },
+      { name: "Resources", path: "/resources" },
+    ]),
+  ]);
+
   return (
     <section className="mx-auto max-w-7xl px-4 pt-28 pb-12 sm:px-6 sm:pt-32 lg:px-8 lg:pt-36 lg:pb-16">
+      <JsonLd data={jsonLd} />
       <div className="max-w-2xl">
         <p className="mb-2.5 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.14em] text-blue-600 dark:text-blue-400">
           <BookOpen className="h-4 w-4" /> Student resource hub

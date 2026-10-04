@@ -10,13 +10,16 @@ import {
 } from "lucide-react";
 import { AdmissionForm } from "@/components/admission/AdmissionForm";
 import { SectionHeading } from "@/components/ui/SectionHeading";
+import { JsonLd } from "@/components/seo/JsonLd";
+import { breadcrumbLd, ldGraph, pageMetadata } from "@/lib/seo";
 import { SITE } from "@/lib/site";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMetadata({
   title: "Get Admission Help",
   description:
     "Get free admission counselling from Padhaanewala. Fill in your details and our expert counsellors will contact you with a personalised admission plan.",
-};
+  path: "/admission",
+});
 
 const STEPS = [
   { icon: <FileText className="h-5 w-5" />, title: "Share your details", desc: "Tell us your course, state and goal." },
@@ -26,8 +29,16 @@ const STEPS = [
 ];
 
 export default function AdmissionPage() {
+  const jsonLd = ldGraph([
+    breadcrumbLd([
+      { name: "Home", path: "/" },
+      { name: "Admission", path: "/admission" },
+    ]),
+  ]);
+
   return (
     <section className="mx-auto max-w-7xl px-4 pt-28 pb-12 sm:px-6 sm:pt-32 lg:px-8 lg:pt-36 lg:pb-16">
+      <JsonLd data={jsonLd} />
       <div className="grid grid-cols-1 gap-10 lg:grid-cols-2 lg:items-start">
         <div>
           <SectionHeading

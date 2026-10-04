@@ -57,3 +57,21 @@ export const SITE_URL =
 
 export const absoluteUrl = (path: string): string =>
   `${SITE_URL}${path.startsWith("/") ? path : `/${path}`}`;
+
+/**
+ * Brand assets, declared once. `icon.svg` is a file-convention icon, so this
+ * path is both what the browser is linked to and what the Organization
+ * structured-data node cites as its logo — two places that must not drift.
+ */
+export const SITE_LOGO_PATH = "/icon.svg";
+
+/**
+ * The browser-chrome colour on Android and the status bar on iOS. Brand purple,
+ * matching `--brand-purple` in `app/globals.css`.
+ *
+ * Held here rather than inline in `app/layout.tsx` because it is read by the
+ * `viewport` export, which is a separate module from `metadata` (the
+ * `themeColor` metadata field was deprecated in Next 14).
+ */
+export const SITE_THEME_COLOR = "#7c3aed";
+

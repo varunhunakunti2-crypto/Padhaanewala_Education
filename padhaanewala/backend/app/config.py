@@ -193,6 +193,34 @@ class Settings(BaseSettings):
     #: `media.url`, so changing it after seeding orphans existing rows.
     MEDIA_URL_PREFIX: str = "/api/v1/media/files"
 
+    # --- Phase 9: DPDP compliance ----------------------------------------
+    #
+    # Verifiable parental consent. DPDP s.9(2) requires it to be verifiable, and
+    # s.9(4) allows the Data Fiduciary to require the guardian to re-verify
+    # periodically "for the sake of protecting the child's interest". Neither
+    # period is a matter of taste, so both are settings with defaults that err
+    # towards re-confirmation rather than towards indefinite silent processing.
+    #
+    # 365 days, not "never": a child who was 17 when a parent agreed is 18 when
+    # it lapses, and the flag flips in their favour without anything being
+    # re-collected. Consent that outlives the reason for it is not consent.
+    GUARDIAN_CONSENT_VALIDITY_DAYS: int = 365
+    #: Whether personal-data writes are refused for a user whose age is
+    #: undeclared. Set to false only to keep a pre-launch development checkout
+    #: usable; the Phase 9 gate is otherwise unenforceable, because every write
+    #: path branches on this one answer.
+    REQUIRE_AGE_DECLARATION: bool = True
+    #: DPDP Rules 2025 answer a data-principal request within 90 days. This is a
+    #: statutory constant, not a preference — it is surfaced here only so the
+    #: value can be read by the SLA sweep and asserted by a test without
+    #: importing the model module. Never raise it.
+    DATA_REQUEST_SLA_DAYS: int = 90
+    #: How long an opened data request is given before `retention_sweep.py`
+    #: flags it. Set below the statutory deadline on purpose: the point is to
+    #: find out at 75 days that something will breach at 90, not at 90 that it
+    #: already has.
+    DATA_REQUEST_WARN_DAYS: int = 15
+
     @model_validator(mode="after")
     def _guard_production_defaults(self):
         # A wildcard CORS origin combined with `allow_credentials=True` lets any
@@ -214,6 +242,28 @@ class Settings(BaseSettings):
             raise ValueError(
                 "REDIS_SOCKET_TIMEOUT_SECONDS and REDIS_HEALTH_TIMEOUT_SECONDS "
                 "must both be > 0"
+            )
+        # --- Phase 9 sanity, in every environment --------------------------
+        # A negative consent window would make every consent instantly expired
+        # and block every minor; a zero one would make consent permanent, which
+        # s.9(4) does not allow. Both are configuration errors, not preferences.
+        if self.GUARDIAN_CONSENT_VALIDITY_DAYS < 1:
+            raise ValueError(
+                f"GUARDIAN_CONSENT_VALIDITY_DAYS must be >= 1, got "
+                f"{self.GUARDIAN_CONSENT_VALIDITY_DAYS}"
+            )
+        # The warning has to land *before* the deadline it is warning about, or
+        # the sweep only tells you about a breach on the day it happens.
+        if self.DATA_REQUEST_WARN_DAYS < 0:
+            raise ValueError(
+                f"DATA_REQUEST_WARN_DAYS must be >= 0, got "
+                f"{self.DATA_REQUEST_WARN_DAYS}"
+            )
+        if self.DATA_REQUEST_WARN_DAYS >= self.DATA_REQUEST_SLA_DAYS:
+            raise ValueError(
+                f"DATA_REQUEST_WARN_DAYS ({self.DATA_REQUEST_WARN_DAYS}) must be "
+                f"less than DATA_REQUEST_SLA_DAYS ({self.DATA_REQUEST_SLA_DAYS}); "
+                "a warning that fires after the deadline is not a warning"
             )
         if self.APP_ENV == "production":
             if self.JWT_SECRET_KEY in ("change-me", ""):

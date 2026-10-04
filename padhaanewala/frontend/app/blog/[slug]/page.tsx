@@ -10,8 +10,9 @@ import {
 } from "lucide-react";
 import { getRelatedPosts } from "@/lib/data/blog";
 import { resolveBlogPost, resolveBlogPosts, resolveSlugs } from "@/lib/content";
-import { absoluteUrl, SITE } from "@/lib/site";
 import { formatDate } from "@/lib/utils";
+import { JsonLd } from "@/components/seo/JsonLd";
+import { blogPostingLd, breadcrumbLd, ldGraph, pageMetadata } from "@/lib/seo";
 import { Badge } from "@/components/ui/Badge";
 import { ArticleCard } from "@/components/blog/BlogExplorer";
 import { AdmissionHelpButton } from "@/components/admission/AdmissionForm";
@@ -26,26 +27,44 @@ export async function generateStaticParams() {
   return slugs.map((slug) => ({ slug }));
 }
 
+/**
+ * The blog's own SEO columns take precedence over the derived defaults.
+ *
+ * `meta_title`/`meta_description`/`canonical_url` are writable through
+ * `POST/PUT /blogs` and are what an editor reaches for to override a headline
+ * that reads badly in a search result. They used to be dropped by `mapBlogPost`,
+ * so the override existed in the database and nowhere in the HTML.
+ *
+ * `canonical_url` is passed through as-is when set, because the entire point of
+ * an editorial canonical is to point somewhere other than the page's own URL —
+ * normally the original source of a syndicated article. When it is absent the
+ * page canonicalises to itself.
+ */
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params;
   const { data: post } = await resolveBlogPost(slug);
-  if (!post) return { title: "Article not found" };
-  return {
-    title: post.title,
-    description: post.excerpt,
-    authors: [{ name: post.author }],
+  if (!post) {
+    return pageMetadata({
+      title: "Article not found",
+      description: "This article is not available on padhaanewala.",
+      path: `/blog/${slug}`,
+      noindex: true,
+    });
+  }
+
+  const seo = pageMetadata({
+    title: post.metaTitle ?? post.title,
+    description: post.metaDescription ?? post.excerpt,
+    path: `/blog/${post.slug}`,
+    type: "article",
     keywords: post.tags,
-    alternates: { canonical: absoluteUrl(`/blog/${post.slug}`) },
-    openGraph: {
-      type: "article",
-      title: post.title,
-      description: post.excerpt,
-      siteName: SITE.name,
-      url: absoluteUrl(`/blog/${post.slug}`),
-      publishedTime: post.date,
-      authors: [post.author],
-    },
-  };
+    publishedTime: post.date,
+    authors: [post.author],
+  });
+
+  return post.canonicalUrl
+    ? { ...seo, alternates: { canonical: post.canonicalUrl } }
+    : seo;
 }
 
 export default async function BlogDetailPage({ params }: PageProps) {
@@ -60,8 +79,18 @@ export default async function BlogDetailPage({ params }: PageProps) {
     ? getRelatedPosts(post)
     : allPosts.filter((p) => p.slug !== post.slug).slice(0, 3);
 
+  const jsonLd = ldGraph([
+    blogPostingLd(post),
+    breadcrumbLd([
+      { name: "Home", path: "/" },
+      { name: "Blog", path: "/blog" },
+      { name: post.title, path: `/blog/${post.slug}` },
+    ]),
+  ]);
+
   return (
     <article className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8 lg:py-12">
+      <JsonLd data={jsonLd} />
       <nav className="mb-5 flex items-center gap-1.5 text-xs text-slate-400">
         <Link href="/" className="hover:text-purple-700">Home</Link>
         <ChevronRight className="h-3.5 w-3.5" />

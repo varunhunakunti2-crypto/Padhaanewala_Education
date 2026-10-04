@@ -16,6 +16,7 @@ export type SectionKey =
   | "notifications"
   | "leads"
   | "counsellors"
+  | "datarequests"
   | "media"
   | "seo"
   | "settings"

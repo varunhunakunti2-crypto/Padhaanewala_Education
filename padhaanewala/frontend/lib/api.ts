@@ -157,6 +157,21 @@ export interface RegisterPayload {
   email: string;
   mobile: string;
   password: string;
+  /**
+   * Required by `RegisterRequest.age_band` with no default
+   * (`backend/app/schemas/auth.py`).
+   *
+   * It was added to the backend as part of Phase 9.1 and this type was not
+   * updated with it, so every signup from the UI answered 422 for as long as
+   * that lasted — a silently broken registration form that type checking,
+   * linting and a full production build were all perfectly happy with, because
+   * a missing property is not a type error when the type is the thing that is
+   * wrong.
+   *
+   * A band rather than a date of birth: s.9 turns only on whether the user is
+   * under 18, and s.5(1)(ii) requires collecting no more than necessary.
+   */
+  age_band: AgeBand;
 }
 
 export interface UserMe {
@@ -201,6 +216,18 @@ export interface EnquiryPayload {
   source?: string | null;
   source_url?: string | null;
   device_type?: string | null;
+  /**
+   * Required by `EnquiryCreate.age_band`, no default
+   * (`backend/app/schemas/catalog.py`).
+   *
+   * This endpoint is unauthenticated, so the account age gate cannot reach it,
+   * and it is the widest collector of minors' personal data on the site — which
+   * is why the backend refuses it without an answer rather than defaulting to
+   * adult. `guardian_contact` is conditionally required when this is
+   * `under_18`; the form collects it only in that case.
+   */
+  age_band: AgeBand;
+  guardian_contact?: string | null;
 }
 
 export interface EnquiryResponse {
@@ -1437,7 +1464,19 @@ export const adminApi = {
   updateUser: (id: number, payload: AdminUpdateUserPayload) =>
     apiFetch<AdminUser>(`/users/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
 
-  reviews: (params = "") => apiFetch<AdminReview[]>(`/reviews${params}`),
+  /**
+   * The moderation queue, or another explicitly named scope.
+   *
+   * The default is `/moderation` rather than `""` because **there is no
+   * `GET /reviews`**. The router exposes `/college/{ref}`, `/moderation`,
+   * `/my`, `POST /`, `PUT /{id}`, `POST /{id}/moderate` and `DELETE /{id}` —
+   * nothing at the collection root for GET. `params = ""` therefore produced a
+   * 404 that the caller rendered as an empty panel, and any future call site
+   * that omitted the argument would have hit the same wall. Found by
+   * `tests/api-endpoints.test.ts`, which sweeps every wrapper against the
+   * routes the backend actually declares.
+   */
+  reviews: (params = "/moderation") => apiFetch<AdminReview[]>(`/reviews${params}`),
 
   moderateReview: (id: number, status: "approved" | "rejected", notes?: string) =>
     apiFetch<AdminReview>(`/reviews/${id}/moderate`, {
@@ -1930,5 +1969,156 @@ export const otpApi = {
     apiFetch<StandardActionResponse>("/auth/reset-password", {
       method: "POST",
       body: JSON.stringify({ token, new_password: newPassword }),
+    }),
+};
+
+/* ------------------------------------------------------------------ *
+ * DPDP compliance — Phase 9.1 (age gate + parental consent) and 9.4
+ * (data-principal requests).
+ *
+ * Every shape below mirrors `backend/app/schemas/compliance.py` exactly. The
+ * backend models are `extra="forbid"`, so a field that is misspelled here is
+ * not ignored — it is a 422 — which is the reason these are typed rather than
+ * built ad hoc at each call site.
+ * ------------------------------------------------------------------ */
+
+export type AgeBand = "under_18" | "18_plus";
+
+export type GuardianConsentStatus =
+  | "pending"
+  | "verified"
+  | "denied"
+  | "expired"
+  | "withdrawn";
+
+export type DataRequestType =
+  | "access"
+  | "correction"
+  | "erasure"
+  | "withdrawal"
+  | "grievance"
+  | "nomination";
+
+export type DataRequestStatus =
+  | "received"
+  | "acknowledged"
+  | "in_progress"
+  | "completed"
+  | "rejected";
+
+export interface GuardianConsent {
+  id: number;
+  status: GuardianConsentStatus;
+  verification_channel: string;
+  requested_at: string;
+  verified_at: string | null;
+  withdrawn_at: string | null;
+  expires_at: string;
+  consent_version: string | null;
+}
+
+export interface AgeDeclareResponse {
+  age_band: AgeBand | null;
+  is_minor: boolean;
+  processing_allowed: boolean;
+  blocked_reason: string | null;
+  blocked_message: string | null;
+}
+
+export interface ComplianceStatus {
+  age_band: AgeBand | null;
+  is_minor: boolean;
+  age_answered: boolean;
+  processing_allowed: boolean;
+  blocked_reason: string | null;
+  blocked_message: string | null;
+  parental_consent: GuardianConsent | null;
+  sla_days: number;
+}
+
+export interface DataRequest {
+  id: number;
+  request_type: DataRequestType;
+  status: DataRequestStatus;
+  subject: string | null;
+  details: string;
+  received_at: string;
+  acknowledged_at: string | null;
+  due_at: string;
+  completed_at: string | null;
+  resolution: string | null;
+  days_remaining: number;
+  overdue: boolean;
+}
+
+/**
+ * `GET /compliance/parental-consent` answers `null` when no consent exists.
+ * That is valid JSON, so it goes through `apiFetch` like everything else — no
+ * special case. What would *not* be valid is an empty body, and none of these
+ * endpoints send one: the 204 case is handled inside `apiFetchImpl`.
+ */
+export const complianceApi = {
+  /** The whole gate in one round trip. Never `null`. */
+  status: () => apiFetch<ComplianceStatus>("/compliance/status"),
+
+  /**
+   * Declare or correct an age band.
+   *
+   * Both directions are allowed by the backend on purpose: moving towards the
+   * stricter treatment cannot be a way to escalate one's own consent state.
+   */
+  declareAge: (age_band: AgeBand) =>
+    apiFetch<AgeDeclareResponse>("/compliance/age", {
+      method: "POST",
+      body: JSON.stringify({ age_band }),
+    }),
+
+  parentalConsent: () => apiFetch<GuardianConsent | null>("/compliance/parental-consent"),
+
+  requestParentalConsent: (payload: {
+    guardian_name: string;
+    guardian_mobile?: string | null;
+    guardian_email?: string | null;
+  }) =>
+    apiFetch<GuardianConsent>("/compliance/parental-consent/request", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  verifyParentalConsent: (code: string) =>
+    apiFetch<GuardianConsent>("/compliance/parental-consent/verify", {
+      method: "POST",
+      body: JSON.stringify({ code }),
+    }),
+
+  /** No body, no code: withdrawal must be as easy as the grant was. */
+  withdrawParentalConsent: () =>
+    apiFetch<GuardianConsent>("/compliance/parental-consent/withdraw", {
+      method: "POST",
+      body: JSON.stringify({}),
+    }),
+
+  myRequests: () => apiFetch<DataRequest[]>("/compliance/requests"),
+
+  createRequest: (payload: {
+    request_type: DataRequestType;
+    details: string;
+    subject?: string | null;
+  }) =>
+    apiFetch<DataRequest>("/compliance/requests", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  /** Staff queue, soonest deadline first. */
+  adminRequests: () => apiFetch<DataRequest[]>("/compliance/admin/requests"),
+
+  updateAdminRequest: (
+    id: number,
+    payload: { status: DataRequestStatus; resolution?: string | null },
+  ) =>
+    apiFetch<DataRequest>(`/compliance/admin/requests/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
     }),
 };

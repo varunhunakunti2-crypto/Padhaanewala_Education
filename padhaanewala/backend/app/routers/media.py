@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -7,8 +7,9 @@ from app import media_store
 from app.config import get_settings
 from app.database import get_db
 from app.dependencies import require_role
-from app.models import Media
+from app.models import Media, User
 from app.schemas.content import MediaCreate, MediaResponse, MediaUpdate
+from app.utils import audit
 
 router = APIRouter(prefix="/api/v1/media", tags=["media"])
 
@@ -72,9 +73,27 @@ def get_media(media_id: int, db: Session = Depends(get_db)):
     status_code=201,
     dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
-def create_media(payload: MediaCreate, db: Session = Depends(get_db)):
+def create_media(
+    payload: MediaCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(*CONTENT_ROLES)),
+):
     media = Media(**payload.model_dump())
     db.add(media)
+    # 4.4 — flushed so `media.id` exists for the audit row; the commit below
+    # lands the registry row and its trail entry together, as
+    # `create_college` does.
+    db.flush()
+    audit.record(
+        db,
+        request=request,
+        action="create_media",
+        entity_type="media",
+        entity_id=media.id,
+        actor=user,
+        new_value=payload.model_dump(),
+    )
     db.commit()
     db.refresh(media)
     return _to_response(media)
@@ -85,12 +104,30 @@ def create_media(payload: MediaCreate, db: Session = Depends(get_db)):
     dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def update_media(
-    media_id: int, payload: MediaUpdate, db: Session = Depends(get_db)
+    media_id: int,
+    payload: MediaUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(*CONTENT_ROLES)),
 ):
     media = db.get(Media, media_id)
     if media is None:
         raise HTTPException(status_code=404, detail="Media not found")
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    data = payload.model_dump(exclude_unset=True)
+    # 4.4 — old values read before the `setattr` loop below, so the row
+    # describes the edit and not its result; an asset silently re-pointed at a
+    # different entity is exactly the change the trail exists to show.
+    audit.record(
+        db,
+        request=request,
+        action="update_media",
+        entity_type="media",
+        entity_id=media.id,
+        actor=user,
+        old_value={field: getattr(media, field) for field in data},
+        new_value=data,
+    )
+    for field, value in data.items():
         setattr(media, field, value)
     db.commit()
     db.refresh(media)
@@ -101,10 +138,31 @@ def update_media(
     status_code=204,
     dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
-def delete_media(media_id: int, db: Session = Depends(get_db)):
+def delete_media(
+    media_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(*CONTENT_ROLES)),
+):
     media = db.get(Media, media_id)
     if media is None:
         raise HTTPException(status_code=404, detail="Media not found")
+    # 4.4 — enough to name the asset that is about to disappear from both the
+    # registry and disk, read while the row still exists.
+    audit.record(
+        db,
+        request=request,
+        action="delete_media",
+        entity_type="media",
+        entity_id=media.id,
+        actor=user,
+        old_value={
+            "file_name": media.file_name,
+            "url": media.url,
+            "entity_type": media.entity_type,
+            "entity_id": media.entity_id,
+        },
+    )
     # Only rows this store owns have a path to clean up. A registry row holds an
     # external URL and deleting it must not touch the filesystem.
     stored_path = media_store.path_for_row(media)
@@ -116,6 +174,7 @@ def delete_media(media_id: int, db: Session = Depends(get_db)):
         media_store.delete(stored_path)
 
 
+# 4.4 gap: audit coverage for this multipart upload path is not yet wired.
 @router.post(
     "/upload",
     response_model=MediaResponse,

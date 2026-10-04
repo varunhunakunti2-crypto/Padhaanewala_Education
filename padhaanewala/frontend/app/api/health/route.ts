@@ -7,7 +7,7 @@ import { NextResponse } from "next/server";
 const BACKEND = (
   process.env.BACKEND_URL ||
   process.env.NEXT_PUBLIC_API_URL ||
-  "http://localhost:8000"
+  "http://127.0.0.1:8000"
 )
   .replace(/\/api\/v1\/?$/, "")
   .replace(/\/+$/, "");

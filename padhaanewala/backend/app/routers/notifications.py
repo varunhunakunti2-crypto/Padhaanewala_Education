@@ -233,6 +233,7 @@ def mark_all_read(
 @router.delete("/{notification_id}", status_code=204)
 def delete_notification(
     notification_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -243,5 +244,23 @@ def delete_notification(
     )
     if notification is None:
         raise HTTPException(status_code=404, detail="Notification not found")
+    # Phase 4.4 — a notification delete is a user-visible disappearance with no
+    # remaining record to appeal against, so it is audited. Read the row before
+    # deleting it: afterwards the instance is expired and the values are gone.
+    audit.record(
+        db,
+        request=request,
+        action="delete_notification",
+        entity_type="notification",
+        entity_id=notification.id,
+        actor=user,
+        old_value={
+            "type": notification.type,
+            "title": notification.title,
+            "message": notification.message,
+            "user_id": notification.user_id,
+            "is_read": notification.is_read,
+        },
+    )
     db.delete(notification)
     db.commit()

@@ -19,7 +19,9 @@
 const RAW_BACKEND = (
   process.env.BACKEND_URL ||
   process.env.NEXT_PUBLIC_API_URL ||
-  "http://localhost:8000"
+  // IPv4 loopback, not `localhost` — see next.config.ts for why the name can
+  // resolve to a different service on a developer machine.
+  "http://127.0.0.1:8000"
 ).replace(/\/api\/v1\/?$/, "");
 
 export const SERVER_API = `${RAW_BACKEND.replace(/\/+$/, "")}/api/v1`;
@@ -236,6 +238,16 @@ export interface ApiCollegeListItem {
   total_reviews: number;
   average_rating: string;
   is_featured: boolean;
+  /** Trimmed application windows — the shape of `AdmissionWindowResponse`.
+   * `/colleges` sends these so a list row can derive its admission status;
+   * the full `ApiAdmission` rows still come from the detail fan-out. */
+  admissions?: ApiAdmissionWindow[];
+}
+
+export interface ApiAdmissionWindow {
+  application_start_date: string | null;
+  application_end_date: string | null;
+  entrance_exam: string | null;
 }
 
 export interface ApiCollegeCourse {

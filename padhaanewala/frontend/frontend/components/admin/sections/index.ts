@@ -14,6 +14,7 @@ export { BannersSection } from "@/components/admin/sections/BannersSection";
 export { NotificationsSection } from "@/components/admin/sections/NotificationsSection";
 export { LeadsSection } from "@/components/admin/sections/LeadsSection";
 export { CounsellorsSection } from "@/components/admin/sections/CounsellorsSection";
+export { DataRequestsSection } from "@/components/admin/sections/DataRequestsSection";
 export { MediaSection } from "@/components/admin/sections/MediaSection";
 export { SeoSection } from "@/components/admin/sections/SeoSection";
 export { SettingsSection } from "@/components/admin/sections/SettingsSection";

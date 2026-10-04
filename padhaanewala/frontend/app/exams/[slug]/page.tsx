@@ -12,7 +12,8 @@ import {
 } from "lucide-react";
 import { EXAM_STAGES } from "@/lib/data/exams";
 import { resolveExam, resolveSlugs } from "@/lib/content";
-import { absoluteUrl } from "@/lib/site";
+import { JsonLd } from "@/components/seo/JsonLd";
+import { breadcrumbLd, eventLd, faqPageLd, ldGraph, ogImage, pageMetadata } from "@/lib/seo";
 import {
   ExamFaqs,
   ExamImportantDates,
@@ -35,12 +36,21 @@ export async function generateStaticParams() {
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params;
   const { data: exam } = await resolveExam(slug);
-  if (!exam) return { title: "Exam not found" };
-  return {
+  if (!exam) {
+    return pageMetadata({
+      title: "Exam not found",
+      description: "This entrance exam is not in the padhaanewala catalogue.",
+      path: `/exams/${slug}`,
+      noindex: true,
+    });
+  }
+  return pageMetadata({
     title: `${exam.shortName} — Exam Details`,
     description: `${exam.shortName} (${exam.name}): eligibility, application dates, exam pattern, fees and FAQs. Conducted by ${exam.conductingBody}.`,
-    alternates: { canonical: absoluteUrl(`/exams/${exam.slug}`) },
-  };
+    path: `/exams/${exam.slug}`,
+    type: "article",
+    image: ogImage(`${exam.shortName} — dates, pattern and eligibility`),
+  });
 }
 
 export default async function ExamDetailPage({ params }: PageProps) {
@@ -48,17 +58,19 @@ export default async function ExamDetailPage({ params }: PageProps) {
   const { data: exam } = await resolveExam(slug);
   if (!exam) notFound();
 
-  const jsonLd = {
-    "@context": "https://schema.org",
-    "@type": "EducationalOccupationalProgram",
-    name: exam.name,
-    description: exam.overview || undefined,
-    educationalLevel: exam.level === "UG" ? "Undergraduate" : "Postgraduate",
-  };
+  const jsonLd = ldGraph([
+    eventLd(exam),
+    breadcrumbLd([
+      { name: "Home", path: "/" },
+      { name: "Exams", path: "/exams" },
+      { name: exam.shortName, path: `/exams/${exam.slug}` },
+    ]),
+    faqPageLd(exam.faqs ?? []),
+  ]);
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 lg:py-12">
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      <JsonLd data={jsonLd} />
 
       <nav className="mb-5 flex items-center gap-1.5 text-xs text-slate-400">
         <Link href="/" className="hover:text-purple-700">Home</Link>

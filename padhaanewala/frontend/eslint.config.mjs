@@ -12,6 +12,11 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Coverage output. `npm run test:coverage` writes here and `npm run lint`
+    // would otherwise walk the generated `lcov-report` and report on fixtures
+    // it does not own. The directory is gitignored (`/coverage`); this keeps it
+    // out of the lint pass too.
+    "coverage/**",
   ]),
 ]);
 

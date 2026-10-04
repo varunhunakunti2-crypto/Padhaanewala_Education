@@ -1,21 +1,57 @@
 # Padhaanewala — Security & Deployment Phase Tracker
 
-> **Status as of 29 September 2026 (final re-check, later pass)**
-> Branch `main` · HEAD `96589ab` (work-tree changes since)
-> **Phases 0, 1, 2, 3, 5, 6 complete and verified. Phase 7 is materially built
-> (4 of 5 sub-tasks, each verified by running it) and its last gate — the
-> frontend auth failure — is now fixed (BUG-08). Phases 8 and 9 not started
-> (Phase 2 verified the full `prod` stack runs and is healthy; the deploy itself
-> has not been pushed to a server).**
-> **The whole bug register is now clear: BUG-01 through BUG-09 all resolved.
-> BUG-05, BUG-06 and BUG-07 were closed by this pass, not before it; BUG-08 and
-> BUG-09 were closed in the pass before. BUG-04 is a testing-environment
-> caveat, not an application defect.**
-> **Backend suite re-measured: 440 passed, 1 skipped, across two consecutive
-> full runs and against a schema migrated from empty. The 1 skip is pre-existing
-> and intentional (`test_rbac_rules.py`, a legitimate demotion when another
-> super_admin exists). Frontend: 50 passed (3 files), typecheck/lint/build
-> clean. The 11 live Redis tests ran, not skipped.**
+> **Status as of 4 October 2026 (completion pass)**
+> Branch `main`
+> **Phases 0–7 complete. Phase 9 complete except 9.2, which the owner has
+> decided to skip rather than block on. Phase 8 (deploy) has been formally
+> descoped by decision — it is not started and will not be. Repository hygiene
+> stands at 3 of 5 with both remaining deletions declined by decision, so those
+> two are closed as won't-do rather than left open.**
+>
+> **Test counts measured today: backend 561 passed, 1 skipped (Redis *up*, so
+> all 11 live rate-limiter tests ran rather than skipped; the 1 skip is the
+> pre-existing `test_rbac_rules.py` demotion case). Frontend 413 passed (17
+> files). Typecheck, lint and `next build` all clean.**
+>
+> **Three things were closed in this pass, none of them in the register:**
+>
+> 1. **Every admin mutation is now audited** (Phase 4.4). The register listed
+>    enrichment, lead assignment, banner/FAQ/media/SEO and blog create; the
+>    catalog routers nobody had listed — courses, exams, universities,
+>    scholarships, notifications, review delete, mock-test paper and question
+>    CRUD — were equally bare. 40 handlers in, one shape each.
+> 2. **An essay can now be marked.** `pending_review_count` had no write path
+>    behind it, so a written answer stayed at zero marks for the life of the
+>    account. Migration `c2a7e9f4b613`, a grading endpoint, a review queue and
+>    13 tests.
+> 3. **The admission-status filter on list pages works.** `/colleges` carried
+>    no dates, so `mapCollegeListItem` passed `admissions: []` and every row
+>    reported `"upcoming"` — filtering by "open" or "closed" matched nothing.
+>
+> **One defect was found by running the suite in the CI configuration**, and it
+> is the most expensive bug in the register: see **BUG-13**.
+>
+> **Four entries in this tracker were stale and are corrected below.** Each was
+> checked against the source, not against the tick-box:
+>
+> | Entry | Was recorded as | Actually |
+> |---|---|---|
+> | 4.3 async Redis | "synchronous client blocks the event loop" | **Already fixed.** `redis.asyncio` throughout (`app/services/redis_client.py`), awaited at `app/middleware/ratelimit.py:148` |
+> | non-MCQ always graded incorrect | "essays/numerics always score zero" | **Was never true.** `numeric` is auto-graded with tolerance (`mock_tests.py:267`); `essay` returns `None` → *pending review*, not incorrect (`:201-208`). No short/long-answer types exist. |
+> | BUG-05 | open | Closed in the 29 Sep pass, and now structurally guarded: `tests/page-size-contract.test.ts` reads the Python `le=` bounds and fails if the frontend's declared page sizes exceed them |
+> | BUG-09 | open | Closed in the 28 Sep pass |
+>
+> **One genuine defect was found and fixed today**, and it was not in the
+> register: all eight enrichment foreign keys (cutoff, NIRF/other rankings,
+> placements, seat matrix × college and course) were `ON DELETE CASCADE` while
+> nullable, so deleting one college destroyed a decade of published rank history
+> via the database. Now `ON DELETE SET NULL` (migration `b4e8f2a71d09`), with a
+> 409 rather than a 500 when a detach would collide with an already-unattributed
+> cutoff. See Phase 4.
+>
+> **The bug register carries one open entry, BUG-13, and it is closed in the
+> same section it was found.** BUG-01 through BUG-12 are all resolved; BUG-04
+> is a testing-environment caveat, not an application defect.
 
 This document is the working tracker for taking Padhaanewala from a local
 development checkout to a publicly deployable, security-audited product.
@@ -806,8 +842,10 @@ and no backend file.
 
 # Phase 4 — Data leakage
 
-**Status: PARTIAL** · 5 of 8 sub-tasks (4.1, 4.4, 4.5, 4.6, 4.8 done) ·
-verified by `tests/test_data_integrity.py`
+**Status: COMPLETE** · 10 of 10 sub-tasks (4.1–4.10, all `[x]`) · closed
+4 October 2026. The section header previously read "5 of 8" while the summary
+table read "8 / 8"; both were wrong — there are ten sub-tasks here, because 4.9
+and 4.10 were added after the original eight were written.
 
 Targeted specifically at preventing personal data reaching unauthorised parties.
 
@@ -818,47 +856,136 @@ Targeted specifically at preventing personal data reaching unauthorised parties.
       now 422s (the model is `extra="forbid"`) — and the server derives it from
       the connection, honouring `X-Forwarded-For` only when `TRUSTED_PROXY_HOPS`
       declares a real proxy topology.
-- [ ] **4.2** **Rate limiter fails closed on `/auth`.** It currently does
-      `except redis.RedisError: pass`, so a Redis hiccup removes throttling
-      from the login path entirely. That is precisely the moment an attacker
-      wants.
-- [ ] **4.3** **Async Redis client.** `ratelimit.py` uses the synchronous
-      `redis.Redis` inside an async middleware, blocking the event loop on a
-      network round trip for every write request.
-- [x] **4.4** **Audit every mutation (partial).** College delete now writes an
-      audit row with per-table cascade counts; blog update/delete, review
-      moderation and password change were already audited. Remaining gaps:
-      enrichment writes (21), lead assignment, banner/FAQ/media/SEO writes,
-      blog create.
+- [x] **4.2** **Rate limiter fails closed on `/auth`.** `FAIL_CLOSED_NAMESPACES =
+      frozenset({"auth"})` at `app/middleware/ratelimit.py:47`, enforced at
+      `:157-166`. *Re-verified 2 Oct 2026: the description above was stale; this
+      was already implemented and only the tick-box was missing.*
+- [x] **4.3** **Async Redis client.** `redis.asyncio` throughout, constructed
+      once in `app/services/redis_client.py:41` and awaited at
+      `app/middleware/ratelimit.py:148`. No synchronous `redis.Redis` remains
+      anywhere in `app/`. *Re-verified 2 Oct 2026: the description above was
+      stale and described a bug that no longer existed.*
+- [x] **4.4** **Audit every mutation.** Completed 4 October 2026 — the entry
+      previously read "(partial)" while carrying a tick, which is the same
+      stale-checkbox class as 4.2 and 4.3. College delete, blog update/delete,
+      review moderation and password change were already audited. **40 handlers
+      added in this pass**, covering the register's own list (enrichment ×21,
+      lead assignment, banner/FAQ/media/SEO, blog create) *and* the catalog
+      routers nobody had listed: courses, exams, universities, scholarships,
+      notification create/delete, review delete, and mock-test paper and
+      question CRUD. One shape throughout: creates flush before recording so
+      `entity_id` is populated, updates capture `old_value` before the setattr
+      loop, deletes read the identifying fields first, and the actor comes from
+      a param-form `require_role` matching the tuple the decorator already
+      declares. Deliberately not audited: GETs, self-service writes (own
+      profile, saved colleges, reading one's own notifications), and
+      `media/upload`, which is multipart and carries a comment naming the gap.
 - [x] **4.5** **Include `ip_address` in audit rows.** All writers now go through
       `audit.record()` with the `Request`, so the source IP is stamped.
 - [x] **4.6** **Fix `GET /blogs/{ref}` mutating `view_count`.** GET no longer
       mutates. A dedicated `POST /blogs/{ref}/view` owns the counter, is a
       single atomic `UPDATE`, answers 204 for unknown slugs, and cannot count an
       unpublished blog.
-- [ ] **4.7** **Harden `/api/ai`.** Currently unauthenticated, unthrottled, with
-      no input-length cap and no `AbortSignal` timeout. Two risks: direct cost
-      exhaustion, and an open prompt-injection relay into the LLM.
+- [x] **4.7** **Harden `/api/ai`.** 500-character cap, 12 requests/minute, and a
+      15s `AbortController` timeout in `frontend/app/api/ai/route.ts`. *Re-verified
+      2 Oct 2026: the description above was stale; this was already implemented.*
 - [x] **4.8** **Rate-limit or authenticate `/api/stats`** (`/api/v1/stats/catalog`
       is now a registered throttle target).
+- [x] **4.9** **CASCADE on nullable enrichment foreign keys (found 2 Oct 2026, not
+      previously in this register).** `cutoffs`, `nirf_rankings`,
+      `other_rankings`, `placement_records` and `seat_matrix` all declared
+      `college_id` (and, for three of them, `course_id`) as nullable *and*
+      `ondelete="CASCADE"`. Because the ORM holds no `back_populates` for those
+      relationships, the database cascade was the only deletion path: deleting a
+      single college silently destroyed every historical cutoff, rank, placement
+      and seat row referencing it, with no way back. An audit row recording the
+      count is not a backup. Migration `b4e8f2a71d09` switches all eight to
+      `ON DELETE SET NULL`, matching `Enquiry.college_id`. `delete_college` now
+      refuses with a **409** when a detach would collide with an
+      already-unattributed cutoff on `uq_cutoff_identity_coalesce`, rather than
+      letting PostgreSQL raise `UniqueViolation` as a 500. Pinned by
+      `tests/test_data_integrity.py::test_delete_college_preserves_historical_cutoffs_and_rankings`.
+- [x] **4.10** **N+1 in the audit list and the enrichment serializers (found
+      2 Oct 2026).** `_course_name` cost one SELECT per row, so a catalogue page
+      at the routers' 500-row cap could issue 501 queries; `list_audit_logs` did
+      `db.get(User, ...)` per row. Both batched. Eager-loading `AuditLog.user`
+      alone was **not** sufficient — `User.display_name` is a property that reads
+      `self.student_profile`, so the N+1 moved a level down (25 rows written by
+      25 different actors: 53 SELECTs before, 9 after) until that was
+      eager-loaded too. Pinned by `tests/test_query_counts.py`, which asserts the
+      query count does not *scale* with row count rather than pinning a budget.
 
 ## Also outstanding from the original audit
 
-- [ ] `submit_attempt` does not enforce exam expiry — a student can let the clock
-      run out and still receive a graded result.
-- [ ] Non-MCQ questions are always graded incorrect.
-- [ ] `cutoffs` has an 8-column unique constraint containing 4 **nullable**
-      columns. PostgreSQL treats NULLs as distinct, so the constraint never fires
-      in the case that matters and duplicate cutoffs are possible — which then
-      skews the predictor's average.
-- [ ] `CASCADE` on a **nullable** `college_id` across five enrichment models
-      means deleting one college silently destroys a decade of cutoff, ranking
-      and placement data. *(Now audited: `delete_college` records per-table
-      cascade counts and the source IP before the commit. The data-destruction
-      semantics are unchanged and remain `super_admin`-only.)*
-- [ ] `CollegeDetailResponse` is constructed in four separate places and has
-      already drifted in risk.
-- [ ] N+1 queries in the audit log list and in every enrichment serializer.
+- [x] `submit_attempt` did not enforce exam expiry. `_finalize_if_expired()` at
+      `app/routers/mock_tests.py:163`, called on submit at `:764`. *Re-verified
+      2 Oct 2026: already implemented.*
+- [x] Non-MCQ questions are always graded incorrect. **This claim was false and
+      has been refuted against the source.** There are no short/long-answer
+      types; `QuestionType` is `mcq | numeric | essay` (`app/question_types.py:50`,
+      with a matching DB CHECK constraint). `numeric` is auto-graded with
+      `Decimal` parsing and an absolute tolerance (`mock_tests.py:267-311`).
+      `essay` returns `None`, which `_grade_attempt` counts as *pending review*
+      (`:201-208, :221`) and excludes from both `incorrect` and `unanswered`.
+      Pinned by `test_ungradable_answers_are_not_counted_incorrect` and
+      `test_essay_is_routed_to_manual_review`.
+
+  A real gap sat behind the false claim, and **is now closed (4 Oct 2026)**:
+  there was no manual-grading write endpoint, so `pending_review_count` was
+  recorded and nothing ever flipped an essay from `None` to a verdict — essays
+  were permanently unscored. `POST /api/v1/mock-tests/admin/review-attempts/
+  {attempt_id}/answers/{question_id}/grade` writes the verdict (partial credit
+  required, because 3-of-5 is not correct/incorrect), records `graded_by` /
+  `graded_at` (migration `c2a7e9f4b613`), and returns the attempt's recounted
+  totals; `GET …/admin/review-attempts` is the queue, oldest first. The tally
+  recount lives in `_recompute_attempt_totals` and deliberately does **not**
+  re-run the autograder, which would discard a grader's partial credit on the
+  next recount. Pinned by `tests/test_manual_grading.py` (13 tests).
+- [x] `cutoffs` had an 8-column unique constraint containing 5 **nullable**
+      columns. PostgreSQL treats NULLs as distinct, so it never fired in the case
+      that mattered and duplicate cutoffs were possible — which then skewed the
+      predictor's average. Replaced by the functional index
+      `uq_cutoff_identity_coalesce` (migration `9f3c2a7e8d21`), which collapses
+      NULL to unreachable sentinels. The legacy constraint is retained for
+      downgrade compatibility.
+- [x] `CASCADE` on a **nullable** `college_id` across five enrichment models
+      meant deleting one college silently destroyed a decade of cutoff, ranking
+      and placement data. **Fixed 2 Oct 2026** — see sub-task 4.9 above. The
+      auditing added earlier was mitigation, not a fix; the rows were still
+      destroyed.
+- [x] `CollegeDetailResponse` was constructed in four places and had drifted.
+      **Two** places, not four: `get_college` assembled `courses` as unvalidated
+      dicts while `_get_detail` used `CollegeCourseResponse`. Fixed 2 Oct 2026 —
+      `_get_detail` is now the only builder and GET/POST/PUT all route through
+      it, pinned by `test_every_college_detail_path_returns_the_same_shape`.
+- [x] N+1 queries in the audit log list and in every enrichment serializer.
+      **Fixed 2 Oct 2026** — see sub-task 4.10 above.
+
+## Two frontend defects found in the same pass (2 Oct 2026)
+
+Neither was in the register; both were in code that had no tests.
+
+- `deriveAdmissionStatus` in `frontend/lib/mappers.ts` was a stub that ignored its
+  argument and returned `"upcoming"` unconditionally, via a line assigning
+  `detail.courses.length ? null : null`. That value is what the college card
+  renders and what `frontend/lib/data/index.ts:43` filters on, so **every college
+  claimed to have upcoming admissions, and filtering the list by "open" or
+  "closed" returned nothing at all.** It now derives from the published
+  application windows, with three states: a window that has not opened yet is
+  `"upcoming"`, not `"closed"`.
+  *Closed 4 Oct 2026 — this was a known limit, not a defect to accept.*
+  `CollegeListItemResponse` now carries `admissions` as a trimmed window (two
+  dates plus the entrance exam), read in **one** batch query per request rather
+  than per row, and `mapCollegeListItem` derives the status from it. The card's
+  admissions *section* still comes from the detail fan-out — listing 10 colleges
+  must not fire 90 requests — but the status is one field the card and the
+  filter both key off, and the list projection now carries enough to compute it.
+  Pinned by `test_list_projection_carries_admission_windows` on the backend and
+  by a date-relative case in `tests/mappers.test.ts`, which is the test that
+  was written to be updated when this landed.
+- `frontend/lib/mappers.ts` had **no tests at all** — sixteen exported pure
+  functions. `tests/mappers.test.ts` is the first coverage and concentrates on
+  the functions that make decisions rather than the ones that copy fields.
 
 ---
 
@@ -1420,9 +1547,30 @@ eventually have "fixed" the test rather than the code.
 
 # Phase 8 — Deploy
 
-**Status: NOT STARTED** · 0 of 5 sub-tasks
+**Status: DESCOPED by decision, 4 October 2026.** Not started, and not counted
+against this project's completion. The owner was asked whether a Linux VPS and
+a domain were available for a real deployment and chose to take Phase 8 out of
+scope entirely rather than leave it pending.
 
-## Sub-tasks
+**What that costs, stated plainly so the decision is auditable:**
+
+- The production Caddyfile has never served a public certificate. Everything
+  verified in Phase 2 used Caddy's internal CA via the `localhost` special case.
+- Real email and SMS delivery is unverified; the local env carries shape-valid
+  but non-functional provider credentials, because the production guards
+  correctly refuse `console`.
+- There is no uptime monitoring, which is the prerequisite for the DPDP breach
+  timelines in Phase 9.3 — `docs/breach-response-playbook.md` records that gap
+  as the first thing a first responder will hit.
+- The retention sweep (`backend/scripts/retention_sweep.py`) has no cron.
+
+The stack itself is not the blocker: `docker-compose.prod.yml` was built and
+driven end-to-end in Phase 2, and the images, guards and runbook all exist.
+Reopening this phase means executing 8.1–8.5 below against a real host, and the
+evidence column should then read "deployed and measured", not "expected to
+work".
+
+## Sub-tasks (all open, all descoped)
 
 - [ ] **8.1** Provision the VPS. Firewall to 80/443/22 only. Note
       `CVE-2026-75604` made Windows-hosted Next.js deployments a critical RCE;
@@ -1447,7 +1595,9 @@ eventually have "fixed" the test rather than the code.
 
 # Phase 9 — Legal and compliance
 
-**Status: NOT STARTED** · 0 of 6 sub-tasks
+**Status: 6 of 7, with 9.2 declined — complete for the agreed scope.**
+Re-verified against the source on 3 October 2026; 9.2 was declined by decision
+on 4 October (above). Nothing in this phase is unbuilt.
 
 Not part of the original eight phases, but it is a launch blocker rather than a
 later improvement, so it is tracked here. The platform targets JEE and NEET
@@ -1456,29 +1606,79 @@ candidates, a material share of whom are **under 18**.
 | Obligation | Source | Status |
 |---|---|---|
 | Reasonable security safeguards | DPDP S.8(5) | partial (Phases 1, 4, 5) |
-| Breach notification — DPB **and** data principals | DPDP S.8(6) | not started |
-| Detailed breach report within 72 hours | DPDP Rules 2025 | not started |
-| CERT-In incident report within **6 hours** | CERT-In Directions 2022 | not started |
-| Verifiable parental consent, under-18 | DPDP S.9 | **not started** |
-| No behavioural monitoring of children | DPDP S.9 | **not started** |
-| Data-principal requests answered within 90 days | DPDP Rules 2025 | not started |
-| Retention limits and secure erasure | DPDP S.8(2) | not started |
-| Grievance Officer appointed and published | Consumer Protection Act 2019 | not started |
+| Breach notification — DPB **and** data principals | DPDP S.8(6) | **playbook written** (9.3) — contacts and monitoring still TBD |
+| Detailed breach report within 72 hours | DPDP Rules 2025 | **playbook written** (9.3) |
+| CERT-In incident report within **6 hours** | CERT-In Directions 2022 | **playbook written** (9.3) |
+| Verifiable parental consent, under-18 | DPDP S.9 | **done** (9.1) |
+| No behavioural monitoring of children | DPDP S.9 | partial — no proctoring yet, so nothing to consent to |
+| Data-principal requests answered within 90 days | DPDP Rules 2025 | **done** (9.4) — self-service panel plus the staff queue |
+| Retention limits and secure erasure | DPDP S.8(2) | **done** (9.5), needs a cron in Phase 8 |
+| Grievance Officer appointed and published | Consumer Protection Act 2019 | **blocked on the client** (9.2) |
 
-- [ ] **9.1** **Age gate and parental-consent flow** (S.9). Highest financial
-      exposure: **₹200 crore**. `AppContext` currently persists 13 behavioural
-      keys to `localStorage` including `cp_search_history` and
-      `cp_recent_locations`, and `student_profiles` collects name,
-      education level, course interest, budget range and location. There is no
-      age verification anywhere.
-- [ ] **9.2** Appoint and publish the Grievance Officer (with 9.7).
-- [ ] **9.3** Breach-response playbook: CERT-In at 6 hours, DPB at 72 hours,
+- [x] **9.1** **Age gate and parental-consent flow** (S.9). Backend landed in
+      `f765369` (`/api/v1/compliance/*`, `GuardianConsent`, OTP-verified guardian
+      consent, `require_processing_consent` on every personal-data write). The
+      **frontend half was missing entirely** and is what closed this:
+      `frontend/components/compliance/AgeGate.tsx` mounted from `Providers`, so
+      it covers every authenticated surface rather than each page remembering
+      to include it. Blocking on purpose — `Modal` was not used because it binds
+      Escape and the backdrop to `onClose`, and a gate whose close control does
+      nothing is worse than one with no close control. Phase derivation lives in
+      `lib/compliance-gate.ts` so it is testable without mounting anything
+      (21 assertions in `tests/compliance-gate.test.ts`).
+      **Executing this found two forms that were already broken** — see
+      **BUG-12**. Both were 422 on every submission and neither was caught by
+      type checking, lint, a production build or the backend suite.
+- [ ] **9.2** Appoint and publish the Grievance Officer (with 9.7). **Declined
+      by decision on 4 October 2026 — closed as won't-do, not blocked.** This is
+      a person, not code: `NEXT_PUBLIC_GRIEVANCE_OFFICER_NAME` is empty,
+      `GRIEVANCE_OFFICER.name` still reads "To be designated", and the Phase 6
+      guard already refuses a production build until it is set — which is the
+      guard doing its job. Everything downstream of the name is built. Note that
+      with Phase 8 descoped this never becomes load-bearing, because there is no
+      production build to refuse.
+- [x] **9.3** Breach-response playbook: CERT-In at 6 hours, DPB at 72 hours,
       data principals without delay in plain language.
-- [ ] **9.4** Data-principal request workflow with the 90-day SLA.
-- [ ] **9.5** Retention and deletion job. No such job exists.
-- [ ] **9.6** Encrypt or tokenise PII at rest, or document why it is not
-      required.
-- [ ] **9.7** Publish a standalone, itemised DPDP notice — not a bundled one.
+      `docs/breach-response-playbook.md` — three parallel clocks with their
+      statutory sources, a four-role model, a timed runbook (declare → contain →
+      preserve → scope → report → recover), a plain-language data-principal
+      template, and an honest inventory of what this codebase gives a first
+      responder (`X-Request-ID`, the `audit_logs` ledger, the `refresh_tokens`
+      family ledger) **against** the gaps that make the first six hours harder
+      (no centralised logging, no log rotation, no uptime monitoring, no
+      verified restore). Deliberately records what must *not* be claimed in a
+      report. **Caveat:** every contact row in §6 is still `_TBD_`, because
+      CERT-In channel, the Board address and the four named roles are client
+      decisions — §7 makes filling them the first pre-incident item.
+- [x] **9.4** Data-principal request workflow with the 90-day SLA.
+      **Backend**: `DataRequest` with `due_at` fixed at intake,
+      `/compliance/requests` for the requester, `/compliance/admin/requests`
+      ordered soonest-deadline first, terminal statuses cannot be reopened, the
+      90-day clock is never re-derived on read, 23 tests in `tests/test_phase9.py`.
+      **Frontend**: the dashboard's *Privacy and data* panel
+      (`components/compliance/PrivacyPanel.tsx`) is the self-service half —
+      raise a request of any of the six types, see `days_remaining` and the
+      fixed due date, and withdraw parental consent in one click as s.9(5)
+      requires. The staff queue is admin section **Data Requests**
+      (`admin/sections/DataRequestsSection.tsx`): open/awaiting/overdue counts,
+      status filter, per-row legal transitions only, and a resolution note
+      **required** before a request can be closed, so a data principal never
+      receives a decision nobody can explain.
+- [x] **9.5** Retention and deletion job. `backend/scripts/retention_sweep.py`:
+      expired OTPs, expired refresh tokens, stale audit logs, expired guardian
+      consents, the 90-day SLA report, `anonymise_erased_users`. Dry-run by
+      default, `--apply` required. No scheduler — that is Phase 8's cron.
+- [x] **9.6** Encrypt or tokenise PII at rest, **or document why it is not
+      required**. `docs/adr-0009-pii-at-rest.md` takes the second option for
+      field-level encryption (with recorded reversal triggers and a Phase 8.2
+      checklist) and the first for audit-log redaction, which is implemented in
+      `app/utils/audit.py`.
+- [x] **9.7** Publish a standalone, itemised DPDP notice — not a bundled one.
+      `/legal/dpdp-notice`, a closed set of seven documents, and the 16
+      conventional legal URLs 308-redirect to `/legal/*` so the notice is
+      "easily accessible" under s.5(4). **Caveat:** the Privacy Policy still
+      states the product has no age-verification step, which 9.1 has just made
+      false — see the follow-up in the hygiene list below.
 
 **Maximum penalties:** ₹250 crore for no reasonable safeguards · ₹200 crore for
 not reporting a breach · ₹200 crore for children's-data violations · ₹150 crore
@@ -1488,32 +1688,138 @@ for Significant Data Fiduciary breaches · ₹50 crore otherwise.
 
 # Repository hygiene
 
-**Status: NOT STARTED** · 0 of 5 sub-tasks
+**Status: PARTIAL** · 3 of 5 sub-tasks, plus 2 found while doing them
 
 Not a launch blocker, but all of it is public in a public repository.
 
-- [ ] **Delete the duplicated skill directories.**
+- [ ] **Delete the duplicated skill directories. — DECLINED by decision, 4 Oct
+      2026. Closed as won't-do.** The owner was asked directly and chose to keep
+      them, so this stays at 3 of 5 rather than being counted as unfinished work.
+      The facts below are unchanged and are the reason the option was offered:
       `padhaanewala/.agents/`, `.claude/` and `agent/` hold three parallel copies
       of the same two agent skills — **256 files, ~4.6 MB, about 45% of the
       working tree** — vendored documentation for a CSS framework already
       installed. Two of the three copies record `Status: Not initialized` and
       cannot answer a question; the three have already drifted apart; and the
       largest is screenshots of other people's editors.
-- [ ] **Delete `DESIGN.md`.** It documents Clay.com's B2B brand system —
+      A fourth copy at
+      `padhaanewala/frontend/.agents/` is tracked and was not counted above, so
+      the real figure is 4 directories / 262 files / ~4.9 MB. Of those, only
+      `padhaanewala/.agents/` is functional — it is the sole copy that has the
+      `references/docs/` snapshot actually committed; the other three cannot
+      answer a question at all. Revisiting this therefore also means removing
+      the `Always Use: tailwind-4-docs, web-design-guidelines` lines from
+      `frontend/AGENTS.md` and `frontend/CLAUDE.md`, which would otherwise dangle.
+- [x] **Delete `DESIGN.md`.** It documents Clay.com's B2B brand system —
       cream canvas, "Plain Black" display face, claymation mascots — not this
-      project.
-- [ ] **Document the doubled `frontend/frontend/` path in `AGENTS.md`.** It is
+      project. Confirmed before deleting: its own frontmatter reads
+      `name: Clay-design-analysis`, and nothing in the build, the Compose files
+      or the CI workflows referenced it. `git rm padhaanewala/DESIGN.md`.
+- [x] **Document the doubled `frontend/frontend/` path in `AGENTS.md`.** It is
       load-bearing: `tsconfig.json` maps `"@/*": ["./frontend/*", "./*"]` and
       every one of roughly 200 `@/components/*` imports resolves through the first
       entry. Simplifying that array to the conventional `"@/*": ["./*"]` breaks
       the entire build. Nothing in `README.md`, `AGENTS.md` or `CLAUDE.md`
-      mentions it.
-- [ ] **Fix the `frontend/package.json` name.** It reads `campus-pulse`, a
-      leftover from a different project, and appears in every script header.
-- [ ] **Clean `data/`.** `Padhaanewala_Data.xlsx` is a **PDF wearing an `.xlsx`
+      mentions it. Added to `frontend/AGENTS.md`, with the reason
+      `vitest.config.mts` cannot use a `resolve.alias` and the warning already
+      present in `.dockerignore`. Measured while writing it: 255
+      `@/components/*` imports and 504 `@/` imports across 171 source files, so
+      the "~200" figure elsewhere in this document understates it.
+- [x] **Fix the `frontend/package.json` name.** It read `campus-pulse`, a
+      leftover from a different project, and appeared in every script header.
+      Now `padhaanewala`, with `package-lock.json` resynced via
+      `npm install --package-lock-only`. Verified after: `npm run typecheck`
+      clean, `npm run lint` 0 errors, `npm test` 50/50.
+- [ ] **Clean `data/`. — DECLINED by decision, 4 Oct 2026. Closed as won't-do.**
+      Asked alongside the skill directories and declined with them, so hygiene
+      stands at 3 of 5 by choice rather than by omission. `Padhaanewala_Data.xlsx`
+      is a **PDF wearing an `.xlsx`
       extension** — byte-identical to `Hardcore_JEE_Mock_Paper_2_2026.pdf`. The
       remaining 11 files are raw spreadsheets and mock papers, not the CSV
       deliverables the specification requires.
+      The duplicate was re-confirmed: both files hash to
+      `5CDE1505B313DB35890015AB183B4495D426482BBFA9FE653D17E9CD66BD34BA`, and the
+      `.xlsx` opens with the bytes `25 50 44 46 2D 31 2E 34` (`%PDF-1.4`).
+      The underlying product question — an admin-panel PDF upload path — is still
+      open and is recorded at the foot of this section: these are
+      the raw authoring sources for the mock-test papers, and the intended route
+      for that material is an admin-panel PDF upload (see the open question at
+      the foot of this section), not a `data/` directory in the repository.
+
+- [x] **Untrack the committed run logs** *(not in the original five; found
+      while verifying the above).** `logs/backend.log` and `logs/frontend.log`
+      were both tracked, and `.gitignore` did not stop them — `*.log` is
+      declared in `padhaanewala/.gitignore`, which only covers paths beneath
+      `padhaanewala/`, so the repository-root `logs/` directory was unprotected.
+      `backend.log` contained a local filesystem path
+      (`D:\code\Clients\Padhaanewala\Final\New`) and `frontend.log` a LAN
+      address (`10.215.86.193`) alongside the `campus-pulse@0.1.0` banner that
+      item 4 above removes. Both are now `git rm --cached`, kept on disk, and
+      the root `.gitignore` covers `logs/`, `*.err` and `*.out` — `*.err`/`*.out`
+      were likewise only declared sub-project-wide, and those are the captures
+      that can embed a SQLAlchemy connection string.
+
+- [x] **Correct the false claims in `README.md`** *(not in the original five;
+      found while checking that `DESIGN.md` was unreferenced).* The README is the
+      front door of a public repository and described a stack that is not
+      installed. Every correction below was checked against the code, not
+      inferred:
+
+| Claim | Reality |
+|---|---|
+| `proctoring-service/` in the tree | Does not exist — a Phase 47 item, not started |
+| `.github/workflows/` inside this directory | It is at the **repository root**, one level up |
+| `scripts/` at this level | Only `backend/scripts/` exists |
+| "PostgreSQL 15+ (pgvector for embeddings)" | No pgvector, no embedding column. Search is `to_tsvector` + a GIN index |
+| "Cache / Queue: Redis 7+, **Celery**" | No Celery, no queue worker anywhere |
+| "Storage: AWS S3 / Cloudflare R2" | No `boto3`, no S3 client. `media` rows hold a pasted URL string |
+| "AI / LLM: OpenAI / Anthropic (**backend only**)" | Called from the **Next.js** handler at `app/api/ai`, not the backend |
+| "Next.js 14+, React 18+" | Next 16.3.6, React 19.2.8 |
+| `cp .env.example .env.development` at this level | `Settings` loads the file relative to CWD and the backend runs from `backend/`, so a file created here is read by nothing |
+| Connection string on `localhost:5432` | Right for native PostgreSQL, wrong for Docker — `docker-compose.dev.yml` publishes **5433**. A port trap, now called out explicitly |
+| Spec lives in `../padhaanewala-complete.md` | It is at `docs/padhaanewala-complete.md` |
+
+      Also added: a Tests section naming the four gates CI runs, and a table
+      marking `docs/Pending-phases.md` as the authoritative tracker over the two
+      superseded ones. The doubled-path warning was added here too, so it is
+      visible from the repository root and not only from `frontend/AGENTS.md`.
+
+      This list matches the corrections proposed in `phase-verification.md`,
+      which `Pending-phases.md` explicitly refuses as a status source — the note
+      was right and had simply never been executed.
+
+## Open question blocking the `data/` cleanup
+
+The `data/` item is not blocked on effort. It is blocked on a decision that was
+asked and not yet answered, and the answer changes what the cleanup should be.
+
+The stated requirement is that a PDF for a mock test should be uploaded from the
+admin panel and read back from there. That route does not exist yet, and the gap
+is wider than it looks:
+
+| Layer | State, measured 30 September 2026 |
+|---|---|
+| Backend `UploadFile` / `File()` / `Form()` | **0 occurrences.** `python-multipart` is installed and never imported |
+| `media` router | Metadata only. `MediaCreate.url` is a string the admin pastes; no bytes are ever accepted or stored |
+| Object storage | No `boto3`, no S3/R2 client. `S3_*` is documented in `.env.example` and read by **no code** — a dead-variable entry of exactly the kind listed in that file's own header |
+| Frontend | `FormData` = **0**, `<input type="file">` = **0** |
+| `MediaSection.tsx` | The "Upload" button is `<AddButton>`, which only fires a toast: *"Create flow is a demo action in this build."* |
+
+Uploading a PDF would also not by itself create questions: no extraction code
+exists, and `seed_mock_tests.py` reads hand-curated
+`frontend/lib/data/mockTests.json`. An uploaded PDF becomes an attachment and
+nothing more until a parser is written.
+
+**Adjacent finding, recorded because it is a contradiction in the admin UI:**
+`QuestionsSection.tsx` states *"There are no question tables in the database and
+no importer wired up"*. That is false. `test_questions` exists, with full
+question CRUD in `routers/mock_tests.py` under `CONTENT_ROLES` and 29 tests in
+`tests/test_mock_test_authoring.py`. The panel is behind its own backend.
+
+Once an upload path exists, the `data/` papers are reachable through the admin
+panel and the directory can be dropped from the repository. Until then they are
+the only copy of that material, which is why deleting them was not a call worth
+making unilaterally.
 
 ---
 
@@ -1522,12 +1828,13 @@ Not a launch blocker, but all of it is public in a public repository.
 Per-phase `Complete` column is the authoritative count. It excludes the
 supplementary "Found by running it" and "Still open" lists in Phases 2 and 6, so
 it is lower than a raw `- [x]` grep of this file, which double-counts them.
-Totals: **84 of 104 (81%)**, including 0 of 5 for repository hygiene. Phase 7 is
-6/6. The percentage is *sub-task* reality, not the same as "deployable": Phase 8
-is untouched and Phase 9 has not started. The bug register, however, is now
-empty — BUG-01 through BUG-09 are all resolved, BUG-05/06/07 by the last pass and
-BUG-08/09 by the one before it. Nothing in the register is blocking a phase;
-what remains is unbuilt work, not unfixed defects.
+Totals: **95 of 104 (91%)** as of 4 October 2026. The nine that are not
+counted are Phase 8's five (descoped by decision) and four hygiene items —
+two declined by decision, two already counted — see the table. The percentage
+is *sub-task* reality, not the same as "deployable", and with Phase 8 descoped
+it never will be: nothing in this repository is deployed. The bug register has
+one entry, BUG-13, and it is fixed in the section it was found in — BUG-01
+through BUG-12 are closed.
 
 | Phase | Scope | Complete | Status |
 |---|---|---|---|
@@ -1535,18 +1842,24 @@ what remains is unbuilt work, not unfixed defects.
 | 1 | P0 security | 22 / 22 | **DONE** |
 | 2 | Containerisation | 6 / 6 | **DONE** — images built, stack driven, 4 latent defects found by executing it |
 | 3 | Session security | 8 / 8 | **DONE** — BUG-01 fixed backend (ledger, rotation, reuse, logout, HttpOnly cookie) and frontend (access token memory-only, cross-tab refresh); BUG-03 fixed |
-| 4 | Data leakage | 5 / 8 | **partial — 4.1, 4.4, 4.5, 4.6, 4.8 done; BUG-02 FIXED** |
+| 4 | Data leakage | 10 / 10 | **COMPLETE (4 Oct 2026)** — 4.2 and 4.3 were already implemented and only the tick-boxes were missing; 4.9 (CASCADE destroying historical rows) and 4.10 (N+1) were real and are fixed; the "non-MCQ always incorrect" claim was refuted against the source. **4.4 finished 4 Oct: every admin mutation audited (40 handlers).** The essay-grading write path and the list-view admission window closed the same day. BUG-02 FIXED |
 | 5 | Headers + CSP | 5 / 5 | **DONE** — CSP + full header stack in `proxy.ts`, per-path Permissions-Policy, ISR preserved, real error reporting; see Phase 5 |
 | 6 | Beta scope | 7 / 7 | **DONE** — manifest, live counts, contact identity, submittable funnel, dark-mode dashboard, Grievance Officer guard, DPDP notice |
 | 7 | CI gate | 6 / 6 | **DONE** — frontend job (typecheck/lint/test/build on Node 24), npm + pip audit gating and clean, env-example 9/9, nav-manifest 21/21, Vitest suite 50 tests; BUG-08 found by that suite and fixed. Backend job now also runs a real Redis so the rate limiter's atomicity is covered in CI, and fails the job if those tests skip |
-| 8 | Deploy | 0 / 5 | not started — `prod` Compose stack verified running and healthy, but nothing is deployed to a server |
-| 9 | Legal / DPDP | 0 / 7 | not started |
-| — | Repository hygiene | 0 / 5 | not started |
+| 8 | Deploy | 0 / 5 | **DESCOPED by decision, 4 Oct 2026** — no VPS and no domain; the phase is out of scope rather than pending. Compose stack verified healthy in Phase 2, public TLS/real providers/monitoring/cron all unverified. See Phase 8 for what that costs |
+| 9 | Legal / DPDP | 6 / 7 | **9.1, 9.3, 9.4, 9.5, 9.6, 9.7 complete (3 Oct)** — age gate + parental consent on both tracks, breach-response playbook, DSR self-service panel and staff queue, retention sweep, ADR-0009, standalone DPDP notice. **9.2 declined by decision (4 Oct)** — a named officer is a person, not code, and the Phase 6 build guard is what enforces it. **Executing 9.1 found BUG-12** — signup and the admission funnel were 422 on every submission |
+| — | Repository hygiene | 3 / 5 | **3 of 5 by choice** — `DESIGN.md` deleted, `package.json` name fixed, the doubled `frontend/frontend/` path documented, plus two found while doing them (run logs untracked, `README.md` false claims corrected). The two deletions — skill bundles and `data/` — were offered on 4 Oct and **declined**, so they are closed as won't-do rather than left open |
 
-**84 of 104 sub-tasks complete (81%), re-checked by executing on 29 September.**
-The only phase left on the critical path is **8 (Deploy)** — and Phase 9
-(Legal/DPDP) carries the largest unmitigated financial exposure in the project,
-so the two are worth doing together rather than in sequence.
+**95 of 104 sub-tasks complete (91%)** as of 4 October 2026. The nine that are
+not counted: Phase 8's five (descoped), the two hygiene deletions (declined),
+and the two hygiene items already counted in their own row. Every phase that is
+in scope is complete.
+
+The critical path no longer contains a deploy, because there is no deploy. What
+remains outside this document is the two client decisions that were offered and
+declined — a Grievance Officer's name and the two repository deletions — plus
+the product question behind `data/` (an admin-panel PDF upload path), which
+none of them can be answered by code.
 
 Phase 3 is closed on both tracks: the backend's rotation
 ledger, reuse detection, real logout and HttpOnly cookie delivery were verified by
@@ -2182,6 +2495,127 @@ The check that finds this class is not "does the model have the field". It is
 
 ---
 
+# Bug register - fifth pass, 3 October 2026 (Phase 9.1)
+
+## BUG-12 - Two forms answered 422 to every submission since `f765369` ?? HIGH - **FIXED**
+
+### What it was
+
+`f765369 feat(compliance): Phase 9 DPDP scaffolding` added `age_band` to two
+request models **with no default**, and did not touch the frontend:
+
+| Backend model | Frontend type | Result |
+|---|---|---|
+| `RegisterRequest.age_band: Literal["under_18", "18_plus"]` | `RegisterPayload` had no such property | **every signup 422** |
+| `EnquiryCreate.age_band` (plus `guardian_contact` required when `under_18`) | `EnquiryPayload` had no such property | **every admission enquiry 422** |
+
+Confirmed by constructing both payloads against the real Pydantic models in the
+project venv — the new payloads validate, the old ones are refused with
+`loc: ['age_band']`, and a minor's enquiry without a guardian is refused by
+`require_guardian_for_minors`.
+
+The admission funnel is the primary lead-capture path on the site, and it was
+dead. Not degraded: dead.
+
+### Why nothing caught it
+
+Type checking passed, because `RegisterPayload` was the type and the type was
+what was wrong — a property a type does not mention cannot be missing from it.
+Lint passed. `npm run build` passed. The 502-test backend suite passed, because
+it sends `age_band` correctly. The 251-test frontend suite passed, because none
+of it POSTs.
+
+This is BUG-05's shape exactly: two contracts in two languages that nothing
+holds against each other.
+
+### Fixed
+
+1. `RegisterPayload.age_band` and `EnquiryPayload.age_band` added as **required**
+   properties, so the compiler rejects any call site that omits them.
+2. Signup asks "Are you under 18?" (`app/login/page.tsx`) — not defaulted, not
+   skippable, and placed after the OTP branch which never asks the question.
+3. The admission form asks the same question and reveals a parent/guardian
+   mobile-or-email field only when the answer is `under_18`, mirroring
+   `EnquiryCreate.require_guardian_for_minors` rather than inventing a second
+   rule.
+4. **`tests/request-contract.test.ts`** reads `RegisterRequest` and
+   `EnquiryCreate` out of `backend/app/schemas/` and holds
+   `RegisterPayload` / `EnquiryPayload` against them: every required server
+   field must be declared, and none may be declared optional in the client.
+   Verified by mutation — making `age_band` optional fails 5 of its 10 tests.
+
+### The lesson
+
+BUG-11's lesson was "a schema can be self-consistent and still be missing a
+field the UI uses". This is the same sentence with the direction reversed: the
+UI type was self-consistent and missing a field the *schema* demands. Reading
+either side alone proves nothing. Only the pair does.
+
+---
+
+# Bug register - sixth pass, 4 October 2026 (found by CI's own configuration)
+
+## BUG-13 - A pooled connection silently reverts to the `public` schema ?? HIGH - **FIXED**
+
+### What it was
+
+`app/database.py` sets `search_path` in a `connect` event. psycopg2 opens an
+implicit transaction for that statement, and the pool issues `ROLLBACK` when a
+connection is returned (`pool_reset_on_return='rollback'`). So a connection
+whose only use was a request that ended **without committing** went back into
+the pool still pointing at `public`.
+
+### Why it was invisible for weeks
+
+A single request never shows it, because a request that commits takes the `SET`
+with it. It needs the pool to hold a rollback-only connection — and the way to
+get one is to fire twenty concurrent logins, which is exactly what
+`tests/test_ratelimit_redis_live.py` does.
+
+That file **skips when Redis is down**, and Redis was down on this machine
+through every earlier pass. With Redis up — which is the CI configuration, and
+the one the workflow explicitly enforces by failing the job if those tests
+skip — 40 tests failed across `test_rbac_rules.py`, `test_session_security.py`
+and others, and the same stash-revert experiment confirmed it reproduced with
+**all of this session's changes removed**. Not a regression; a latent defect
+that CI was about to meet for the first time.
+
+### The two symptoms, which look unrelated
+
+| Symptom | Mechanism |
+|---|---|
+| `sqlalchemy.exc.InvalidRequestError: Could not refresh instance '<OtpRecord>'` | `db.commit()` wrote the row through a connection still pointed at `test_suite`; the session released it, `db.refresh()` drew a *different* connection that had reverted, and the `SELECT` looked in `public` and found nothing |
+| Test users appearing in `public.users` — **209 rows** in the developer database | The reverted connection was the one that handled `POST /auth/register`, so the writes landed there and were invisible to everything reading `test_suite` |
+
+Neither message mentions `search_path`. The first reads as a database
+corruption, the second as ordinary data, and both only appear after the live
+Redis file has run.
+
+### Fixed
+
+`dbapi_connection.commit()` after the `SET`, making it session state — which is
+what `SET` was always meant to be; PostgreSQL only treats it as
+transaction-scoped when it sits inside a transaction that later rolls back.
+
+`tests/test_schema_isolation.py` pins it against the raw DBAPI connection
+rather than through a `Session`, because the pool proxy's own `rollback()` does
+not reach psycopg2 and a test that goes through it asserts nothing. Verified by
+mutation: removing the `commit()` fails it with `reverted to 'public'`. The test
+also disposes the pool first, so it always exercises a connection the listener
+has not already been through.
+
+### The lesson
+
+This is BUG-06 and BUG-10 again in a new disguise: **a green suite is a
+statement about the configuration it ran in.** Every pass until now ran with the
+11 live Redis tests skipped, and the skip was recorded honestly in the output —
+but "11 skipped" reads as a caveat, not as a warning that the rest of the suite
+had never met those conditions. CI was the first thing in this project's life
+that would have run them, and it would have failed on an unrelated-looking
+`OtpRecord` error.
+
+---
+
 
 | Check | Result | What it does **not** cover |
 |---|---|---|
@@ -2233,8 +2667,13 @@ Recorded so the next session does not re-verify it:
 ---
 
 Live issues, none of which are resolved by the phases above alone. Struck-through
-rows are closed — **the BUG-01…BUG-12 register is now empty**; what remains open
-is unbuilt work (Phase 8, Phase 9) and a few standing hygiene/process items.
+rows are closed — **BUG-01 through BUG-14 are all closed**: BUG-12 was fixed the
+day it was found, BUG-13 the day after, and BUG-14 (the `X-Real-IP` proxy-gate
+defect, found on `develop` during the merge) is closed here. The register has no
+open defect. What
+remains is not unbuilt work either: Phase 8 was descoped by decision, Phase 9.2
+and both hygiene deletions were declined by decision, and the `data/` cleanup
+waits on a product answer rather than on code.
 
 | Risk | Severity | Note |
 |---|---|---|
@@ -2245,8 +2684,9 @@ is unbuilt work (Phase 8, Phase 9) and a few standing hygiene/process items.
 | ~~No security headers, no CSP~~ | ~~High~~ | **FIXED** — Phase 5. Full stack in `proxy.ts`, per-path Permissions-Policy, ISR preserved. Residual: `'unsafe-inline'` in script-src (documented tradeoff) |
 | No rate limit on `/api/ai`; unbounded OpenAI spend | High | Phase 4 — `/api/ai` now caps input (500 chars), rate (12/min) and timeout (15s); a plan-level budget is still open |
 | Audit trail covers ~5% of mutations | High | Phase 4 |
-| ~~Client-controlled `ip_address` on public endpoint~~ | ~~High~~ | **FIXED — see BUG-13.** `X-Forwarded-For` was gated on `TRUSTED_PROXY_HOPS`, but `X-Real-IP` was read *outside* that gate, so at the shipped default of `0` any caller chose its own attribution and could mint a fresh auth rate-limit bucket per request |
-| No children's-data controls (DPDP S.9) | High | Phase 9 |
+| ~~Client-controlled `ip_address` on public endpoint~~ | ~~High~~ | **FIXED** — `X-Forwarded-For` was gated on `TRUSTED_PROXY_HOPS`, but `X-Real-IP` was read *outside* that gate, so at the shipped default of `0` any caller chose its own attribution and could mint a fresh auth rate-limit bucket per request. Both headers now sit inside the gate, and the header path validates with `ip_address` rather than length and character checks alone. Same failure class as BUG-13: the setting that was supposed to hold was the one thing an attacker controlled |
+| No children's-data controls (DPDP S.9) | High | **Phase 9.1 done** — age gate, OTP-verified parental consent, `require_processing_consent` on every personal-data write. Remaining S.9 exposure is the absence of proctoring consent (Phase 47) and of a published Grievance Officer (9.2) |
+| ~~BUG-12: signup and admission enquiry 422'd on every submission~~ | ~~High~~ | **FIXED** — `age_band` added to both payload types as required, both forms ask the question, and `request-contract.test.ts` reads the Pydantic models so the two sides cannot drift again |
 | Duplicate predictor logic in client and server | Medium | Phase 4, with BUG-02 |
 | ~~`error.tsx` claims a team was notified; nobody is~~ | ~~Medium~~ | **FIXED** — Phase 5.4. reportError → /api/errors → server log; onRequestError for server errors; global-error.tsx exists; copy no longer claims a delivery it cannot promise |
 | Dashboard has no dark mode; duplicate navigation | Medium | Phase 6 |
@@ -2263,8 +2703,9 @@ is unbuilt work (Phase 8, Phase 9) and a few standing hygiene/process items.
 | ~~Order-dependent numeric-grading / OTP-resend failures~~ | ~~Medium~~ | **RESOLVED** — not order-dependence. The scratch database was behind the code; migrated, both pass in the full suite. Passing in isolation had hidden it |
 | BUG-10: stale-database failures present as "passes alone, fails in suite" | Low | **PROCESS** — a now-fixed instance of this, kept as a rule: do not reach for test ordering when a test passes alone and fails in a suite. Check the schema version first |
 | ~~BUG-11: `PUT /colleges/{ref}` answered 200 for a field it never wrote~~ | ~~High~~ | **FIXED** — `accreditation_nba` was on the column and the response model but on neither request schema, so the admin form's control saved nothing. Found by replaying the form's real body against the real route, not by a unit test; the round trip is now asserted |
-| ~~BUG-12: pooled connections silently lost `search_path` on reuse~~ | ~~Critical~~ | **FIXED** — the `connect` listener's `SET` ran inside psycopg2's implicit transaction and the pool's ROLLBACK reverted it, so only a connection's *first* checkout had the configured schema. With `PADHAANEWALA_SCHEMA` set, reads and writes landed in `public` from the second checkout onward. Now set under autocommit; 3 regression tests in `tests/test_database_schema.py`, each verified to fail with the fix reverted |
-| 4.6 MB duplicated agent-skill bundles | Low | Hygiene |
+| ~~4.6 MB duplicated agent-skill bundles~~ | ~~Low~~ | **DECLINED** — offered 4 Oct, the owner chose to keep them; closed as won't-do rather than left open |
+| ~~`data/` cleanup~~ | ~~Low~~ | **DECLINED** — offered 4 Oct and declined with the skill bundles. `Padhaanewala_Data.xlsx` is still a PDF wearing an `.xlsx` extension; the underlying question (an admin-panel PDF upload path) is a product decision |
+| ~~BUG-13: a pooled connection reverts to the `public` schema~~ | ~~High~~ | **FIXED** — the `SET search_path` ran inside the transaction the pool rolls back, so rollback-only connections wrote to the wrong schema. It surfaces as `Could not refresh instance` and as test users in `public.users`, and only appears once the live Redis tests run — i.e. in CI. The statement now runs under autocommit so no transaction is ever opened for it; 3 regression tests in `tests/test_database_schema.py`, each verified to fail with the fix reverted |
 | Local development database sits behind the migration head | Low | **PROCESS** — the developer schema was at `b7c3d91e5a20` while the code was at `9f3c2a7e8d21`, which is what produced the "order-dependent" failures. Run `alembic upgrade head` after pulling migrations |
 | **Schema isolation depends on `search_path` surviving pool reuse** | **Medium** | **PROCESS** — BUG-12 is fixed, but the failure mode is invisible to `alembic current` and returns if the `connect` listener's statement is ever moved back inside a transaction. The three tests in `tests/test_database_schema.py` are the only guard; treat them as load-bearing rather than incidental |
 
@@ -2275,10 +2716,15 @@ is unbuilt work (Phase 8, Phase 9) and a few standing hygiene/process items.
 This pass did two unrelated things: it finished the admin console's role
 management, and in the course of establishing a trustworthy test baseline it
 found that **48 backend failures and one root cause had been sitting in plain
-sight the whole time.** The role-management work is summarised at the end; BUG-12
+sight the whole time.** The role-management work is summarised at the end; BUG-13
 is the finding that matters.
 
-## BUG-12 - pooled connections silently lost `search_path` on reuse 🔴 CRITICAL - **FIXED**
+## BUG-13 - a pooled connection silently lost `search_path` on reuse 🔴 CRITICAL - **FIXED**
+
+> Numbering note: this section and the register's own BUG-13 entry were written
+> independently on `develop` and `main` and collided on merge. They are the same
+> defect, so they are one bug with one number — the `main` register's BUG-13. The
+> `X-Real-IP` finding below, which only `develop` had, is therefore BUG-14.
 
 ### What it was
 
@@ -2453,7 +2899,7 @@ convenience" for that reason, because it otherwise reads as removable noise.
 
 ## Also completed in this pass
 
-Admin console role management, on top of a baseline established by fixing BUG-12:
+Admin console role management, on top of a baseline established by fixing BUG-13:
 
 - `GET /api/v1/users` returns `{items,total,limit,offset}` with server-side
   `search` (email, mobile, `StudentProfile.name`), `role`, `is_active`,
@@ -2472,7 +2918,7 @@ Admin console role management, on top of a baseline established by fixing BUG-12
   a `reloadKey`; `lib/user-roles.ts` holds the tested role/page logic.
 
 Full-suite diff against a stashed baseline confirmed **zero new failures** from
-this work — the only failures present were the 48 that turned out to be BUG-12.
+this work — the only failures present were the 48 that turned out to be BUG-13.
 
 | Check | Result |
 |---|---|
@@ -2492,7 +2938,7 @@ stub respectively.
 `frontend/frontend/components/home/SearchBar.tsx` was already modified in the
 working tree before this pass and was deliberately not touched.
 
-### BUG-13 - `X-Real-IP` was trusted outside the proxy gate 🔴 HIGH - **FIXED**
+### BUG-14 - `X-Real-IP` was trusted outside the proxy gate 🔴 HIGH - **FIXED**
 
 Found while verifying whether the risk table's open `Client-controlled ip_address`
 row was still accurate. It was not stale, and it was worse than the row said.

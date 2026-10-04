@@ -2,7 +2,7 @@ import type { MetadataRoute } from "next";
 import { SITE_URL } from "@/lib/site";
 import { resolveSlugs } from "@/lib/content";
 import { LEGAL_NAV } from "@/lib/legal";
-import { SITEMAP_PAGES, SITEMAP_SLUG_SECTIONS, isBetaHidden, type ChangeFrequency } from "@/lib/nav";
+import { SITEMAP_PAGES, SITEMAP_SLUG_SECTIONS, isBetaHidden, isNoindex, type ChangeFrequency } from "@/lib/nav";
 
 export const revalidate = 3600;
 
@@ -12,13 +12,15 @@ export const revalidate = 3600;
  * without a code change, and de-listing a route is a one-line change in
  * `lib/nav.ts` rather than an edit here.
  *
- * Both sources are filtered through `isBetaHidden`. The filter is applied at read
- * time rather than trusted to the manifest being kept in sync, because a route
- * left in the sitemap while absent from every menu is exactly the drift this
- * module exists to prevent.
+ * Every source is filtered through both `isBetaHidden` and `isNoindex`. The
+ * filters are applied at read time rather than trusted to the manifest being kept
+ * in sync, because a route left in the sitemap while carrying `noindex` is a
+ * direct contradiction — the sitemap says "index this" and the page says "do
+ * not" — and `/login` shipped exactly that way.
  */
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const now = new Date().toISOString();
+  const excluded = (path: string) => isBetaHidden(path) || isNoindex(path);
 
   const slugsBySection = new Map<string, string[]>();
   await Promise.all(
@@ -34,14 +36,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority,
   });
 
-  const staticPages = SITEMAP_PAGES.filter((p) => !isBetaHidden(p.path)).map((p) =>
+  const staticPages = SITEMAP_PAGES.filter((p) => !excluded(p.path)).map((p) =>
     page(p.path, p.changeFrequency, p.priority),
   );
 
   const detailPages = SITEMAP_SLUG_SECTIONS.flatMap(({ section, pathPrefix, changeFrequency, priority }) =>
     (slugsBySection.get(section) ?? [])
       .map((slug) => `${pathPrefix}/${slug}`)
-      .filter((path) => !isBetaHidden(path))
+      .filter((path) => !excluded(path))
       .map((path) => page(path, changeFrequency, priority)),
   );
 
@@ -50,7 +52,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...detailPages,
     // Legal documents are driven by the same registry as /legal/[slug], so a
     // new document appears here without a second edit.
-    ...LEGAL_NAV.filter((entry) => !isBetaHidden(entry.href)).map((entry) =>
+    ...LEGAL_NAV.filter((entry) => !excluded(entry.href)).map((entry) =>
       page(entry.href, "yearly", 0.2),
     ),
     // /dashboard and /admin are intentionally absent — both are noindex, and

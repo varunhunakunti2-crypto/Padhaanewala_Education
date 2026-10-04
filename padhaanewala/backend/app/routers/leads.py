@@ -1,6 +1,6 @@
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
@@ -20,6 +20,7 @@ from app.schemas.engagement import (
     UpdateLeadStatusRequest,
 )
 from app.services.lead_handoff import CLOSED_LEAD_STATUSES
+from app.utils import audit
 
 router = APIRouter(prefix="/api/v1/leads", tags=["leads"])
 
@@ -209,12 +210,19 @@ def update_lead_status(
 def assign_lead(
     enquiry_id: int,
     payload: AssignLeadRequest,
+    request: Request,
     db: Session = Depends(get_db),
+    user: User = Depends(require_role(*ADMIN_ROLES)),
 ):
     enquiry = db.get(Enquiry, enquiry_id)
     if enquiry is None:
         raise HTTPException(status_code=404, detail="Lead not found")
 
+    # 4.4 — a reassignment without the "from" side cannot answer who dropped a
+    # lead, so the previous holder is read before the branch below overwrites
+    # it, and the row is only written once every refusal on this path (404,
+    # 409) has already passed: a move that never happened leaves no trail.
+    previous_counsellor_id = enquiry.assigned_counsellor_id
     if payload.counsellor_id is not None:
         counsellor = db.get(Counsellor, payload.counsellor_id)
         if counsellor is None or not counsellor.is_active:
@@ -241,6 +249,16 @@ def assign_lead(
     else:
         enquiry.assigned_counsellor_id = None
 
+    audit.record(
+        db,
+        request=request,
+        action="assign_lead",
+        entity_type="enquiry",
+        entity_id=enquiry.id,
+        actor=user,
+        old_value={"assigned_counsellor_id": previous_counsellor_id},
+        new_value={"assigned_counsellor_id": enquiry.assigned_counsellor_id},
+    )
     db.commit()
     return _to_detail(_get_enquiry(db, enquiry_id))
 

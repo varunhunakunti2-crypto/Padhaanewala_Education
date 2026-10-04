@@ -273,11 +273,74 @@ export function mapFaqs(rows: ApiFaq[]): Faq[] {
 
 /* ----------------------------- admission ----------------------------- */
 
-export function deriveAdmissionStatus(detail: ApiCollegeDetail): AdmissionStatus {
-  // Without an explicit status column we infer from published application dates.
-  const start = detail.courses.length ? null : null;
-  void start;
+/**
+ * Derive the admission status from the college's published application windows.
+ *
+ * This used to be a stub that ignored its argument and returned `"upcoming"`
+ * unconditionally — including a line that assigned
+ * `detail.courses.length ? null : null`, which cannot be anything but null.
+ * Because the result is what `lib/data/index.ts` filters on and what the college
+ * card renders, every college claimed to have upcoming admissions and filtering
+ * the list by "open" or "closed" returned nothing at all.
+ *
+ * The dates live on the admission rows, not on the college, so the signature
+ * takes those rather than the detail. `now` is injectable so this is testable
+ * without freezing the clock.
+ *
+ * Colleges that have published no dates are reported as `"upcoming"` rather than
+ * `"closed"`. Absence of a deadline is not evidence that admissions have shut,
+ * and a card claiming "closed" for a college that never published dates would be
+ * a worse lie than the old one.
+ *
+ * The argument is structural rather than `ApiAdmission`: the detail path hands
+ * over full admission rows, while `/colleges` returns a trimmed window that is
+ * two dates and an entrance exam. Both carry the two fields this reads, and
+ * taking the narrower type is what stopped `mapCollegeListItem` passing `[]` --
+ * which made every list row report `"upcoming"` and the status filter on a list
+ * page match nothing at all.
+ */
+
+/** The only two fields the derivation reads. */
+export interface AdmissionWindowLike {
+  application_start_date?: string | null;
+  application_end_date?: string | null;
+}
+export function deriveAdmissionStatus(
+  admissions: readonly AdmissionWindowLike[],
+  now: Date = new Date(),
+): AdmissionStatus {
+  let sawWindow = false;
+  let sawFuture = false;
+
+  for (const admission of admissions ?? []) {
+    const start = toDate(admission?.application_start_date);
+    const end = toDate(admission?.application_end_date);
+    // A row with neither bound carries no information about the window.
+    if (!start && !end) continue;
+    sawWindow = true;
+
+    // An absent bound means "unbounded on that side": an end date alone means it
+    // is open until then, a start date alone means it closed when it began.
+    const started = start ? start.getTime() <= now.getTime() : true;
+    const notEnded = end ? end.getTime() >= now.getTime() : false;
+
+    if (started && notEnded) return "open";
+    // A window that has not opened yet is neither open nor shut. Collapsing it
+    // into "closed" is what made a college with a December intake read as
+    // "admissions closed" for most of the year.
+    if (!started) sawFuture = true;
+  }
+
+  if (sawFuture) return "upcoming";
+  if (sawWindow) return "closed";
   return "upcoming";
+}
+
+/** Parse an API date, returning null for absent or unparseable values. */
+function toDate(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
 function mapAdmission(
@@ -398,7 +461,7 @@ export function mapCollege(bundle: ApiCollegeBundle): College {
     district: "",
     state: text(detail.state),
     university: text(detail.university_name),
-    admissionStatus: deriveAdmissionStatus(detail),
+    admissionStatus: deriveAdmissionStatus(admissions),
     pincode: text(detail.pincode),
     rating: avgRating,
     reviewCount,
@@ -421,8 +484,12 @@ export function mapCollege(bundle: ApiCollegeBundle): College {
  * enrichment fan-out is skipped — listing 10 colleges must not fire 90 requests.
  */
 export function mapCollegeListItem(item: ApiCollegeListItem): College {
+  // Pulled out before the spread: the windows are the list projection's own
+  // shape, not a field on `ApiCollegeDetail`, and leaving them in the detail
+  // object would have them masquerading as the full admission rows.
+  const { admissions: windows, ...rest } = item;
   const detail: ApiCollegeDetail = {
-    ...item,
+    ...rest,
     official_name: null,
     address: null,
     pincode: null,
@@ -442,7 +509,7 @@ export function mapCollegeListItem(item: ApiCollegeListItem): College {
     courses: [],
   };
 
-  return mapCollege({
+  const college = mapCollege({
     detail,
     placements: [],
     cutoffs: [],
@@ -451,9 +518,14 @@ export function mapCollegeListItem(item: ApiCollegeListItem): College {
     reviews: [],
     fees: [],
     seats: [],
+    // The card's admissions *section* still comes from the detail fan-out, and
+    // listing 10 colleges must not fire 90 requests to fill it. The status is
+    // different: one field that both the card and the filter key off, and the
+    // list projection now carries enough to compute it correctly.
     admissions: [],
     faqs: [],
   });
+  return { ...college, admissionStatus: deriveAdmissionStatus(windows ?? []) };
 }
 
 /* -------------------------------- exam ------------------------------- */
@@ -616,6 +688,11 @@ export function mapBlogPost(api: ApiBlog): BlogPost {
     readTime: `${Math.max(1, Math.round(wordCount / 200))} min read`,
     tags: [mapBlogCategory(api.category_name)],
     featured: Boolean(api.is_featured),
+    // Preserved rather than dropped. `undefined` when blank, so the page can
+    // fall back to the title/excerpt instead of rendering an empty meta tag.
+    metaTitle: text(api.meta_title) || undefined,
+    metaDescription: text(api.meta_description) || undefined,
+    canonicalUrl: text(api.canonical_url) || undefined,
   };
 }
 

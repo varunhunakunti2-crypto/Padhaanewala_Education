@@ -27,6 +27,7 @@ def _register(email: str) -> dict:
             "email": email,
             "mobile": _unique_mobile(),
             "password": "SecurePass123!",
+            "age_band": "18_plus",
         },
     )
     assert response.status_code == 201, response.text
@@ -413,6 +414,49 @@ def test_notification_read_all_admin_only(student):
         headers={"Authorization": f"Bearer {student['token']}"},
     )
     assert created.status_code == 403
+
+
+def test_admin_can_list_notifications_across_accounts(student, admin_token):
+    """`GET /notifications` is the admin console's read path.
+
+    It did not exist. `NotificationsSection` called it, got a 404, and rendered
+    "Could not reach the API" — a panel that looks like an outage rather than a
+    missing route. `/my` is not a substitute because it is self-scoped, so an
+    admin using it would see their own rows and read an empty list as "no
+    notifications exist".
+    """
+    student_id = int(
+        jwt.decode(student["token"], options={"verify_signature": False})["sub"]
+    )
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    created = client.post(
+        "/api/v1/notifications",
+        json={"user_id": student_id, "type": "admission", "title": "For the student"},
+        headers=admin_headers,
+    )
+    assert created.status_code == 201, created.text
+
+    listing = client.get("/api/v1/notifications", headers=admin_headers)
+    assert listing.status_code == 200, listing.text
+    # `POST /notifications` answers with a broadcast result rather than a bare
+    # row, so the new id comes off `recipients[0]` — see
+    # `test_notification_flow` above, which asserts the shape in full.
+    created_id = created.json()["recipients"][0]["id"]
+    assert any(n["id"] == created_id for n in listing.json())
+    # The whole point of the route: rows belonging to someone other than the
+    # caller are visible.
+    assert any(n["user_id"] == student_id for n in listing.json())
+
+    # Capped, like every other list route in the API.
+    over = client.get("/api/v1/notifications?limit=100000", headers=admin_headers)
+    assert over.status_code == 422
+
+
+def test_admin_notification_listing_is_not_reachable_by_students(student):
+    headers = {"Authorization": f"Bearer {student['token']}"}
+    assert client.get("/api/v1/notifications", headers=headers).status_code == 403
+    assert client.get("/api/v1/notifications").status_code == 401
 
 
 # ---------- Audit logs ----------

@@ -54,6 +54,7 @@ def _register(prefix: str) -> dict:
         "email": _unique(prefix),
         "mobile": _unique_mobile(),
         "password": PASSWORD,
+        "age_band": "18_plus",
     }
     response = client.post("/api/v1/auth/register", json=payload)
     assert response.status_code == 201, response.text

@@ -31,9 +31,16 @@
  *    (app/api/ai/route.ts) and falls back to canned replies when
  *    OPENAI_API_KEY is unset. The route is unlisted in the page manifest
  *    (lib/nav.ts) pending the rate limit and input cap in Phase 4.
- *  - There is no age gate and no parental-consent mechanism. Phase 9.
- *  - There is no in-product data export or account-deletion flow, so the rights
- *    section describes a manual process rather than claiming a button exists.
+ *  - There is an age gate and a parental-consent mechanism (Phase 9.1).
+ *    Registration and the admission enquiry both require an `age_band`, the
+ *    account gate blocks a logged-in user whose band is unanswered, and a user
+ *    under 18 cannot have personal data written to their account until a parent
+ *    or guardian confirms by an OTP sent to a number or address the child does
+ *    not control. Backend: `/api/v1/compliance/*` and
+ *    `require_processing_consent`. Frontend: `components/compliance/AgeGate.tsx`.
+ *  - There is still no in-product data export or account-deletion flow, so the
+ *    rights section describes a manual process rather than claiming a button
+ *    exists.
  */
 
 import { SITE } from "@/lib/site";
@@ -305,7 +312,7 @@ export const LEGAL_DOCS: readonly LegalDoc[] = [
             "We require that anyone using the service is either at least 18 years old, or at least 16 years old and using it with the involvement and consent of a parent or legal guardian. We are required to obtain verifiable parental consent before processing the personal data of a user known to be under 18, and to stop processing it if we learn we cannot obtain that consent.",
           ),
           note(
-            "We should be candid that as of this version of the policy the product has no age-verification step and no parental-consent record, so we cannot currently demonstrate that this requirement is met in every case. We are building that check. Until it ships, if you are under 16, please do not create an account, and if you are 16 or 17, please ask a parent or guardian to contact us before you do.",
+            "How we do it: the signup form and the admission enquiry each ask whether you are under 18, and we record the answer rather than a date of birth. If you are under 18, we send a one-time code to a parent's or guardian's mobile number or email address, and nothing is saved to your account until they enter it. A child cannot supply that code themselves, which is what makes the consent verifiable rather than merely asserted. You can withdraw it at any time and we stop processing immediately.",
           ),
           p(
             "If you believe a child has given us personal data without valid consent, contact us and we will delete it.",
@@ -351,7 +358,7 @@ export const LEGAL_DOCS: readonly LegalDoc[] = [
   // Every entry below is checkable against the code. The header comment of this
   // file records the current-state facts the copy depends on, and those are the
   // same facts this notice has to state honestly — including the two that are
-  // not yet true of the product (no age gate, no self-service export).
+  // not yet true of the product (no self-service export or deletion).
   {
     slug: "dpdp-notice",
     title: "Notice on Personal Data",
@@ -481,12 +488,13 @@ export const LEGAL_DOCS: readonly LegalDoc[] = [
             "Where we rely on your consent, you may withdraw it at any time. Withdrawing consent does not affect processing that was lawful before you withdrew it.",
           ),
           ul(
-            `To withdraw consent, or to ask us to stop processing, delete your data, or exercise any other right under the DPDP Act, email ${SITE.email} with the subject line “Data rights request”. We aim to acknowledge within 7 days and to complete the request within 30 days. We may ask you to confirm you are the account holder before we act.`,
+            `To withdraw consent, or to ask us to stop processing, delete your data, or exercise any other right under the DPDP Act, email ${SITE.email} with the subject line “Data rights request”. Every such request is logged with a statutory deadline of 90 days from the day we receive it, and our case queue is ordered by that deadline rather than by when the request arrived. We aim to acknowledge sooner and to finish well inside it. We may ask you to confirm you are the account holder before we act.`,
             `To complain, email ${SITE.email} with the subject line “Grievance”. Our Grievance Redressal page explains the full process, the response window, and how to escalate to the National Consumer Helpline on 1915 if you are not satisfied.`,
             `If you are not satisfied with our response, you are not required to approach us first. The Data Protection Board of India and the appropriate consumer forum are both available to you.`,
+            `To stop us processing your data because you are under 18, you do not need to email anyone: withdraw parental consent from the “Privacy and data” panel in your dashboard, and it takes effect immediately.`,
           ),
           note(
-            "To be straight with you about the current state of the product: there is no in-app button to download or delete your account, so requests are handled by our team manually, and there is no age-verification step. We would rather state that plainly than describe a self-service process that does not exist. We intend to add both.",
+            "To be straight with you about the current state of the product: there is no in-app button to export or delete your account, so those requests are handled by our team from the email above. We would rather state that plainly than describe a self-service process that does not exist.",
           ),
         ],
       },

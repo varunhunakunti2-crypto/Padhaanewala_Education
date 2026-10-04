@@ -169,6 +169,7 @@ def record_blog_view(blog_ref: str, db: Session = Depends(get_db)):
 )
 def create_blog(
     payload: BlogCreate,
+    request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -191,6 +192,20 @@ def create_blog(
         is_featured=payload.is_featured,
     )
     db.add(blog)
+    # 4.4 — the update and delete paths were already audited, so a blog that
+    # only ever existed could not be traced back to whoever created it.
+    # Flushed first so `blog.id` can be stamped on the row, and written after
+    # the slug check, so a refused create leaves no phantom entry.
+    db.flush()
+    audit.record(
+        db,
+        request=request,
+        action="create_blog",
+        entity_type="blog",
+        entity_id=blog.id,
+        actor=user,
+        new_value=payload.model_dump(),
+    )
     db.commit()
     db.refresh(blog)
     return _to_blog_response(db, blog)

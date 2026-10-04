@@ -24,6 +24,7 @@ import {
   resolveCourseId,
   resolveStateId,
   submitEnquiry,
+  type AgeBand,
 } from "@/lib/api";
 
 /**
@@ -115,6 +116,10 @@ const INITIAL = {
   city: "",
   qualification: "",
   message: "",
+  // Parent's mobile or email. Sent as `guardian_contact`, and only when the
+  // student is under 18 — `EnquiryCreate.require_guardian_for_minors` refuses
+  // the whole enquiry without it in that case.
+  guardian: "",
 };
 
 export function AdmissionForm({ compact = false }: { compact?: boolean }) {
@@ -123,6 +128,11 @@ export function AdmissionForm({ compact = false }: { compact?: boolean }) {
   const [submitted, setSubmitted] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
+  // Not part of `form` because it is a closed choice rather than free text, and
+  // because it must stay `""` until answered: `EnquiryCreate.age_band` has no
+  // server-side default, so an empty value is caught here rather than as a 422
+  // the user cannot act on.
+  const [ageBand, setAgeBand] = useState<AgeBand | "">("");
 
   // `useCallback` keeps these references stable so `useOptions` does not tear
   // down and re-run its effect on every render, which would refetch in a loop.
@@ -152,6 +162,17 @@ export function AdmissionForm({ compact = false }: { compact?: boolean }) {
     if (form.email && !/^\S+@\S+\.\S+$/.test(form.email)) e.email = "Enter a valid email";
     if (!form.course) e.course = "Select or type a course";
     if (!form.state) e.state = "Select or type your state";
+    if (ageBand === "") e.age = "Tell us whether you are under 18";
+    // Mirrors `EnquiryCreate.require_guardian_for_minors` exactly: the field is
+    // optional for an adult and required for a minor, and the backend wants a
+    // mobile or an email — not a name, which is already on the form.
+    if (ageBand === "under_18") {
+      const g = form.guardian.trim();
+      const isEmail = /^\S+@\S+\.\S+$/.test(g);
+      const isMobile = /^[6-9]\d{9}$/.test(g.replace(/\D/g, "").replace(/^91/, ""));
+      if (!g) e.guardian = "A parent's or guardian's mobile number or email is required";
+      else if (!isEmail && !isMobile) e.guardian = "Enter a valid mobile number or email";
+    }
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -160,6 +181,10 @@ export function AdmissionForm({ compact = false }: { compact?: boolean }) {
     ev.preventDefault();
     if (submitting) return;
     if (!validate()) return;
+    // Unreachable — `validate` rejects an unanswered band — but it narrows the
+    // type so the payload cannot be built from `""`, and it does so without
+    // defaulting to adult.
+    if (ageBand === "") return;
 
     setSubmitting(true);
     try {
@@ -190,9 +215,15 @@ export function AdmissionForm({ compact = false }: { compact?: boolean }) {
         source: "website_admission_form",
         source_url: typeof window !== "undefined" ? window.location.href : undefined,
         device_type: typeof navigator !== "undefined" && navigator.userAgent.includes("Mobi") ? "mobile" : "desktop",
+        age_band: ageBand,
+        // Only for a minor, and only the contact — never a name. The counsellor
+        // already has the student's own mobile; this is the number whose holder
+        // can authorise processing of a child's data.
+        guardian_contact: ageBand === "under_18" ? form.guardian.trim() : null,
       });
       addEnquiry(form);
       setForm(INITIAL);
+      setAgeBand("");
       setSubmitted(true);
       window.setTimeout(() => setSubmitted(false), 4000);
       showToast({ variant: "success", title: "Thank you.", description: "Our counsellor will contact you." });
@@ -331,6 +362,65 @@ export function AdmissionForm({ compact = false }: { compact?: boolean }) {
           <option>Master&apos;s degree</option>
         </Select>
       </div>
+
+      <fieldset className="space-y-1.5 sm:col-span-2">
+        <legend className="text-sm font-medium text-gray-700">Are you under 18? *</legend>
+        <p className="text-xs text-gray-500">
+          Indian law treats personal data of a person under 18 differently, so we
+          ask only this and never your date of birth.
+        </p>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {(
+            [
+              { value: "18_plus" as AgeBand, label: "I am 18 or older" },
+              { value: "under_18" as AgeBand, label: "I am under 18" },
+            ]
+          ).map((option) => (
+            <label
+              key={option.value}
+              className={`flex cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-2.5 text-sm transition ${
+                ageBand === option.value
+                  ? "border-purple-400 bg-purple-50 text-purple-900"
+                  : "border-slate-200 text-gray-700 hover:border-purple-300"
+              }`}
+            >
+              <input
+                type="radio"
+                name="enq-age"
+                value={option.value}
+                checked={ageBand === option.value}
+                onChange={() => {
+                  setAgeBand(option.value);
+                  setErrors((e) => ({ ...e, age: "" }));
+                }}
+                className="h-4 w-4 border-gray-300 accent-purple-600"
+              />
+              {option.label}
+            </label>
+          ))}
+        </div>
+        {errors.age && <p className="text-xs text-red-600">{errors.age}</p>}
+      </fieldset>
+
+      {ageBand === "under_18" && (
+        <div className="space-y-1.5 sm:col-span-2">
+          <Label htmlFor="enq-guardian" className="flex items-center gap-1.5">
+            <Phone className="h-3.5 w-3.5 text-purple-500" /> Parent or guardian mobile or email *
+          </Label>
+          <Input
+            id="enq-guardian"
+            value={form.guardian}
+            onChange={set("guardian")}
+            placeholder="e.g. 98765 43210 or parent@example.com"
+            error={!!errors.guardian}
+          />
+          <p className="text-xs text-gray-500">
+            We contact them to confirm before we keep anything about you. Nothing
+            is saved to your enquiry until they agree.
+          </p>
+          {errors.guardian && <p className="text-xs text-red-600">{errors.guardian}</p>}
+        </div>
+      )}
 
       <div className="space-y-1.5 sm:col-span-2">
         <Label htmlFor="enq-message">Message (optional)</Label>

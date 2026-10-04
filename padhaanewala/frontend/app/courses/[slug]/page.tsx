@@ -20,7 +20,8 @@ import {
 } from "@/lib/data/courses";
 import { resolveColleges, resolveCourse, resolveCourses, resolveSlugs } from "@/lib/content";
 import { formatINR } from "@/lib/utils";
-import { absoluteUrl } from "@/lib/site";
+import { JsonLd } from "@/components/seo/JsonLd";
+import { breadcrumbLd, ldGraph, ogImage, pageMetadata } from "@/lib/seo";
 import { Badge } from "@/components/ui/Badge";
 import { ButtonLink } from "@/components/ui/Button";
 import { SectionHeading } from "@/components/ui/SectionHeading";
@@ -42,12 +43,21 @@ export async function generateStaticParams() {
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params;
   const { data: course } = await resolveCourse(slug);
-  if (!course) return { title: "Course not found" };
-  return {
+  if (!course) {
+    return pageMetadata({
+      title: "Course not found",
+      description: "This course is not in the padhaanewala catalogue.",
+      path: `/courses/${slug}`,
+      noindex: true,
+    });
+  }
+  return pageMetadata({
     title: `${course.name} — Course Details`,
     description: course.description,
-    alternates: { canonical: absoluteUrl(`/courses/${course.slug}`) },
-  };
+    path: `/courses/${course.slug}`,
+    type: "article",
+    image: ogImage(`${course.name} — duration, fees and eligibility`),
+  });
 }
 
 function FaqList({ faqs }: { faqs: { q: string; a: string }[] }) {
@@ -78,8 +88,26 @@ export default async function CourseDetailPage({ params }: PageProps) {
   const colleges = collegesOffering(slug, collegeDataset, catalog).slice(0, 6);
   const related = getRelatedCourses(slug, catalog);
 
+  /**
+   * Breadcrumb only. `courseLd()` takes a `Course` — the record embedded in a
+   * college profile, which carries a `specialization` and a per-year fee. This
+   * route resolves a `CourseMeta` (a catalogue row: name, level, duration, one
+   * averaged fee) and a `CourseDetailMeta`, and neither is that shape. Emitting
+   * a `Course` node from a partial object would mean asserting fields the
+   * database never sent, which is the failure mode structured data exists to
+   * avoid, so the node is left off until the resolver returns a real `Course`.
+   */
+  const jsonLd = ldGraph([
+    breadcrumbLd([
+      { name: "Home", path: "/" },
+      { name: "Courses", path: "/courses" },
+      { name: course.name, path: `/courses/${course.slug}` },
+    ]),
+  ]);
+
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 lg:py-12">
+      <JsonLd data={jsonLd} />
       <nav className="mb-5 flex items-center gap-1.5 text-xs text-slate-400">
         <Link href="/" className="hover:text-purple-700">Home</Link>
         <ChevronRight className="h-3.5 w-3.5" />

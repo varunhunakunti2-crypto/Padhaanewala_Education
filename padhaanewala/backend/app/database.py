@@ -59,11 +59,11 @@ def _set_search_path(dbapi_connection, connection_record) -> None:
 
     # AUTOCOMMIT is load-bearing, not a convenience. psycopg2 opens an implicit
     # transaction for any statement, and `QueuePool` issues ROLLBACK when a
-    # connection is returned. A plain `SET` therefore lives inside that implicit
-    # transaction, and the rollback silently reverts `search_path` to the server
-    # default. Only the *first* checkout of a given connection ever saw the
-    # configured schema; from the second checkout onward that connection resolved
-    # unqualified table names against `public`.
+    # connection is returned (`pool_reset_on_return='rollback'`). A plain `SET`
+    # therefore lives inside that implicit transaction, and the rollback silently
+    # reverts `search_path` to the server default. Only the *first* checkout of a
+    # given connection ever saw the configured schema; from the second checkout
+    # onward that connection resolved unqualified table names against `public`.
     #
     # With no schema configured the reverted value is still effectively `public`,
     # which is why this stayed invisible outside the test suite. With
@@ -71,7 +71,19 @@ def _set_search_path(dbapi_connection, connection_record) -> None:
     # pool began reusing connections — reads and writes started landing in the
     # wrong schema, and because the pool hands out whichever connection is idle,
     # the breakage looked like nondeterministic, order-dependent test failures
-    # rather than the configuration fault it was.
+    # rather than the configuration fault it was. The concrete symptoms are
+    # `Could not refresh instance` in the suite (the row was committed in the
+    # scratch schema while the session was reading `public`) and test users
+    # landing in `public.users`.
+    #
+    # Running the statement under autocommit rather than issuing an explicit
+    # `commit()` afterwards achieves the same thing -- `SET` without `LOCAL` is
+    # session state, and once no transaction is open there is nothing for the
+    # pool's ROLLBACK to undo. Autocommit is preferred because it never opens the
+    # transaction in the first place, so there is no window in which a failure
+    # partway through could leave one dangling. `tests/test_database_schema.py`
+    # pins both directions: the setting must survive a return-to-pool, and it
+    # must not leak across connections.
     previous_autocommit = dbapi_connection.autocommit
     dbapi_connection.autocommit = True
     try:
