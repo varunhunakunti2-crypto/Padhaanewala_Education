@@ -235,7 +235,13 @@ export async function resolveSlugs(
     case "mock-tests": {
       const rows = await getMockTests();
       if (rows.length) return cap(rows.map((r) => r.slug));
-      return MOCK_TESTS.map((t) => t.slug);
+      // `cap` applies here too. This branch used to return the whole local
+      // catalogue regardless of `limit`, so a caller that capped the list to
+      // keep `generateStaticParams` inside the build budget — which is the
+      // entire reason `limit` exists — got an uncapped one whenever the API
+      // was empty. Found by `tests/content.test.ts`, which is exactly the case
+      // a limit is written for.
+      return cap(MOCK_TESTS.map((t) => t.slug));
     }
   }
 }
