@@ -1,7 +1,6 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { formatINR } from "@/lib/utils";
-import { absoluteUrl } from "@/lib/site";
 import { resolveCollege, resolveColleges, resolveSlugs } from "@/lib/content";
 import { getSimilarColleges } from "@/lib/data/colleges";
 import { JsonLd } from "@/components/seo/JsonLd";

@@ -15,7 +15,7 @@ import {
   organizationLd,
   webSiteLd,
 } from "@/lib/seo";
-import { SITE, SITE_LOGO_PATH, SITE_THEME_COLOR, SITE_URL } from "@/lib/site";
+import { SITE, SITE_THEME_COLOR, SITE_URL } from "@/lib/site";
 
 const inter = Inter({
   variable: "--font-inter",
