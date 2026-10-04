@@ -57,6 +57,17 @@ def _set_search_path(dbapi_connection, connection_record) -> None:
         cursor.execute(
             f'SET search_path TO "{SCHEMA}", public' if SCHEMA else "SET search_path TO public"
         )
+    # Commit the implicit transaction psycopg2 opened for the statement above.
+    # `SET` executed *inside* a transaction is transaction-scoped: it is undone
+    # by the next ROLLBACK, and the pool issues exactly that when a connection
+    # is returned (`pool_reset_on_return='rollback'`). A connection whose only
+    # use was a request that ended without committing therefore went back into
+    # the pool pointing at `public`, and the next request to draw it read and
+    # wrote the wrong schema -- visible in the suite as `Could not refresh
+    # instance` (the row was committed elsewhere) and in the database as test
+    # users landing in `public.users`. Committing first makes the setting
+    # session state, which is what `SET` was always meant to be.
+    dbapi_connection.commit()
 
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
