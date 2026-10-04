@@ -209,6 +209,7 @@ def moderate_review(
 @router.delete("/{review_id}", status_code=204)
 def delete_review(
     review_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(require_role(*ADMIN_ROLES)),
 ):
@@ -216,6 +217,24 @@ def delete_review(
     if review is None:
         raise HTTPException(status_code=404, detail="Review not found")
     college_id = review.college_id
+    # 4.4/4.5 — moderation was audited but the harder action was not: an admin
+    # destroying a review left no row saying who did it or what the review said.
+    # Captured before the delete so the text is on the trail after it is gone.
+    audit.record(
+        db,
+        request=request,
+        action="delete_review",
+        entity_type="review",
+        entity_id=review.id,
+        actor=user,
+        old_value={
+            "college_id": review.college_id,
+            "student_id": review.student_id,
+            "rating": review.rating,
+            "status": review.status,
+            "review_text": review.review_text,
+        },
+    )
     db.delete(review)
     db.commit()
     _recalc_rating(db, college_id)

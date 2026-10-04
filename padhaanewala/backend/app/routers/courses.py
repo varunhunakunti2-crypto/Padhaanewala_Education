@@ -1,14 +1,15 @@
 ﻿import re
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import require_role
-from app.models import CollegeCourse, Course
+from app.models import CollegeCourse, Course, User
 from app.schemas.catalog import CourseCreate, CourseResponse, CourseUpdate
 from app.roles import ADMIN_ROLES, CONTENT_ROLES
+from app.utils import audit
 
 router = APIRouter(prefix="/api/v1/courses", tags=["courses"])
 
@@ -102,12 +103,31 @@ def _find_course(db: Session, ref: str) -> Course | None:
     status_code=201,
     dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
-def create_course(payload: CourseCreate, db: Session = Depends(get_db)):
+def create_course(
+    payload: CourseCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(*CONTENT_ROLES)),
+):
     slug = _slugify(payload.name)
     if db.scalar(select(Course).where(Course.slug == slug)):
         raise HTTPException(status_code=400, detail="Course with this name exists")
     course = Course(**payload.model_dump(exclude={"name"}), name=payload.name, slug=slug)
     db.add(course)
+    # 4.4 — course create/update/delete carried no audit trail at all, so the
+    # catalog could be rewritten with no record of who did it. Flushed first so
+    # `course.id` exists to stamp on the row, and written after the slug check
+    # so a refused create leaves no phantom entry.
+    db.flush()
+    audit.record(
+        db,
+        request=request,
+        action="create_course",
+        entity_type="course",
+        entity_id=course.id,
+        actor=user,
+        new_value=payload.model_dump(),
+    )
     db.commit()
     db.refresh(course)
     return course
@@ -119,13 +139,21 @@ def create_course(payload: CourseCreate, db: Session = Depends(get_db)):
     dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def update_course(
-    course_ref: str, payload: CourseUpdate, db: Session = Depends(get_db)
+    course_ref: str,
+    payload: CourseUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(*CONTENT_ROLES)),
 ):
     course = _find_course(db, course_ref)
     if course is None:
         raise HTTPException(status_code=404, detail="Course not found")
 
     data = payload.model_dump(exclude_unset=True)
+    # Captured before the setattr loop so the trail holds the values the edit
+    # actually replaced, narrowed to the keys the caller sent — a full dump
+    # would log untouched columns as changes and make the row unreadable.
+    old_value = {field: getattr(course, field) for field in data}
     if "name" in data and data["name"] != course.name:
         slug = _slugify(data["name"])
         if db.scalar(select(Course).where(Course.slug == slug, Course.id != course.id)):
@@ -133,6 +161,16 @@ def update_course(
         course.slug = slug
     for field, value in data.items():
         setattr(course, field, value)
+    audit.record(
+        db,
+        request=request,
+        action="update_course",
+        entity_type="course",
+        entity_id=course.id,
+        actor=user,
+        old_value=old_value,
+        new_value=data,
+    )
     db.commit()
     db.refresh(course)
     return course
@@ -143,9 +181,30 @@ def update_course(
     status_code=204,
     dependencies=[Depends(require_role(*ADMIN_ROLES))],
 )
-def delete_course(course_ref: str, db: Session = Depends(get_db)):
+def delete_course(
+    course_ref: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(*ADMIN_ROLES)),
+):
     course = _find_course(db, course_ref)
     if course is None:
         raise HTTPException(status_code=404, detail="Course not found")
+    # Enough of the row to reconstruct what existed, read before the delete so
+    # the values are not fetched from an expired instance afterwards.
+    audit.record(
+        db,
+        request=request,
+        action="delete_course",
+        entity_type="course",
+        entity_id=course.id,
+        actor=user,
+        old_value={
+            "name": course.name,
+            "slug": course.slug,
+            "degree": course.degree,
+            "is_active": course.is_active,
+        },
+    )
     db.delete(course)
     db.commit()

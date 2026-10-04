@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -7,6 +7,7 @@ from app.dependencies import get_current_user, require_role
 from app.models import Notification, User
 from app.schemas.content import NotificationCreate, NotificationResponse
 from app.roles import ADMIN_ROLES
+from app.utils import audit
 
 router = APIRouter(prefix="/api/v1/notifications", tags=["notifications"])
 
@@ -93,10 +94,27 @@ def unread_count(
     dependencies=[Depends(require_role(*ADMIN_ROLES))],
 )
 def create_notification(
-    payload: NotificationCreate, db: Session = Depends(get_db)
+    payload: NotificationCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(*ADMIN_ROLES)),
 ):
     notification = Notification(**payload.model_dump())
     db.add(notification)
+    # 4.4 — a broadcast is the notification table's only admin write, and it
+    # was the one row nobody could attribute: which admin pushed which message
+    # to which account. Flushed first so `notification.id` exists to stamp on
+    # the row.
+    db.flush()
+    audit.record(
+        db,
+        request=request,
+        action="create_notification",
+        entity_type="notification",
+        entity_id=notification.id,
+        actor=user,
+        new_value=payload.model_dump(),
+    )
     db.commit()
     db.refresh(notification)
     return _to_response(notification)
@@ -138,6 +156,7 @@ def mark_all_read(
 @router.delete("/{notification_id}", status_code=204)
 def delete_notification(
     notification_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -148,5 +167,22 @@ def delete_notification(
     )
     if notification is None:
         raise HTTPException(status_code=404, detail="Notification not found")
+    # Enough of the row to reconstruct what existed, read before the delete so
+    # the values are not fetched from an expired instance afterwards.
+    audit.record(
+        db,
+        request=request,
+        action="delete_notification",
+        entity_type="notification",
+        entity_id=notification.id,
+        actor=user,
+        old_value={
+            "type": notification.type,
+            "title": notification.title,
+            "message": notification.message,
+            "user_id": notification.user_id,
+            "is_read": notification.is_read,
+        },
+    )
     db.delete(notification)
     db.commit()

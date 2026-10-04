@@ -1,6 +1,6 @@
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
@@ -9,6 +9,7 @@ from app.dependencies import get_optional_current_user, require_role
 from app.models import Banner, User
 from app.roles import CONTENT_ROLES
 from app.schemas.content import BannerCreate, BannerResponse, BannerUpdate
+from app.utils import audit
 
 router = APIRouter(prefix="/api/v1/banners", tags=["banners"])
 
@@ -124,9 +125,27 @@ def get_banner(
     status_code=201,
     dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
-def create_banner(payload: BannerCreate, db: Session = Depends(get_db)):
+def create_banner(
+    payload: BannerCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(*CONTENT_ROLES)),
+):
     banner = Banner(**payload.model_dump())
     db.add(banner)
+    # 4.4 — flushed so `banner.id` exists for the audit row below; the commit
+    # that persists the banner also persists the trail entry, so the two can
+    # never disagree about whether the create happened.
+    db.flush()
+    audit.record(
+        db,
+        request=request,
+        action="create_banner",
+        entity_type="banner",
+        entity_id=banner.id,
+        actor=user,
+        new_value=payload.model_dump(),
+    )
     db.commit()
     db.refresh(banner)
     return _to_response(banner)
@@ -137,12 +156,30 @@ def create_banner(payload: BannerCreate, db: Session = Depends(get_db)):
     dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 def update_banner(
-    banner_id: int, payload: BannerUpdate, db: Session = Depends(get_db)
+    banner_id: int,
+    payload: BannerUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(*CONTENT_ROLES)),
 ):
     banner = db.get(Banner, banner_id)
     if banner is None:
         raise HTTPException(status_code=404, detail="Banner not found")
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    data = payload.model_dump(exclude_unset=True)
+    # 4.4 — old values read before the `setattr` loop below, so the row
+    # describes the edit and not its result; `exclude_unset` keeps fields the
+    # admin form never sent out of the diff. Same shape as `update_blog`.
+    audit.record(
+        db,
+        request=request,
+        action="update_banner",
+        entity_type="banner",
+        entity_id=banner.id,
+        actor=user,
+        old_value={field: getattr(banner, field) for field in data},
+        new_value=data,
+    )
+    for field, value in data.items():
         setattr(banner, field, value)
     db.commit()
     db.refresh(banner)
@@ -153,9 +190,30 @@ def update_banner(
     status_code=204,
     dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
-def delete_banner(banner_id: int, db: Session = Depends(get_db)):
+def delete_banner(
+    banner_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(*CONTENT_ROLES)),
+):
     banner = db.get(Banner, banner_id)
     if banner is None:
         raise HTTPException(status_code=404, detail="Banner not found")
+    # 4.4 — enough to say which banner was pulled and where it sat, read while
+    # the row still exists; after `db.delete` there is nothing left to ask.
+    audit.record(
+        db,
+        request=request,
+        action="delete_banner",
+        entity_type="banner",
+        entity_id=banner.id,
+        actor=user,
+        old_value={
+            "title": banner.title,
+            "position": banner.position,
+            "display_order": banner.display_order,
+            "is_active": banner.is_active,
+        },
+    )
     db.delete(banner)
     db.commit()
