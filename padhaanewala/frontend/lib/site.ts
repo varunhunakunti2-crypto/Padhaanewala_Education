@@ -63,7 +63,7 @@ export const absoluteUrl = (path: string): string =>
  * path is both what the browser is linked to and what the Organization
  * structured-data node cites as its logo — two places that must not drift.
  */
-export const SITE_LOGO_PATH = "/icon.svg";
+export const SITE_LOGO_PATH = "/logo.png";
 
 /**
  * The browser-chrome colour on Android and the status bar on iOS. Brand purple,
