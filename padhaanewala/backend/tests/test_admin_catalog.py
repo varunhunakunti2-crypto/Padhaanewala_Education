@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from app.database import SessionLocal
 from app.main import app
-from app.models import College, CollegeCourse, Course, Cutoff, Role, User
+from app.models import College, CollegeCourse, Course, Cutoff, MockTest, Role, User
 
 client = TestClient(app)
 
@@ -385,10 +385,26 @@ def test_mock_test_admin_crud():
     public = client.get(f"/api/v1/mock-tests/{body['slug']}")
     assert public.status_code == 404
 
-    admin_list = client.get("/api/v1/mock-tests/admin/all", headers=headers).json()
+    # Filtered rather than paged: the list orders by name and caps at 50, so
+    # once enough papers exist in the scratch schema this row is no longer on
+    # page 1 and the assertion fails for a reason that has nothing to do with
+    # the delete. Querying for it is what the assertion actually means.
+    admin_list = client.get(
+        "/api/v1/mock-tests/admin/all", params={"q": body["name"]}, headers=headers
+    ).json()
     match = [t for t in admin_list if t["slug"] == body["slug"]]
     assert len(match) == 1
     assert match[0]["is_active"] is False
+
+    # `DELETE` is a soft delete by design, so this row otherwise outlives the
+    # run. Three full runs took the scratch schema to 56 papers, which is past
+    # the 50-row page the assertion above used to read -- removing it here is
+    # what keeps the next run independent of how many have gone before.
+    with SessionLocal() as db:
+        row = db.scalar(select(MockTest).where(MockTest.slug == body["slug"]))
+        if row is not None:
+            db.delete(row)
+            db.commit()
 
 
 def test_enrichment_requires_admin():
