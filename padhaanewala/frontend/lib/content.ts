@@ -15,14 +15,19 @@
  * the table is empty, `undefined` when a record does not exist. Rendering an
  * honest empty state is the correct behaviour when there is no data.
  *
- * EXCEPTION — mock tests. The proctored runner grades entirely in the browser
- * and reads its questions from `lib/data/mockTests.ts`; it never calls the
- * attempt/grading endpoints. So a mock test listed only in that local file
- * would render a card (MockTestEngine already prefers the API and falls back
- * locally) whose detail page then 404'd, because the catalogue came from the
- * API. The mock-test resolvers therefore fall back to the local catalogue when
- * the API has nothing. This is scoped to mock tests on purpose: the wider
- * "don't hide an empty database" rule above is still in force everywhere else.
+ * EXCEPTION — mock tests, and the reason has changed. When the runner graded in
+ * the browser it never touched the attempt endpoints, so a locally listed paper
+ * could produce a detail page that 404'd; hence the fallback below. The runner now
+ * starts, saves and submits against the backend (`mockTestsApi`), so a paper's
+ * questions, clock and grade are server-owned. The fallback survives for a
+ * different reason: `resolveMockTest` feeds the *presentation* fields
+ * (`withLocalContent`), and the local catalogue is where the display metadata for
+ * the bundled papers lives. It is still scoped to mock tests on purpose — the
+ * wider "don't hide an empty database" rule above is in force everywhere else.
+ *
+ * A paper created through the PDF importer is listed from the API and has no local
+ * entry, which is correct: `withLocalContent` returns the API row untouched rather
+ * than substituting a different paper's questions.
  */
 
 import type { BlogPost, College, Exam, MockTest, Scholarship } from "@/lib/types";
@@ -153,30 +158,36 @@ export async function resolveMockTests(): Promise<Resolved<MockTest[]>> {
 /**
  * Reconciles an API paper row with its local catalogue entry.
  *
- * `mapMockTest` translates an `ApiMockTest` faithfully, but the response simply
- * does not carry the fields the runner needs, and two of the ones it does carry
- * are actively misleading once mapped:
+ * `mapMockTest` translates an `ApiMockTest` faithfully, but the response does not
+ * carry everything the setup screen renders:
  *
- *   * `questionIds` — absent. Without it `getTestQuestions` falls back to
- *     sampling a subject pool, which is how an API-sourced paper ends up empty.
  *   * `subject` — `text(api.subject, "Mixed")`. A three-subject paper stores NULL
  *     (that is the documented "mixed" signal, see `MockTest.subject`), so it maps
  *     to the string "Mixed", which matches no subject pool.
  *   * `marksPerCorrect` / `marksPerWrong` — absent, so `resolveMarks` would apply
- *     its +3 / −1 default. A JEE Main paper is +4 / −1, so a real paper would be
- *     scored with the wrong scheme.
+ *     its +3 / −1 default. A JEE Main paper is +4 / −1.
  *   * `description` — read from `instructions`, which is null for this paper, so
  *     the blurb would vanish.
  *
- * So the local catalogue stays the base: it is the curated definition of what a
- * paper contains. The API row is authoritative only for the two things it alone
- * knows, the database id and how many attempts the policy allows. Anything else
- * here would be inventing a merge rule per field, and a future API field would
- * silently keep defaulting.
+ * So the local catalogue stays the base: it is the curated presentation metadata
+ * for the bundled papers. The API row is authoritative for the things only it
+ * knows — the database id and how many attempts the policy allows.
  *
- * A paper with no local entry is returned as mapped. That is correct for the
- * listing, and it will render an empty runner rather than silently serving a
- * different paper's questions.
+ * Two of the reconciler's original reasons no longer apply, and it is worth being
+ * explicit about why they are absent rather than leaving a comment that describes a
+ * runner this is no longer: `questionIds` and `marksPerCorrect` used to exist
+ * because the runner sampled questions locally and graded locally. It does neither
+ * now. `ProctoredMockTest` calls `POST /mock-tests/{ref}/start` and takes its
+ * questions, marks and clock from the response, and the grade comes from
+ * `POST .../submit`. So the local catalogue's `questionIds` are decorative for a
+ * student sitting the paper, and `resolveMarks` on the results screen would have
+ * contradicted the server's own scoring -- which is why the results screen now
+ * reports `total_marks` instead of a per-paper ±rule.
+ *
+ * A paper with no local entry is returned as mapped, untouched. That is the case
+ * that matters for the PDF importer: an imported paper reaches a student through
+ * this path, and substituting a bundled paper's metadata here would show them the
+ * wrong title, marks and description for questions they are about to sit.
  */
 function withLocalContent(api: MockTest, slug: string): MockTest {
   const local = getMockTest(slug);

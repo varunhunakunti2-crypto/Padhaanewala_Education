@@ -31,6 +31,7 @@ import {
 import { useAdminResource } from "@/components/admin/useAdminResource";
 import { FieldSet, Textarea } from "@/components/admin/fields";
 import { IconAction, SectionHeading } from "@/components/admin/primitives";
+import { QuestionImportsSection } from "@/components/admin/sections/QuestionImportsSection";
 
 const DASH = "—";
 
@@ -317,6 +318,19 @@ export function QuestionsSection() {
             <Plus className="h-3.5 w-3.5" /> New question
           </Button>
         }
+      />
+
+      {/* The PDF intake path, inside this section rather than as one of its own:
+          every draft it produces lands in this table, so an admin approving a
+          batch is making an edit to the bank, not leaving it. The facets are
+          handed down so the paper picker cannot offer something the filter above
+          does not know about, and an approval or a discard re-reads both. */}
+      <QuestionImportsSection
+        papers={papers}
+        onQuestionsChanged={() => {
+          reload();
+          loadFacets();
+        }}
       />
 
       <div className="mb-4 grid gap-3 rounded-2xl border border-slate-200 p-3 sm:grid-cols-2 lg:grid-cols-4 dark:border-slate-800">

@@ -148,16 +148,50 @@ def _ensure_roles(conn) -> None:
 def _clean_users():
     """Clear rows created by earlier runs so listing assertions are stable.
 
-    Seeded catalog data (roles, states, colleges, courses, exams, ...) is
-    preserved because several tests assert against it.
+    Seeded catalog data (roles, states, colleges, courses, exams, papers,
+    questions) is preserved because several tests assert against it.
+
+    ## Why this is not `TRUNCATE ... CASCADE`
+
+    `TRUNCATE ... CASCADE` walks the *declared* foreign-key graph, not the rows.
+    Naming a table therefore truncates every table that could reach it through
+    any chain of declared foreign keys, whether or not there is anything in those
+    tables to delete. The seeded question bank has two such chains out of
+    `users`:
+
+    * ``test_attempts.mock_test_id -> mock_tests -> test_questions``
+    * ``users.created_by <- question_import_jobs`` together with
+      ``test_questions.import_job_id -> question_import_jobs``, added in
+      ``d7e1b4c9a205``. This one is the awkward one: it does not pass through
+      ``mock_tests``, so the papers survive while every question in them is
+      emptied. That reads as a seeding bug rather than a fixture bug, and it is
+      why this fixture needs a paragraph.
+
+    So `users` is cleared with `DELETE` instead. A row-level delete follows only
+    the rows actually present, and every foreign key into `users` is already
+    `ON DELETE CASCADE` or `ON DELETE SET NULL`, so every user-owned row still
+    goes without a hand-written list of twenty tables -- which is the property
+    the original `CASCADE` was there to get, and the reason this is a `DELETE`
+    and not an unrolled list of deletes.
+
+    The cost is `RESTART IDENTITY` on the user tables: sequences are not reset.
+    Nothing asserts on a user id, and a stable listing assertion is about which
+    rows exist, not what they are numbered.
+
+    `test_answers` and `test_attempts` are truncated rather than deleted only
+    because they are the two tables whose ids *are* asserted on, and both must
+    be named in one statement -- PostgreSQL refuses to truncate
+    `test_attempts` alone while `test_answers` references it.
+
+    `question_import_jobs` goes first so its drafts are left describing nothing.
+    That FK is `ON DELETE SET NULL`, so the questions stay; they stay `pending`,
+    so `_PUBLISHABLE` hides them from every student-facing read. That is the
+    correct outcome for a question whose job no longer exists.
     """
     with engine.begin() as conn:
+        conn.execute(text("DELETE FROM question_import_jobs"))
         conn.execute(
-            text(
-                "TRUNCATE TABLE users, enquiries, consent_records, reviews, "
-                "test_answers, test_attempts, notifications, saved_colleges, "
-                "lead_notes, lead_status_history, otp_records "
-                "RESTART IDENTITY CASCADE"
-            )
+            text("TRUNCATE TABLE test_answers, test_attempts RESTART IDENTITY")
         )
+        conn.execute(text("DELETE FROM users"))
     yield

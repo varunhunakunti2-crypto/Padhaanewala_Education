@@ -531,6 +531,50 @@ export async function refreshAccessToken(options: { force?: boolean } = {}): Pro
 }
 
 /**
+ * Publish an admin write to the public catalogue immediately.
+ *
+ * The admin panel writes to the backend directly, while `/colleges`,
+ * `/courses` and friends read the same rows through `lib/api-server.ts`'s ISR
+ * cache. Nothing told the cache about the write, so a college created here was
+ * invisible on the public page for `REVALIDATE.catalogList` — five minutes.
+ *
+ * Best-effort by design: a failed revalidation costs a delayed update, and
+ * failing the admin's save over it would be a worse outcome than the delay. The
+ * ISR window remains the backstop, so this only ever makes things fresher.
+ *
+ * `resources` values must exist in `app/api/revalidate/route.ts`'s map; that
+ * route rejects unknown names, and a non-2xx here is deliberately ignored.
+ */
+async function revalidatePublic(resources: string[]): Promise<void> {
+  const token = getAccessToken();
+  if (!token) return;
+  try {
+    await fetch("/api/revalidate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ resources }),
+    });
+  } catch {
+    /* offline or route unavailable — the ISR window still applies */
+  }
+}
+
+/**
+ * `apiFetch` for admin mutations, publishing the affected catalogue on success.
+ *
+ * Applied at the admin call sites rather than inside `apiFetch` itself: the
+ * token refresh and 401-repair path there must stay synchronous with respect to
+ * the response, and `apiFetch` also serves reads, notifications and uploads
+ * that have nothing to revalidate.
+ */
+function adminWrite<T>(path: string, init: RequestInit, resources: string[]): Promise<T> {
+  return apiFetch<T>(path, init).then(async (data) => {
+    await revalidatePublic(resources);
+    return data;
+  });
+}
+
+/**
  * True for bodies whose Content-Type the runtime already knows.
  *
  * `Blob` and `File` cover `FormData` too, since a `FormData` is not an instance
@@ -650,7 +694,157 @@ export const authApi = {
     }),
 };
 
-/** Roles that may open the admin console. Mirrors the backend `require_role` gates. */
+/* ------------------------------------------------------------------ *
+ * Mock-test attempt engine
+ * ------------------------------------------------------------------ */
+
+/**
+ * A question as the attempt endpoints serve it.
+ *
+ * Mirrors `AttemptQuestionResponse` (`backend/app/schemas/catalog.py`). Note
+ * what is absent: `correct_answer`, `explanation` and `numeric_answer` are
+ * deliberately withheld by the router until the attempt is graded, so a type
+ * that carried them would be a lie the compiler could not catch.
+ */
+export interface AttemptQuestion {
+  id: number;
+  question_text: string;
+  question_type: string;
+  options: string[] | null;
+  marks: string;
+  negative_marks: string;
+  difficulty: string;
+  sort_order: number;
+  subject: string | null;
+  topic: string | null;
+  /** Echo of what the server has stored for this question so far. */
+  selected_answer: string | null;
+}
+
+/** Mirrors `TestAttemptResponse`. */
+export interface AttemptRecord {
+  id: number;
+  mock_test_id: number;
+  mock_test_name: string | null;
+  status: string;
+  started_at: string;
+  expires_at: string;
+  submitted_at: string | null;
+  score: string | null;
+  total_marks: string | null;
+  correct_count: number | null;
+  incorrect_count: number | null;
+  unanswered_count: number | null;
+  pending_review_count: number | null;
+  percentage: string | null;
+  /**
+   * Server-authoritative clock. The runner derives its countdown from this on
+   * every tick rather than decrementing a local counter, so a backgrounded tab
+   * that loses intervals cannot gain time.
+   */
+  time_remaining_seconds: number;
+}
+
+/** Mirrors `StartAttemptResponse`. */
+export interface StartAttemptResult {
+  attempt: AttemptRecord;
+  questions: AttemptQuestion[];
+}
+
+/** Mirrors `ResultQuestionResponse`: the post-grading projection. */
+export interface ResultQuestion extends AttemptQuestion {
+  is_correct: boolean | null;
+  marks_awarded: string | null;
+  correct_answer: string | null;
+  explanation: string | null;
+  numeric_answer: string | null;
+  tolerance: string | null;
+  grader_feedback: string | null;
+}
+
+/** Mirrors `TestResultResponse`. */
+export interface TestResult {
+  attempt: AttemptRecord;
+  questions: ResultQuestion[];
+}
+
+/**
+ * The server-authoritative attempt flow (Phase 44).
+ *
+ * The client runner used to hold the whole paper in React state and grade it
+ * locally, which meant the backend engine in `backend/app/routers/mock_tests.py`
+ * -- 25 passing tests, attempt limits, expiry enforcement, negative marking --
+ * was unreachable from the browser. These four calls are the whole contract:
+ * start, autosave one answer, read the clock, submit.
+ */
+export const mockTestsApi = {
+  /**
+   * Open an attempt. Resumes rather than duplicates: the router finalises any
+   * attempt whose clock has run out and refuses once `attempts_allowed` is
+   * spent, so a 400 here is a real refusal the UI must surface, not a retry.
+   */
+  start: (ref: string) =>
+    apiFetch<StartAttemptResult>(`/mock-tests/${encodeURIComponent(ref)}/start`, {
+      method: "POST",
+      body: JSON.stringify({}),
+      credentials: "same-origin",
+    }),
+
+  /** Autosave one answer. `null` clears it, which is a deliberate answer state. */
+  saveAnswer: (
+    ref: string,
+    attemptId: number,
+    questionId: number,
+    selectedAnswer: string | null,
+  ) =>
+    apiFetch<AttemptQuestion>(
+      `/mock-tests/${encodeURIComponent(ref)}/attempts/${attemptId}/answers/${questionId}`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ selected_answer: selectedAnswer }),
+        credentials: "same-origin",
+      },
+    ),
+
+  /**
+   * The authoritative clock. Cheap, and the only way to learn that the server
+   * finalised the attempt on the deadline without submitting it.
+   */
+  getAttempt: (ref: string, attemptId: number) =>
+    apiFetch<AttemptRecord>(
+      `/mock-tests/${encodeURIComponent(ref)}/attempts/${attemptId}`,
+      { credentials: "same-origin" },
+    ),
+
+  /**
+   * Grade. Idempotent, and it finalises an expired attempt on the way through,
+   * so a client whose countdown drifted still gets an honest result.
+   */
+  submit: (ref: string, attemptId: number) =>
+    apiFetch<TestResult>(
+      `/mock-tests/${encodeURIComponent(ref)}/attempts/${attemptId}/submit`,
+      {
+        method: "POST",
+        body: JSON.stringify({}),
+        credentials: "same-origin",
+      },
+    ),
+
+  /** This paper's questions, key withheld. `selected_answer` is absent here. */
+  getQuestions: (ref: string) =>
+    apiFetch<Omit<AttemptQuestion, "selected_answer">[]>(
+      `/mock-tests/${encodeURIComponent(ref)}/questions`,
+      { credentials: "same-origin" },
+    ),
+
+  /** This student's graded attempts, for the results and history views. */
+  listAttempts: (ref: string) =>
+    apiFetch<AttemptRecord[]>(
+      `/mock-tests/${encodeURIComponent(ref)}/attempts`,
+      { credentials: "same-origin" },
+    ),
+};
+
 export const ADMIN_ROLES = ["admin", "super_admin"] as const;
 
 /**
@@ -1076,6 +1270,96 @@ export interface AdminQuestionFacets {
   difficulties: string[];
   question_types: string[];
   papers: AdminQuestionPaper[];
+}
+
+/**
+ * One import job: an uploaded PDF and how far its review has got.
+ *
+ * Mirrors `ImportJobResponse`. `status` is `processing | ready | failed` and is
+ * a real state the panel renders as a spinner, not a missing value -- generation
+ * runs as a FastAPI `BackgroundTask` after the 202, so the job genuinely exists
+ * before its drafts do.
+ */
+export interface ImportJob {
+  id: number;
+  mock_test_id: number;
+  mock_test_name: string | null;
+  /** Display label only. The backend never builds a path from it. */
+  filename: string;
+  file_size: number;
+  page_count: number;
+  text_length: number;
+  status: string;
+  /** A sentence the admin can act on. Never carries the API key. */
+  error_message: string | null;
+  draft_count: number;
+  approved_count: number;
+  rejected_count: number;
+  created_by: number | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+/**
+ * One AI draft awaiting review, with its key.
+ *
+ * Mirrors `DraftQuestionResponse`. `correct_answer` is here because this route
+ * is admin-only (`CONTENT_ROLES`), which is the same reason the student attempt
+ * endpoints withhold it.
+ */
+export interface ImportDraft {
+  /** The `test_questions` id, not the job id. Approving is a write on this row. */
+  question_id: number;
+  import_job_id: number | null;
+  question_text: string;
+  options: string[] | null;
+  correct_answer: string | null;
+  subject: string | null;
+  topic: string | null;
+  difficulty: string;
+  explanation: string | null;
+  marks: string;
+  negative_marks: string;
+  /** `pending | approved | rejected`. */
+  review_status: string;
+  source: string;
+  sort_order: number;
+  is_active: boolean;
+}
+
+/** Mirrors `ImportResponse`: the job, plus its drafts once they exist. */
+export interface ImportResponse {
+  job: ImportJob;
+  /** Empty while `job.status === "processing"`. */
+  drafts: ImportDraft[];
+  /** Aggregated per-reason notes on what generation dropped. */
+  dropped_reasons: string[];
+  /** True when this upload created its paper rather than adding to one. */
+  created_paper: boolean;
+}
+
+/**
+ * A partial correction to a draft.
+ *
+ * Mirrors `DraftQuestionUpdate`, which is judged against the row's *merged*
+ * state: sending `options` alone cannot strand the existing key outside them.
+ *
+ * Every field is optional, so omit rather than send `null`. `correct_answer` is
+ * the exception worth knowing: the route treats an explicit `null` as a 422
+ * ("An mcq question needs a correct_answer") rather than clearing the key, so
+ * there is no way to unset it -- which is correct, since an MCQ with no key
+ * cannot be scored.
+ */
+export interface DraftQuestionUpdatePayload {
+  question_text?: string;
+  options?: string[];
+  correct_answer?: string;
+  subject?: string | null;
+  topic?: string | null;
+  difficulty?: string;
+  explanation?: string | null;
+  marks?: string;
+  negative_marks?: string;
 }
 
 /**
@@ -1584,6 +1868,93 @@ export const adminApi = {
       method: "DELETE",
     }),
 
+  /* ------------------------------------------------------------------ *
+   * PDF question import
+   *
+   * The AI-generated-drafts path. `POST /question-imports/pdf` takes a PDF,
+   * answers 202 with a job row, and generates MCQ drafts from the text layer in
+   * the background. Nothing is published until a human approves it: a draft sits
+   * at `review_status = "pending"` and `is_active = false`, and the student-facing
+   * question query (`_PUBLISHABLE`) cannot see it.
+   *
+   * Every route here requires `CONTENT_ROLES`, the same set the question bank
+   * panel gates on.
+   * ------------------------------------------------------------------ */
+
+  /**
+   * Upload a PDF and start a generation job.
+   *
+   * `FormData` and it must stay one -- `bodyCarriesItsOwnContentType` in
+   * `apiFetchImpl` is what leaves the multipart boundary alone. A hand-set
+   * `Content-Type` here is the exact 422 `tests/api-endpoints.test.ts` guards
+   * against for `uploadMedia`.
+   *
+   * 202, so the caller polls `questionImport` rather than expecting drafts now.
+   */
+  uploadQuestionImport: (body: FormData) =>
+    apiFetch<ImportResponse>("/question-imports/pdf", { method: "POST", body }),
+
+  /**
+   * Recent jobs, newest first. The server caps this at 20 and offers no paging,
+   * so it is deliberately not walked -- a `limit` here would be the
+   * `?limit=1000` bug `tests/page-size-contract.test.ts` exists to catch.
+   */
+  questionImports: () => apiFetch<ImportJob[]>("/question-imports"),
+
+  /** The poll. Returns drafts once generation has finished. */
+  questionImport: (jobId: number) =>
+    apiFetch<ImportResponse>(`/question-imports/${jobId}`),
+
+  /**
+   * Correct one draft before approving it.
+   *
+   * A partial update, and editing an approved draft sends it back to `pending`,
+   * so the panel cannot assume a badge is stable after a save.
+   */
+  updateQuestionImportDraft: (
+    jobId: number,
+    questionId: number,
+    payload: DraftQuestionUpdatePayload,
+  ) =>
+    apiFetch<ImportDraft>(`/question-imports/${jobId}/drafts/${questionId}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+
+  reviewQuestionImportDraft: (jobId: number, questionId: number, approved: boolean) =>
+    apiFetch<ImportDraft>(`/question-imports/${jobId}/drafts/${questionId}/review`, {
+      method: "POST",
+      body: JSON.stringify({ approved }),
+    }),
+
+  /**
+   * Approve or reject every still-pending draft in the job.
+   *
+   * Only `pending` rows are touched, and ungradeable ones are skipped rather
+   * than failing the request -- so this can return a job with drafts still
+   * pending. The panel re-reads the returned counts instead of assuming the
+   * batch emptied.
+   */
+  reviewAllQuestionImportDrafts: (jobId: number, approved: boolean) =>
+    apiFetch<ImportJob>(`/question-imports/${jobId}/review-all`, {
+      method: "POST",
+      body: JSON.stringify({ approved }),
+    }),
+
+  /**
+   * Discard the job, its drafts and its stored PDF, whatever state it is in.
+   *
+   * Works on a `processing` job too, which is the only way to clear one stranded
+   * by a worker restart.
+   *
+   * Note what it removes: **approved drafts go too**. The route deletes every
+   * `test_questions` row in the job, so discarding a half-reviewed batch also
+   * takes out the questions it already published. The panel has to say that, or
+   * "Discard" reads like clearing a queue and quietly edits a live paper.
+   */
+  discardQuestionImport: (jobId: number) =>
+    apiFetch<void>(`/question-imports/${jobId}`, { method: "DELETE" }),
+
   /**
    * Every banner, including paused, expired and not-yet-scheduled ones.
    *
@@ -1702,10 +2073,11 @@ export const adminApi = {
    * appear in the payload type.
    */
   createCollege: (payload: Record<string, unknown>) =>
-    apiFetch<ApiCollegeDetail>("/colleges", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }),
+    adminWrite<ApiCollegeDetail>(
+      "/colleges",
+      { method: "POST", body: JSON.stringify(payload) },
+      ["colleges"],
+    ),
 
   /**
    * `admin` or `super_admin`. The handler uses `model_dump(exclude_unset=True)`,
@@ -1713,14 +2085,15 @@ export const adminApi = {
    * clears a column. `lib/college-form.ts` decides which keys those are.
    */
   updateCollege: (ref: string | number, payload: Record<string, unknown>) =>
-    apiFetch<ApiCollegeDetail>(`/colleges/${ref}`, {
-      method: "PUT",
-      body: JSON.stringify(payload),
-    }),
+    adminWrite<ApiCollegeDetail>(
+      `/colleges/${ref}`,
+      { method: "PUT", body: JSON.stringify(payload) },
+      ["colleges"],
+    ),
 
   /** `super_admin` only, and cascades six dependent tables. 204 on success. */
   deleteCollege: (ref: string | number) =>
-    apiFetch<void>(`/colleges/${ref}`, { method: "DELETE" }),
+    adminWrite<void>(`/colleges/${ref}`, { method: "DELETE" }, ["colleges"]),
 
   states: () => apiFetch<AdminState[]>("/locations/states"),
 
@@ -1842,12 +2215,21 @@ export const adminApi = {
   course: (ref: string | number) => apiFetch<AdminCourseDetail>(`/courses/${ref}`),
 
   createCourse: (payload: Record<string, unknown>) =>
-    apiFetch<AdminCourseDetail>("/courses", { method: "POST", body: JSON.stringify(payload) }),
+    adminWrite<AdminCourseDetail>(
+      "/courses",
+      { method: "POST", body: JSON.stringify(payload) },
+      ["courses"],
+    ),
 
   updateCourse: (ref: string | number, payload: Record<string, unknown>) =>
-    apiFetch<AdminCourseDetail>(`/courses/${ref}`, { method: "PUT", body: JSON.stringify(payload) }),
+    adminWrite<AdminCourseDetail>(
+      `/courses/${ref}`,
+      { method: "PUT", body: JSON.stringify(payload) },
+      ["courses"],
+    ),
 
-  deleteCourse: (ref: string | number) => apiFetch<void>(`/courses/${ref}`, { method: "DELETE" }),
+  deleteCourse: (ref: string | number) =>
+    adminWrite<void>(`/courses/${ref}`, { method: "DELETE" }, ["courses"]),
 
   courseCategories: () => apiFetch<string[]>("/courses/categories"),
 
@@ -1857,27 +2239,42 @@ export const adminApi = {
   scholarship: (ref: string | number) => apiFetch<AdminScholarship>(`/scholarships/${ref}`),
 
   createScholarship: (payload: Record<string, unknown>) =>
-    apiFetch<AdminScholarship>("/scholarships", { method: "POST", body: JSON.stringify(payload) }),
+    adminWrite<AdminScholarship>(
+      "/scholarships",
+      { method: "POST", body: JSON.stringify(payload) },
+      ["scholarships"],
+    ),
 
   updateScholarship: (ref: string | number, payload: Record<string, unknown>) =>
-    apiFetch<AdminScholarship>(`/scholarships/${ref}`, {
-      method: "PUT",
-      body: JSON.stringify(payload),
-    }),
+    adminWrite<AdminScholarship>(
+      `/scholarships/${ref}`,
+      { method: "PUT", body: JSON.stringify(payload) },
+      ["scholarships"],
+    ),
 
-  deleteScholarship: (ref: string | number) => apiFetch<void>(`/scholarships/${ref}`, { method: "DELETE" }),
+  deleteScholarship: (ref: string | number) =>
+    adminWrite<void>(`/scholarships/${ref}`, { method: "DELETE" }, ["scholarships"]),
 
   exams: () => fetchAllPages<AdminExam>("/exams?include_inactive=true"),
 
   exam: (ref: string | number) => apiFetch<AdminExam>(`/exams/${ref}`),
 
   createExam: (payload: Record<string, unknown>) =>
-    apiFetch<AdminExam>("/exams", { method: "POST", body: JSON.stringify(payload) }),
+    adminWrite<AdminExam>(
+      "/exams",
+      { method: "POST", body: JSON.stringify(payload) },
+      ["exams"],
+    ),
 
   updateExam: (ref: string | number, payload: Record<string, unknown>) =>
-    apiFetch<AdminExam>(`/exams/${ref}`, { method: "PUT", body: JSON.stringify(payload) }),
+    adminWrite<AdminExam>(
+      `/exams/${ref}`,
+      { method: "PUT", body: JSON.stringify(payload) },
+      ["exams"],
+    ),
 
-  deleteExam: (ref: string | number) => apiFetch<void>(`/exams/${ref}`, { method: "DELETE" }),
+  deleteExam: (ref: string | number) =>
+    adminWrite<void>(`/exams/${ref}`, { method: "DELETE" }, ["exams"]),
 };
 
 /** True when an error is simply "you don't have the role for this". */

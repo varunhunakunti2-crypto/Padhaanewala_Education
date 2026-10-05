@@ -4,12 +4,13 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
 from app.dependencies import get_current_user, require_role
 from app.models import MockTest, TestAnswer, TestAttempt, TestQuestion, User
+from app.models.question_import import REVIEW_STATUS_APPROVED
 from app.question_types import QuestionType
 from app.schemas.catalog import (
     AdminQuestionResponse,
@@ -42,6 +43,25 @@ from app.roles import CONTENT_ROLES
 def _slugify(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.strip().lower()).strip("-")
 
+#: The one predicate that decides whether a question may reach a student.
+#:
+#: `review_status == "approved"` is not a refinement of `is_active`; it is the
+#: second half of the rule that AI-drafted questions (see
+#: `routers/question_imports.py`) are invisible until a human has read them.
+#: Drafts are written `pending`, so `is_active` alone would publish every draft
+#: the moment it was generated.
+#:
+#: Defined once and used by every path below -- the aggregate totals, the paper's
+#: question list, the attempt start, the autograder and the save-answer lookup --
+#: because the failure mode of getting one of them wrong is not a crash. A
+#: question served to a student but missing from `_derived_totals` divides their
+#: marks by the wrong denominator; one served but not graded is marked wrong
+#: forever. So there is a single definition and no route may re-derive its own.
+_PUBLISHABLE = and_(
+    TestQuestion.is_active,
+    TestQuestion.review_status == REVIEW_STATUS_APPROVED,
+)
+
 # A paper's real worth is the sum of its ACTIVE questions' marks -- the same
 # figure `_grade_attempt` divides by, via `_active_questions`.
 #
@@ -53,9 +73,12 @@ def _slugify(text: str) -> str:
 # total that could differ from what a student could actually earn -- e.g. after
 # deactivating one 4-mark question the API still advertised 300 while grading
 # divided by 296. These two aggregates are the single source of truth.
-_ACTIVE_QUESTION_COUNT = func.count(TestQuestion.id).filter(TestQuestion.is_active)
+#
+# They count `_PUBLISHABLE` questions, not merely active ones, so a paper with
+# unapproved drafts advertises the marks a student can really earn.
+_ACTIVE_QUESTION_COUNT = func.count(TestQuestion.id).filter(_PUBLISHABLE)
 _ACTIVE_TOTAL_MARKS = func.coalesce(
-    func.sum(TestQuestion.marks).filter(TestQuestion.is_active), 0
+    func.sum(TestQuestion.marks).filter(_PUBLISHABLE), 0
 )
 
 def _derived_totals(db: Session, mock_test_id: int) -> tuple[int, Decimal]:
@@ -105,12 +128,15 @@ def _find_mock_test_admin(db: Session, ref: str) -> MockTest | None:
     return db.scalar(select(MockTest).where(cond))
 
 def _active_questions(db: Session, mock_test_id: int) -> list[TestQuestion]:
+    """The paper's publishable questions, in order.
+
+    The single read path for the paper listing, `start_mock_test`, the autograder
+    and the result builder, so a draft cannot be served by one of them and hidden
+    by another.
+    """
     return db.scalars(
         select(TestQuestion)
-        .where(
-            TestQuestion.mock_test_id == mock_test_id,
-            TestQuestion.is_active,
-        )
+        .where(TestQuestion.mock_test_id == mock_test_id, _PUBLISHABLE)
         .order_by(TestQuestion.sort_order, TestQuestion.id)
     ).all()
 
@@ -835,11 +861,27 @@ def start_mock_test(
         expires_at=datetime.now(timezone.utc)
         + timedelta(minutes=mock_test.duration_minutes),
     )
+
+    questions = _active_questions(db, mock_test.id)
+    if not questions:
+        # Nothing to sit. This is reachable, not hypothetical: a paper whose every
+        # question is an unapproved PDF draft has an active row and zero
+        # `_PUBLISHABLE` ones. Without this the student gets a clean 200 and a
+        # blank paper, submits it, and is graded against nothing -- which also
+        # burns one of `attempts_allowed`, so the failure is not even harmless.
+        # Raised before the attempt is inserted so nothing is written.
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "This mock test has no questions available yet. If it was just "
+                "imported, its questions are still awaiting review."
+            ),
+        )
+
     db.add(attempt)
     db.flush()
     attempt.mock_test = mock_test
 
-    questions = _active_questions(db, mock_test.id)
     if mock_test.question_randomization:
         randomized = list(questions)
         random.shuffle(randomized)
@@ -1035,7 +1077,7 @@ def save_answer(
         select(TestQuestion).where(
             TestQuestion.id == question_id,
             TestQuestion.mock_test_id == attempt.mock_test_id,
-            TestQuestion.is_active,
+            _PUBLISHABLE,
         )
     )
     if question is None:

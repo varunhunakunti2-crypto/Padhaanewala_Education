@@ -4,7 +4,9 @@ import { useRouter } from "next/navigation";
 import {
   BookOpen,
   CheckCircle2,
+  Clock,
   FileQuestion,
+  Hourglass,
   ListChecks,
   RefreshCw,
   ShieldAlert,
@@ -15,35 +17,31 @@ import {
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
-import { isNumericQuestion, resolveMarks } from "@/lib/data/mockTests";
-import type { MockTest, MockTestQuestion } from "@/lib/types";
+import type { ResultQuestion } from "@/lib/api";
+import {
+  answerKeyReleased,
+  isNumericQuestion,
+  type ResultSummary,
+} from "@/lib/attempt-session";
+import type { MockTest } from "@/lib/types";
 import type { Violation } from "@/components/mocktests/types";
 
-/** Parses a typed numeric answer; blank or non-numeric counts as unattempted. */
-function parseNumeric(raw: string | undefined): number | null {
-  if (raw == null) return null;
-  const trimmed = raw.trim();
-  if (trimmed === "") return null;
-  const n = Number(trimmed);
-  return Number.isFinite(n) ? n : null;
-}
-
-export interface ResultSummary {
-  score: number;
-  maxScore: number;
-  correct: number;
-  incorrect: number;
-  unattempted: number;
-  timeTakenSec: number;
-  topicPerf: Record<string, { correct: number; total: number }>;
-}
-
-/** Post-exam screen: score summary, topic breakdown, and optional solutions. */
+/**
+ * Post-exam screen: the server's grade, the topic breakdown, and optional
+ * solutions.
+ *
+ * Every verdict here is the server's. The screen used to recompute all of it from
+ * the runner's own answer map against `q.correctIndex`, which meant two graders:
+ * this one, and `POST /attempts/{id}/submit`. They agreed only until they didn't,
+ * and when they didn't the student saw a score that no record anywhere else
+ * agreed with. There is no `correctIndex` in a `ResultQuestion` now, so there is
+ * nothing left to grade against -- `is_correct` is the verdict, and
+ * `selected_answer` is what the student chose.
+ */
 export function TestResultScreen({
   test,
   result,
   questions,
-  answers,
   violations,
   showSolutions,
   onToggleSolutions,
@@ -51,21 +49,25 @@ export function TestResultScreen({
 }: {
   test: MockTest;
   result: ResultSummary;
-  questions: MockTestQuestion[];
-  answers: Record<string, { selected?: number | null; marked?: boolean; numeric?: string }>;
+  questions: ResultQuestion[];
   violations: Violation[];
   showSolutions: boolean;
   onToggleSolutions: () => void;
   onRestart: () => void;
 }) {
   const router = useRouter();
-  const marks = resolveMarks(test);
 
-  const pct = questions.length ? Math.round((result.correct / questions.length) * 100) : 0;
+  // The server's share-of-paper percentage, not `correct / questions`: the two
+  // disagree as soon as questions are worth different marks.
+  const pct = Math.round(result.percentage);
   const timeStr = `${Math.floor(result.timeTakenSec / 60)}m ${result.timeTakenSec % 60}s`;
   const grade = pct >= 80 ? "Excellent" : pct >= 60 ? "Good" : pct >= 40 ? "Average" : "Needs practice";
   const gradeTone: "green" | "yellow" | "amber" | "red" =
     pct >= 80 ? "green" : pct >= 60 ? "yellow" : pct >= 40 ? "amber" : "red";
+
+  // Withheld unless the paper sets `result_visibility: immediate`. Absent that, the
+  // solutions panel has nothing truthful to show and says so instead.
+  const keyReleased = answerKeyReleased(questions);
 
   const stats = [
     {
@@ -107,8 +109,15 @@ export function TestResultScreen({
           <Trophy className="mx-auto h-10 w-10 text-amber-300" />
           <h2 className="mt-3 font-display text-2xl font-extrabold sm:text-3xl">Test completed!</h2>
           <p className="mt-1 text-sm text-white/75">{test.title}</p>
+          {/* The old line read "+4 correct, -1 incorrect" from `resolveMarks`, a
+              per-paper rule the backend does not apply. Grading is per question
+              and negative marking is a per-paper flag, so the score line is all
+              that can be stated as fact here. */}
           <p className="mt-1 text-xs text-white/55">
-            Marking: +{marks.correct} correct, −{marks.wrong} incorrect, 0 unattempted
+            Marked out of {result.maxScore} marks
+            {result.pendingReview > 0 && (
+              <> · {result.pendingReview} answer(s) awaiting manual review</>
+            )}
           </p>
           <div className="mx-auto mt-5 grid max-w-xl grid-cols-3 gap-3">
             <div className="rounded-2xl bg-white/10 p-3 backdrop-blur">
@@ -143,6 +152,20 @@ export function TestResultScreen({
                 <li key={i}>• {v.reason}</li>
               ))}
             </ul>
+          </div>
+        )}
+
+        {/* Only rendered when something is actually awaiting review. An essay
+            pending manual marking is neither correct nor incorrect, so leaving it
+            out of every tally would make the counts appear not to add up. */}
+        {result.pendingReview > 0 && (
+          <div className="mt-5 flex items-start gap-3 rounded-2xl border border-purple-200 bg-purple-50 p-4 dark:border-purple-900/60 dark:bg-purple-950/40">
+            <Hourglass className="mt-0.5 h-4 w-4 shrink-0 text-purple-600 dark:text-purple-400" />
+            <p className="text-sm text-purple-900 dark:text-purple-200">
+              <b>{result.pendingReview}</b> of your answers cannot be marked automatically and
+              were not counted towards your score. Your teacher will review them and the score will
+              be updated.
+            </p>
           </div>
         )}
 
@@ -213,6 +236,12 @@ export function TestResultScreen({
               size="lg"
               className="w-full"
               onClick={onToggleSolutions}
+              disabled={!keyReleased}
+              title={
+                keyReleased
+                  ? undefined
+                  : "This paper's answers are not published until a later date"
+              }
             >
               <BookOpen className="h-4 w-4" /> {showSolutions ? "Hide" : "View"} solutions
             </Button>
@@ -231,10 +260,17 @@ export function TestResultScreen({
           <div className="mt-6 space-y-4">
             {questions.map((q, i) => {
               const numeric = isNumericQuestion(q);
-              const chosen = answers[q.id]?.selected;
-              const given = parseNumeric(answers[q.id]?.numeric);
-              const attempted = numeric ? given !== null : chosen !== undefined && chosen !== null;
-              const isCorrect = numeric ? given === q.numericAnswer : chosen === q.correctIndex;
+              // What the student chose, as stored: option text for an MCQ, typed
+              // text for a numerical one. Compared as text rather than by index,
+              // because the graded question list is rebuilt in stored order and may
+              // not be the order the student saw if the paper shuffles options.
+              const chosen = q.selected_answer;
+              const attempted = chosen !== null && chosen !== "";
+              // Null means nobody has ruled on it yet, which is not the same as
+              // wrong. An essay pending review has to read as pending.
+              const verdict =
+                q.is_correct === null ? "pending" : q.is_correct ? "correct" : "incorrect";
+              const marksAwarded = q.marks_awarded === null ? null : Number(q.marks_awarded);
               return (
                 <div
                   key={q.id}
@@ -242,65 +278,102 @@ export function TestResultScreen({
                 >
                   <div className="flex items-start justify-between gap-3">
                     <p className="font-medium text-gray-900 dark:text-white">
-                      Q{i + 1}. {q.text}
+                      Q{i + 1}. {q.question_text}
                     </p>
-                    {!attempted ? (
+                    {verdict === "pending" ? (
+                      <Badge variant="purple">Awaiting review</Badge>
+                    ) : !attempted ? (
                       <Badge variant="amber">Unattempted</Badge>
-                    ) : isCorrect ? (
+                    ) : verdict === "correct" ? (
                       <Badge variant="green">Correct</Badge>
                     ) : (
                       <Badge variant="red">Incorrect</Badge>
                     )}
                   </div>
-                  {numeric ? (
-                    <div className="mt-3 space-y-1.5">
-                      <p
-                        className={cn(
-                          "flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition",
-                          isCorrect
-                            ? "border-green-200 bg-green-50 font-medium text-green-800 dark:border-emerald-800/60 dark:bg-emerald-950/50 dark:text-emerald-300"
-                            : "border-red-200 bg-red-50 text-red-700 dark:border-rose-800/60 dark:bg-rose-950/50 dark:text-rose-300",
-                        )}
-                      >
-                        Your answer: {given ?? "—"}
-                        {isCorrect ? (
-                          <CheckCircle2 className="ml-auto h-4 w-4 shrink-0 text-green-600 dark:text-emerald-400" />
-                        ) : (
-                          <XCircle className="ml-auto h-4 w-4 shrink-0 text-red-500 dark:text-rose-400" />
-                        )}
-                      </p>
-                      <p className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm font-medium text-green-800 dark:border-emerald-800/60 dark:bg-emerald-950/50 dark:text-emerald-300">
-                        Correct answer: {q.numericAnswer}
-                        <CheckCircle2 className="ml-auto h-4 w-4 shrink-0 text-green-600 dark:text-emerald-400" />
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="mt-3 space-y-1.5">
-                      {q.options.map((opt, oi) => (
+                  <div className="mt-3 space-y-1.5">
+                    {numeric ? (
+                      <>
                         <p
-                          key={oi}
                           className={cn(
                             "flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition",
-                            oi === q.correctIndex &&
-                              "border-green-200 bg-green-50 font-medium text-green-800 dark:border-emerald-800/60 dark:bg-emerald-950/50 dark:text-emerald-300",
-                            oi === chosen &&
-                              oi !== q.correctIndex &&
-                              "border-red-200 bg-red-50 text-red-700 dark:border-rose-800/60 dark:bg-rose-950/50 dark:text-rose-300",
-                            oi !== q.correctIndex &&
-                              oi !== chosen &&
-                              "border-transparent text-slate-700 dark:text-slate-300",
+                            !attempted
+                              ? "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800/60 dark:bg-amber-950/50 dark:text-amber-300"
+                              : verdict === "correct"
+                                ? "border-green-200 bg-green-50 font-medium text-green-800 dark:border-emerald-800/60 dark:bg-emerald-950/50 dark:text-emerald-300"
+                                : "border-red-200 bg-red-50 text-red-700 dark:border-rose-800/60 dark:bg-rose-950/50 dark:text-rose-300",
                           )}
                         >
-                          {String.fromCharCode(65 + oi)}. {opt}
-                          {oi === q.correctIndex && (
+                          Your answer: {chosen ?? "—"}
+                          {verdict === "correct" ? (
                             <CheckCircle2 className="ml-auto h-4 w-4 shrink-0 text-green-600 dark:text-emerald-400" />
-                          )}
-                          {oi === chosen && oi !== q.correctIndex && (
+                          ) : verdict === "incorrect" ? (
                             <XCircle className="ml-auto h-4 w-4 shrink-0 text-red-500 dark:text-rose-400" />
+                          ) : (
+                            <Clock className="ml-auto h-4 w-4 shrink-0 text-slate-400" />
                           )}
                         </p>
-                      ))}
-                    </div>
+                        {q.numeric_answer !== null && (
+                          <p className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm font-medium text-green-800 dark:border-emerald-800/60 dark:bg-emerald-950/50 dark:text-emerald-300">
+                            Correct answer: {q.numeric_answer}
+                            <CheckCircle2 className="ml-auto h-4 w-4 shrink-0 text-green-600 dark:text-emerald-400" />
+                          </p>
+                        )}
+                        {/* The tolerance grading actually used. Shown because an
+                            accepted range is the difference between "your answer
+                            is wrong" and "your answer was close enough". */}
+                        {q.tolerance !== null && Number(q.tolerance) !== 0 && (
+                          <p className="text-xs text-slate-400 dark:text-slate-500">
+                            Accepted tolerance: ±{q.tolerance}
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      (q.options ?? []).map((opt, oi) => {
+                        const isKey = q.correct_answer !== null && opt === q.correct_answer;
+                        const isChosen = opt === chosen;
+                        return (
+                          <p
+                            key={oi}
+                            className={cn(
+                              "flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition",
+                              isKey &&
+                                "border-green-200 bg-green-50 font-medium text-green-800 dark:border-emerald-800/60 dark:bg-emerald-950/50 dark:text-emerald-300",
+                              isChosen &&
+                                !isKey &&
+                                "border-red-200 bg-red-50 text-red-700 dark:border-rose-800/60 dark:bg-rose-950/50 dark:text-rose-300",
+                              !isKey &&
+                                !isChosen &&
+                                "border-transparent text-slate-700 dark:text-slate-300",
+                            )}
+                          >
+                            {String.fromCharCode(65 + oi)}. {opt}
+                            {isKey && (
+                              <CheckCircle2 className="ml-auto h-4 w-4 shrink-0 text-green-600 dark:text-emerald-400" />
+                            )}
+                            {isChosen && !isKey && (
+                              <XCircle className="ml-auto h-4 w-4 shrink-0 text-red-500 dark:text-rose-400" />
+                            )}
+                          </p>
+                        );
+                      })
+                    )}
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+                    {marksAwarded !== null && (
+                      <span className="rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                        {marksAwarded} of {q.marks} marks
+                      </span>
+                    )}
+                    {verdict === "incorrect" && Number(q.negative_marks) > 0 && (
+                      <span className="rounded-full bg-red-50 px-2 py-0.5 font-semibold text-red-600 dark:bg-red-950/60 dark:text-red-300">
+                        −{q.negative_marks} applied
+                      </span>
+                    )}
+                  </div>
+                  {q.grader_feedback && (
+                    <p className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-800/50 dark:text-slate-300">
+                      <b>Teacher&apos;s feedback:</b> {q.grader_feedback}
+                    </p>
                   )}
                   {q.explanation && (
                     <p className="mt-3 rounded-xl border border-purple-100 bg-purple-50 p-3 text-sm text-purple-900 dark:border-purple-900/50 dark:bg-purple-950/40 dark:text-purple-200">

@@ -11,7 +11,28 @@ import { Badge } from "@/components/ui/Badge";
 import { Chip } from "@/components/ui/Chip";
 import { EmptyState } from "@/components/ui/EmptyState";
 
-const LEVELS = ["All", "UG", "PG", "Doctoral"] as const;
+/**
+ * Level chips.
+ *
+ * `"Diploma"` was missing while `mapCourseMeta` emits it (`COURSE_LEVELS` in
+ * `lib/mappers.ts` is `["UG","PG","Doctoral","Diploma"]`), so a Diploma course
+ * was searchable but could not be isolated — clicking through the chips gave no
+ * way to ask "show me diplomas".
+ *
+ * Derived from the catalogue rather than hard-coded, so a level added to the
+ * backend mapper cannot be left out of the UI the way this was.
+ */
+function levelsFor(catalog: CourseMeta[]): string[] {
+  // `Set<string>` explicitly: `new Set(catalog.map(c => c.level))` infers the
+// literal union, and `has("Diploma")` from a `string[]` of candidates would not
+// typecheck against it.
+const present = new Set<string>(catalog.map((c) => c.level));
+  // Stable, familiar order; anything unrecognised sorts to the end rather than
+  // disappearing.
+  const preferred = ["UG", "PG", "Diploma", "Doctoral"];
+  const rest = [...present].filter((l) => !preferred.includes(l)).sort();
+  return ["All", ...preferred.filter((l) => present.has(l)), ...rest];
+}
 
 export default function CoursesExplorer({
   courses: catalog,
@@ -23,12 +44,16 @@ export default function CoursesExplorer({
   colleges?: College[];
 }) {
   const [query, setQuery] = useState("");
-  const [level, setLevel] = useState<(typeof LEVELS)[number]>("All");
+  const [level, setLevel] = useState<string>("All");
   const { isCourseSaved, toggleCourseSave } = useApp();
+
+  const levels = useMemo(() => levelsFor(catalog ?? []), [catalog]);
 
   const results = useMemo(() => {
     const list = searchCourses(query, catalog);
-    return level === "All" ? list : list.filter((c) => c.level === level);
+    return level === "All"
+      ? list
+      : list.filter((c) => (c.level as string) === level);
   }, [query, level, catalog]);
 
   return (
@@ -53,7 +78,7 @@ export default function CoursesExplorer({
           />
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
-          {LEVELS.map((l) => (
+          {levels.map((l) => (
             <Chip key={l} active={level === l} onClick={() => setLevel(l)}>
               {l}
             </Chip>

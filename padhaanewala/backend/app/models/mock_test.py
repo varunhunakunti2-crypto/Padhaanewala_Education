@@ -16,6 +16,12 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+from app.models.question_import import (
+    QUESTION_SOURCES,
+    REVIEW_STATUSES,
+    _REVIEW_STATUS_CHECK,
+    _SOURCE_CHECK,
+)
 from app.question_types import ALL_QUESTION_TYPES
 
 #: The widest answer a submission may carry, in characters. Postgres raises
@@ -88,6 +94,8 @@ class TestQuestion(Base):
     __tablename__ = "test_questions"
     __table_args__ = (
         CheckConstraint(_QUESTION_TYPE_CHECK, name="ck_test_questions_question_type"),
+        CheckConstraint(_REVIEW_STATUS_CHECK, name="ck_test_questions_review_status"),
+        CheckConstraint(_SOURCE_CHECK, name="ck_test_questions_source"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -117,6 +125,37 @@ class TestQuestion(Base):
     explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # --- Review gate for AI-generated questions --------------------------
+    #
+    # `approved` is the default for the whole table, so every seeded and
+    # hand-authored question is already published and the migration touches no
+    # existing row. Only `pdf_ai` questions are ever born `pending`.
+    #
+    # Deliberately separate from `is_active`. That column means "removed, keep
+    # the student history attached"; a rejected draft means "the model got this
+    # one wrong". Collapsing them would make "which questions did we throw away"
+    # unanswerable, and would make a rejected draft look like a question students
+    # have already answered.
+    #
+    # Every student-facing read filters on this. See `_active_questions` in
+    # `routers/mock_tests.py` -- one predicate, used by the paper listing, the
+    # attempt start and the autograder alike, because the guarantee "a student
+    # never sees an unapproved question" has to hold in all three or it holds
+    # nowhere.
+    review_status: Mapped[str] = mapped_column(String(20), default="approved", index=True)
+    #: `manual` unless this question was drafted by the PDF import. Lets the
+    #: admin panel filter the AI's output separately from hand-authored content
+    #: without inferring it from `review_status` (which changes as it is reviewed).
+    source: Mapped[str] = mapped_column(String(20), default="manual", index=True)
+    #: The batch this draft came from. SET NULL so discarding a job does not
+    #: remove questions an admin has since approved; NULL for every manually
+    #: authored question, which is most of the bank.
+    import_job_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("question_import_jobs.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.now
     )
@@ -125,6 +164,7 @@ class TestQuestion(Base):
     )
 
     mock_test: Mapped["MockTest"] = relationship(back_populates="questions")
+    import_job: Mapped["QuestionImportJob | None"] = relationship()
     answers: Mapped[list["TestAnswer"]] = relationship(
         back_populates="question", cascade="all, delete-orphan"
     )

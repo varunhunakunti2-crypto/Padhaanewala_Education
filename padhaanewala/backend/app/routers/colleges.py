@@ -87,9 +87,43 @@ def _admission_windows(
     return windows
 
 
+def _course_names(db: Session, colleges: list[College]) -> dict[int, list[str]]:
+    """Distinct course names per college, in one query.
+
+    The list endpoint omits the full `courses` rows to stay cheap, but course
+    *names* are search input: `mapCollegeListItem` built `courses: []`, so the
+    degree half of every college haystack was permanently empty. That is why
+    `/colleges?q=B.Tech` — the link on every course card, and one of the
+    `POPULAR_SEARCHES` pills — returned nothing.
+
+    Names only, deduplicated: the frontend needs them to match against, and the
+    fee/duration/specialisation that would justify the join are not on this
+    projection. One query for the page, same as `_admission_windows`, because a
+    page of 100 rows must not turn into 100 queries.
+    """
+    ids = [c.id for c in colleges]
+    if not ids:
+        return {}
+    rows = db.execute(
+        select(CollegeCourse.college_id, Course.name)
+        .join(Course, Course.id == CollegeCourse.course_id)
+        .where(CollegeCourse.college_id.in_(ids), CollegeCourse.is_active)
+        .order_by(Course.name)
+    ).all()
+    names: dict[int, list[str]] = {}
+    for college_id, name in rows:
+        bucket = names.setdefault(college_id, [])
+        # Ordered by name, so duplicates are adjacent; `!=` on the last element
+        # is enough and avoids a set per college.
+        if not bucket or bucket[-1] != name:
+            bucket.append(name)
+    return names
+
+
 def _to_list_item(
     college: College,
     admissions: list[AdmissionWindowResponse] | None = None,
+    course_names: list[str] | None = None,
 ) -> CollegeListItemResponse:
     return CollegeListItemResponse(
         id=college.id,
@@ -106,6 +140,7 @@ def _to_list_item(
         average_rating=college.average_rating,
         is_featured=college.is_featured,
         admissions=admissions or [],
+        course_names=course_names or [],
     )
 
 
@@ -155,7 +190,8 @@ def list_colleges(
         db.scalars(query.order_by(College.name).limit(limit).offset(offset)).all()
     )
     windows = _admission_windows(db, colleges)
-    return [_to_list_item(c, windows.get(c.id)) for c in colleges]
+    names = _course_names(db, colleges)
+    return [_to_list_item(c, windows.get(c.id), names.get(c.id, [])) for c in colleges]
 
 
 

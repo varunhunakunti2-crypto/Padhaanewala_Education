@@ -19,6 +19,7 @@ from app.models.mock_test import MockTest, TestAnswer, TestAttempt, TestQuestion
 from app.models.notification import Notification
 from app.models.otp_record import OtpRecord
 from app.models.placement import PlacementRecord
+from app.models.question_import import QuestionImportJob
 from app.models.ranking import NIRFRanking, OtherRanking
 from app.models.refresh_token import RefreshToken
 from app.models.review import Review
@@ -65,6 +66,7 @@ __all__ = [
     "Notification",
     "OtherRanking",
     "OtpRecord",
+    "QuestionImportJob",
     "PlacementRecord",
     "RefreshToken",
     "Review",

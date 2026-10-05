@@ -3,33 +3,18 @@
 import { useCallback, useMemo, useState, Suspense } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import type { College, SearchFilters, SortKey } from "@/lib/types";
-import { searchColleges, PAGE_SIZE, buildFacets } from "@/lib/data";
+import { searchColleges, buildFacets, searchTokens, PAGE_SIZE } from "@/lib/data";
 import { COLLEGES } from "@/lib/data/colleges";
 import { defaultFilters, parseSearchParams, serializeSearch } from "@/lib/searchParams";
 import { CollegeCard } from "@/components/college/CollegeCard";
-import { FiltersPanel } from "@/components/college/FiltersPanel";
+import { FiltersPanel, countActiveFilters } from "@/components/college/FiltersPanel";
 import { SortBar } from "@/components/college/SortBar";
 import { Pagination } from "@/components/college/Pagination";
 import { SearchBar } from "@/components/home/SearchBar";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Chip as FilterChip } from "@/components/ui/Chip";
 import { SearchX } from "lucide-react";
-import { cn } from "@/lib/utils";
-
-function activeFilterCount(f: SearchFilters): number {
-  return (
-    (f.states?.length ?? 0) +
-    (f.cities?.length ?? 0) +
-    (f.courseNames?.length ?? 0) +
-    (f.sectors?.length ?? 0) +
-    (f.types?.length ?? 0) +
-    (f.exams?.length ?? 0) +
-    (f.accreditations?.length ?? 0) +
-    (f.hostel === true ? 1 : 0) +
-    (f.placementRate === true ? 1 : 0) +
-    (f.minFee !== null ? 1 : 0)
-  );
-}
+import { cn, debounce } from "@/lib/utils";
 
 export default function CollegesExplorer({
   colleges: dataset,
@@ -41,13 +26,22 @@ export default function CollegesExplorer({
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
+  /**
+   * Set only on mobile, and only when the filter drawer is open.
+   *
+   * `updateFilters` used to close the drawer on every change, so each tap on a
+   * filter checkbox slammed it shut and the next one had to reopen it. Now only
+   * an explicit close — the scrim, the ✕, or "Show N results" — closes it.
+   */
+  const [filterOpen, setFilterOpen] = useState(false);
+  const isDrawerOpen = filterOpen;
+
   const colleges = useMemo(() => dataset?.length ? dataset : COLLEGES, [dataset]);
   const facets = useMemo(() => buildFacets(colleges), [colleges]);
 
   const initial = useMemo(() => parseSearchParams(searchParams), [searchParams]);
   const [filters, setFilters] = useState<SearchFilters>(initial.filters);
   const [page, setPage] = useState(initial.page);
-  const [filterOpen, setFilterOpen] = useState(false);
 
   // Re-read filters when the URL changes (browser back/forward). This is React's
   // documented "adjust state when a prop changes" pattern — the comparison and
@@ -68,9 +62,25 @@ export default function CollegesExplorer({
     [pathname, router],
   );
 
+  /**
+   * Push the query to the URL on a pause in typing.
+   *
+   * `updateFilters` writes the URL synchronously, which is right for a checkbox
+   * and wrong for a keystroke: typing a five-letter query would fire five
+   * `router.replace` calls, each re-rendering the route segment. The grid itself
+   * filters off local state and stays instant; only the URL lags, by 300ms.
+   */
+  const syncQuerySoon = useMemo(
+    () =>
+      debounce((q: string) => {
+        const qs = serializeSearch({ ...filters, query: q }, 1);
+        router.replace(`${pathname}${qs ? `?${qs}` : ""}`, { scroll: false });
+      }, 300),
+    [filters, pathname, router],
+  );
+
   const updateFilters = useCallback(
     (patch: Partial<SearchFilters>) => {
-      setFilterOpen(false);
       const next = { ...filters, ...patch };
       setFilters(next);
       setPage(1);
@@ -96,8 +106,10 @@ export default function CollegesExplorer({
     [filters, page, colleges],
   );
 
-  const activeCount = activeFilterCount(filters);
-  const hasActiveFilters = activeCount > 0 || Boolean(filters.query);
+  const activeCount = countActiveFilters(filters);
+  // `searchTokens` rather than `Boolean(query)`: a whitespace-only `?q=%20%20`
+  // was truthy, so the chip row and "Clear all" appeared with nothing applied.
+  const hasActiveFilters = activeCount > 0 || searchTokens(filters.query).length > 0;
 
   return (
     <div>
@@ -121,6 +133,13 @@ export default function CollegesExplorer({
               id="colleges-search"
               colleges={colleges}
               facets={facets}
+              onChange={(q) => {
+                // Local state first so the grid responds on the keystroke, URL
+                // on the debounce.
+                setFilters((prev) => ({ ...prev, query: q }));
+                setPage(1);
+                syncQuerySoon(q);
+              }}
             />
           </div>
         </div>
@@ -154,7 +173,7 @@ export default function CollegesExplorer({
             {/* active chips */}
             {hasActiveFilters && (
               <div className="mt-4 flex flex-wrap items-center gap-1.5">
-                {filters.query && (
+                {searchTokens(filters.query).length > 0 && (
                   <FilterChip pill onRemove={() => updateFilters({ query: "" })}>{filters.query}</FilterChip>
                 )}
                 {(filters.states ?? []).map((s) => (
@@ -198,6 +217,12 @@ export default function CollegesExplorer({
                   actionHref="/colleges"
                   actionLabel="Reset all filters"
                 />
+              ) : total > results.length ? (
+                // Only worth saying when pagination hides some. With one page of
+                // results the bar simply reads "1–9 of 9" for no added information.
+                <p className="mb-4 text-xs text-gray-500 dark:text-slate-400">
+                  Showing {(page - 1) * PAGE_SIZE + 1}–{(page - 1) * PAGE_SIZE + results.length} of {total}
+                </p>
               ) : (
                 <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                   {results.map((college) => (
