@@ -171,6 +171,11 @@ if cref:
         ("fees", f"/colleges/{cref}/fees"),
         ("placements", f"/colleges/{cref}/placements"),
         ("rankings", f"/colleges/{cref}/rankings"),
+        # The college page fetches the two per-type lists too, not just the
+        # merged one. They were missing here while also missing from the router,
+        # which is how a 405 on both went unnoticed until a build log said so.
+        ("nirf rankings", f"/colleges/{cref}/rankings/nirf"),
+        ("other rankings", f"/colleges/{cref}/rankings/other"),
         ("seat matrix", f"/colleges/{cref}/seat-matrix"),
         ("admissions", f"/colleges/{cref}/admissions"),
         ("reviews", f"/reviews/college/{cref}"),

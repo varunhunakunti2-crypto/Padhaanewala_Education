@@ -770,6 +770,68 @@ def list_rankings(
         rows += [_to_ranking("other", college, r) for r in other]
     return rows
 
+@router.get(
+    "/{college_ref}/rankings/nirf",
+    response_model=list[NIRFRankingResponse],
+)
+def list_nirf_rankings(
+    college_ref: str,
+    category: str | None = None,
+    year: int | None = None,
+    db: Session = Depends(get_db),
+):
+    """NIRF rows only, newest year first.
+
+    Sibling of `/{college_ref}/rankings`, not a replacement for it: every other
+    enrichment resource — cutoffs, fees, placements, seat matrix, admissions —
+    serves `GET /{college_ref}/<resource>` for its list, and rankings is the one
+    that only had the merged view plus per-type writes. A client reaching for
+    the per-type list the way it reaches for the other five got a 405 from the
+    POST route sitting on the same path, which the frontend's failure-tolerant
+    fetch turned into an empty rankings section on the college page.
+    """
+    college = _get_active_college(db, college_ref)
+    conditions = [NIRFRanking.college_id == college.id]
+    if category is not None:
+        conditions.append(NIRFRanking.category == category)
+    if year is not None:
+        conditions.append(NIRFRanking.year == year)
+    rows = db.scalars(
+        select(NIRFRanking)
+        .options(selectinload(NIRFRanking.college))
+        .where(*conditions)
+        .order_by(NIRFRanking.year.desc())
+    ).all()
+    return [_to_nirf(db, r) for r in rows]
+
+@router.get(
+    "/{college_ref}/rankings/other",
+    response_model=list[OtherRankingResponse],
+)
+def list_other_rankings(
+    college_ref: str,
+    ranking_body: str | None = None,
+    category: str | None = None,
+    year: int | None = None,
+    db: Session = Depends(get_db),
+):
+    """Independent-body rows only, newest year first. See `list_nirf_rankings`."""
+    college = _get_active_college(db, college_ref)
+    conditions = [OtherRanking.college_id == college.id]
+    if ranking_body is not None:
+        conditions.append(OtherRanking.ranking_body == ranking_body)
+    if category is not None:
+        conditions.append(OtherRanking.category == category)
+    if year is not None:
+        conditions.append(OtherRanking.year == year)
+    rows = db.scalars(
+        select(OtherRanking)
+        .options(selectinload(OtherRanking.college))
+        .where(*conditions)
+        .order_by(OtherRanking.year.desc())
+    ).all()
+    return [_to_other(db, r) for r in rows]
+
 @router.post(
     "/{college_ref}/rankings/nirf",
     response_model=NIRFRankingResponse,
