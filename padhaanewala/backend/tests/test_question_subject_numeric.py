@@ -160,6 +160,11 @@ def test_columns_exist_in_the_database():
     The model would import and every unit test of `_is_numeric_correct` would
     still pass, because they read attributes off the ORM object rather than the
     table. Only this assertion notices that the four columns were never created.
+
+    The exact count is the point: it is what turns "someone added a column to the
+    model" into "someone added a column to the model *and* a migration for it".
+    Asserting only the columns named above would keep passing through a forgotten
+    migration for any column added later.
     """
     with engine.connect() as conn:
         rows = conn.execute(
@@ -178,7 +183,17 @@ def test_columns_exist_in_the_database():
     # NOT NULL: every question has a tolerance, and 0 means "exact".
     assert columns["tolerance"] == ("numeric", "NO")
 
-    assert len(columns) == 18, "expected the original 14 plus these 4"
+    # The PDF-import columns (d7e1b4c9a205). `review_status` is NOT NULL because
+    # a question with no review status is unpublishable by the `_PUBLISHABLE`
+    # predicate -- the default "approved" is what keeps every pre-existing
+    # question visible.
+    assert columns["review_status"] == ("character varying", "NO")
+    assert columns["source"] == ("character varying", "NO")
+    # Nullable: only rows from a PDF import carry one, and it goes when the job
+    # is discarded.
+    assert columns["import_job_id"] == ("integer", "YES")
+
+    assert len(columns) == 21, "expected 18 plus these 3"
 
 
 def test_subject_and_topic_are_indexed():

@@ -1,6 +1,7 @@
 import type { College } from "@/lib/types";
 import { COLLEGES } from "./colleges";
 import { COURSE_DETAILS } from "./courseDetails";
+import { matchesTokens, searchTokens } from "./index";
 
 export interface CourseMeta {
   slug: string;
@@ -31,12 +32,27 @@ export function collegesOffering(
   );
 }
 
+function courseHaystack(c: CourseMeta): string {
+  // `duration` was missing here, so searching "3 years" or "4 years" — the kind
+  // of thing a student types — matched nothing. `level` is kept because it is
+  // searchable text ("pg", "diploma") even though it also has its own chips.
+  return `${c.name} ${c.degree} ${c.description} ${c.duration} ${c.level}`;
+}
+
+/**
+ * Filter a course catalogue by query.
+ *
+ * Tokenised AND matching, shared with `matchesCollege` and `searchExams`. It
+ * used to be a single contiguous `includes(q)` over a lowercased string, which
+ * meant `"B.Tech Computer Science"` had to appear verbatim and in order: it
+ * failed against `"B.Tech Computer Science Engineering"`, while the same query
+ * on `/colleges` matched by individual word. Two search boxes over one catalogue
+ * disagreeing about the same phrase is the "not properly working" users hit.
+ */
 export function searchCourses(query: string, catalog: CourseMeta[] = COURSES): CourseMeta[] {
-  const q = query.toLowerCase().trim();
-  if (!q) return catalog;
-  return catalog.filter((c) =>
-    `${c.name} ${c.degree} ${c.description} ${c.level}`.toLowerCase().includes(q),
-  );
+  const tokens = searchTokens(query);
+  if (tokens.length === 0) return catalog;
+  return catalog.filter((c) => matchesTokens(courseHaystack(c), tokens));
 }
 
 export function getCourseBySlug(slug: string, catalog: CourseMeta[] = COURSES): CourseMeta | undefined {

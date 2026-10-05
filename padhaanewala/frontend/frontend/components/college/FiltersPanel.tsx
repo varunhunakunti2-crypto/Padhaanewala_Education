@@ -97,6 +97,40 @@ interface FiltersProps {
 
 const BUNDLED = buildFacets();
 
+/**
+ * How many filters are currently narrowing the results.
+ *
+ * Was written out twice with two different term lists: `CollegesExplorer` counted
+ * 10 (no districts, universities, admission statuses or rating), this panel
+ * counted 14 (with them, but without `maxFee`). So the badge on the "Filters"
+ * button said 2 while the panel header said 5 for the same state. One
+ * definition, used by both.
+ *
+ * Range filters count once regardless of whether both ends are set — "fees under
+ * ₹1.5L" is one choice from the user's side of the screen.
+ */
+export function countActiveFilters(filters: SearchFilters): number {
+  const lists: ReadonlyArray<readonly string[]> = [
+    filters.states ?? [],
+    filters.cities ?? [],
+    filters.courseNames ?? [],
+    filters.sectors ?? [],
+    filters.types ?? [],
+    filters.exams ?? [],
+    filters.accreditations ?? [],
+    filters.districts ?? [],
+    filters.universities ?? [],
+    filters.admissionStatuses ?? [],
+  ];
+  const fromLists = lists.reduce((n, list) => n + list.length, 0);
+  const flags =
+    (filters.hostel === true ? 1 : 0) +
+    (filters.placementRate === true ? 1 : 0) +
+    (filters.minRating !== null ? 1 : 0) +
+    (filters.minFee !== null || filters.maxFee !== null ? 1 : 0);
+  return fromLists + flags;
+}
+
 export function FiltersPanel({ filters, onChange, onClear, onClose, facets = BUNDLED }: FiltersProps) {
   const toggle = <T,>(arrKey: "states" | "cities" | "courseNames" | "sectors" | "types" | "exams" | "accreditations" | "districts" | "universities" | "admissionStatuses", value: T) => {
     const current = (filters[arrKey] as T[]) ?? [];
@@ -106,21 +140,7 @@ export function FiltersPanel({ filters, onChange, onClear, onClose, facets = BUN
     } as Partial<SearchFilters>);
   };
 
-  const activeCount =
-    (filters.states?.length ?? 0) +
-    (filters.cities?.length ?? 0) +
-    (filters.courseNames?.length ?? 0) +
-    (filters.sectors?.length ?? 0) +
-    (filters.types?.length ?? 0) +
-    (filters.exams?.length ?? 0) +
-    (filters.accreditations?.length ?? 0) +
-    (filters.districts?.length ?? 0) +
-    (filters.universities?.length ?? 0) +
-    (filters.admissionStatuses?.length ?? 0) +
-    (filters.minRating !== null ? 1 : 0) +
-    (filters.hostel === true ? 1 : 0) +
-    (filters.placementRate === true ? 1 : 0) +
-    (filters.minFee !== null ? 1 : 0);
+  const activeCount = countActiveFilters(filters);
 
   return (
     <div className="flex h-full flex-col">

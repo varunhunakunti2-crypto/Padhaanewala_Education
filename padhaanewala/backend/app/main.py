@@ -36,6 +36,7 @@ audit,
     media,
     mock_tests,
     questions,
+    question_imports,
     notifications,
     predictor,
     reviews,
@@ -129,6 +130,7 @@ app.include_router(scholarships.router)
 app.include_router(exams.router)
 app.include_router(mock_tests.router)
 app.include_router(questions.router)
+app.include_router(question_imports.router)
 app.include_router(reviews.router)
 app.include_router(blogs.router)
 app.include_router(faqs.router)

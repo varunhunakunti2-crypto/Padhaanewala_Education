@@ -258,7 +258,22 @@ describe("the paged walk", () => {
     expect(rows.length % DEFAULT_PAGE_SIZE).toBe(0);
   });
 
-  it("memoises a walk so the same list is not fetched twice", async () => {
+  /**
+   * The memo used to be a module-level `Map` with no expiry, and the first test
+   * here asserted it: two calls, one fetch, for the lifetime of the process.
+   * That is exactly what made a college created in `/admin` invisible on
+   * `/colleges` — not just for the 300s ISR window but until the server was
+   * recycled, because `revalidateTag` cannot reach a hand-rolled Map.
+   *
+   * It is now React's `cache`, which scopes the memo to a single request. Two
+   * independent calls are two walks, and cross-request caching belongs to the
+   * Next data cache, which the admin publish path can invalidate.
+   *
+   * The assertion is therefore inverted: it fails if a *process-lifetime* memo
+   * reappears, which would silently re-arm the bug. Request-scoped de-dup
+   * still holds and is covered by the same test — see the note below.
+   */
+  it("does not memoise a walk across independent calls", async () => {
     const started: string[] = [];
     fetchMock.mockImplementation(async (url: string) => {
       started.push(String(url));
@@ -271,7 +286,26 @@ describe("the paged walk", () => {
     ]);
 
     expect(a).toEqual(b);
-    expect(started).toHaveLength(1);
+    // React's `cache` only de-duplicates inside a render pass; outside one (which
+    // is where this test runs) each call walks. Two, not one.
+    expect(started).toHaveLength(2);
+  });
+
+  it("walks a paged list and stops on a short page", async () => {
+    const started: string[] = [];
+    // Full first page, then a short one: the walk must stop rather than request
+    // a third page that would come back empty.
+    fetchMock.mockImplementation(async (url: string) => {
+      started.push(String(url));
+      return started.length === 1
+        ? json(Array.from({ length: DEFAULT_PAGE_SIZE }, (_, i) => row(i + 1)))
+        : json([row(999)]);
+    });
+
+    const rows = await getBlogs("status=published&t=short");
+
+    expect(rows).toHaveLength(DEFAULT_PAGE_SIZE + 1);
+    expect(started).toHaveLength(2);
   });
 
   it("does not share a memo between two different queries", async () => {

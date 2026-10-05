@@ -193,6 +193,48 @@ class Settings(BaseSettings):
     #: `media.url`, so changing it after seeding orphans existing rows.
     MEDIA_URL_PREFIX: str = "/api/v1/media/files"
 
+    # --- PDF question import ---------------------------------------------
+    #
+    # An admin uploads a question-paper PDF and Gemini drafts MCQs from the
+    # extracted text. Nothing reaches a student until an admin approves each
+    # draft, so the AI's output is never trusted -- see
+    # `app/services/question_generation.py`.
+    #
+    # These are deliberately separate from `MEDIA_*`: a question paper is 5-40 MB
+    # of PDF, not a 5 MB hero image, and it is never served back over the
+    # same-origin media route. It is read once, turned into rows, and discarded.
+    PDF_IMPORT_MAX_BYTES: int = 20 * 1024 * 1024
+    #: Pages read from a PDF. A 300-page compiled book is not a question paper,
+    #: and the cost of a generation call is roughly proportional to the text
+    #: sent. Refusing is better than silently truncating a paper mid-question.
+    PDF_IMPORT_MAX_PAGES: int = 200
+    #: Characters of extracted text handed to the model per call. Chosen so a
+    #: page of dense prose fits with room to spare; the text is chunked on
+    #: paragraph boundaries rather than mid-sentence.
+    PDF_IMPORT_CHUNK_CHARS: int = 12000
+    #: Extracted-text floor. Below this the PDF is almost certainly a scan, and
+    #: `pypdf` would return a few stray glyphs -- a generation call on that
+    #: either fails or invents questions out of nothing.
+    PDF_IMPORT_MIN_TEXT_CHARS: int = 200
+    #: Ceiling on drafts per job, whatever the admin asked for. Enforced because
+    #: the cost and the review burden both scale with it, and a single upload
+    #: that produced 900 drafts would be unusable rather than generous.
+    PDF_IMPORT_MAX_DRAFTS: int = 200
+    #: Wall-clock ceiling for one Gemini call.
+    PDF_IMPORT_LLM_TIMEOUT_SECONDS: float = 120.0
+    #: Output tokens per call. Each draft is a few hundred tokens, so this
+    #: covers roughly `PDF_IMPORT_MAX_DRAFTS` short questions per chunk.
+    PDF_IMPORT_LLM_MAX_OUTPUT_TOKENS: int = 8192
+    #: Drafts produced per chunk when the admin does not specify. A page of
+    #: notes yields few exam-worthy questions, and padding a paper with
+    #: invented ones is worse than a short paper.
+    PDF_IMPORT_DEFAULT_DRAFTS_PER_CHUNK: int = 5
+
+    #: Google AI Studio credential and model. Backend only -- never in the
+    #: frontend bundle, and never echoed in a response.
+    GEMINI_API_KEY: str = ""
+    GEMINI_MODEL: str = "gemini-2.5-flash"
+
     # --- Phase 9: DPDP compliance ----------------------------------------
     #
     # Verifiable parental consent. DPDP s.9(2) requires it to be verifiable, and

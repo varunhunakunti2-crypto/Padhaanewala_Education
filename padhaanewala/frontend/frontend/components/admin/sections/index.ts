@@ -6,6 +6,10 @@ export { ScholarshipsSection } from "@/components/admin/sections/ScholarshipsSec
 export { ExamsSection } from "@/components/admin/sections/ExamsSection";
 export { MockTestsSection } from "@/components/admin/sections/MockTestsSection";
 export { QuestionsSection } from "@/components/admin/sections/QuestionsSection";
+// Rendered inside `QuestionsSection` rather than from `AdminDashboard`: every
+// draft it approves becomes a row in the question bank. Exported so it can be
+// mounted or tested on its own.
+export { QuestionImportsSection } from "@/components/admin/sections/QuestionImportsSection";
 export { StudentsSection } from "@/components/admin/sections/StudentsSection";
 export { ReviewsSection } from "@/components/admin/sections/ReviewsSection";
 export { BlogsSection } from "@/components/admin/sections/BlogsSection";

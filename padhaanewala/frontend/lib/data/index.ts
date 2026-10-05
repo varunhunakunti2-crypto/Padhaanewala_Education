@@ -3,17 +3,70 @@ import { COLLEGES, getCollegeBySlug } from "./colleges";
 
 export const PAGE_SIZE = 9;
 
+/**
+ * Fold a string for search: lowercase, strip diacritics, collapse punctuation.
+ *
+ * Every search predicate in this file and in `courses.ts`/`exams.ts` routes its
+ * needle through here, because three separate bugs came from not doing so:
+ *
+ *  1. `matchesCollege` compared a *lowercased* haystack against a **raw** `?q=`,
+ *     so `?q=Bengaluru` matched nothing while `?q=bengaluru` matched. That broke
+ *     every capitalised entry point — `POPULAR_SEARCHES`, the home page pills,
+ *     and each course card's "Find colleges" link.
+ *  2. City facet values are `"Bengaluru, Karnataka"`, and `?q=Bengaluru,
+ *     Karnataka` tokenised to `["Bengaluru,", "Karnataka"]` — the trailing comma
+ *     never appears in the space-joined haystack, so every city suggestion
+ *     returned zero results.
+ *  3. `"   "` is truthy, so a whitespace-only `?q=` counted as an active filter
+ *     and made `hasActiveFilters` lie.
+ *
+ * Diacritics are stripped as well, so `"Bengalūru"` finds `"Bengaluru"`.
+ */
+export function normalizeForSearch(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize("NFKD")
+    // Combining marks left behind by NFKD — this is what turns "ū" into "u".
+    .replace(/[̀-ͯ]/g, "")
+    // Punctuation → space, so a comma or hyphen separates tokens instead of
+    // being glued onto one. `&` becomes a token separator rather than matching.
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
+
+/** Normalised search tokens. Empty array means "no query". */
+export function searchTokens(q: string): string[] {
+  const n = normalizeForSearch(q);
+  return n ? n.split(/\s+/) : [];
+}
+
+/**
+ * True when every token appears somewhere in `haystack`.
+ *
+ * AND across tokens, `includes` within one — so "bengaluru engineering" finds a
+ * college that has both words in any order, anywhere in its record.
+ */
+export function matchesTokens(haystack: string, tokens: string[]): boolean {
+  const h = normalizeForSearch(haystack);
+  return tokens.every((t) => h.includes(t));
+}
+
+/** @deprecated Kept as the public name callers already use. Now normalises. */
 export function expandQuery(q: string): string {
-  return q.toLowerCase().trim();
+  return normalizeForSearch(q);
 }
 
 function matchesCollege(c: College, q: string): boolean {
+  const tokens = searchTokens(q);
+  if (tokens.length === 0) return true;
   const haystack = [
     c.name,
     c.shortName,
     c.initials,
     c.city,
     c.state,
+    c.district,
+    c.university,
     c.type,
     c.sector,
     c.tagline,
@@ -29,13 +82,12 @@ function matchesCollege(c: College, q: string): boolean {
     ...c.admission.eligibility.flatMap((e) => e.criteria),
     ...c.scholarships,
   ]
-    .join(" ")
-    .toLowerCase();
-  return q.split(/\s+/).every((token) => haystack.includes(token));
+    .join(" ");
+  return matchesTokens(haystack, tokens);
 }
 
 export function applyFilters(c: College, f: SearchFilters): boolean {
-  if (f.query && !matchesCollege(c, f.query)) return false;
+  if (searchTokens(f.query).length && !matchesCollege(c, f.query)) return false;
   if (f.states.length && !f.states.includes(c.state)) return false;
   if (f.cities.length && !f.cities.includes(c.city)) return false;
   if (f.districts.length && !f.districts.includes(c.district)) return false;
@@ -71,11 +123,33 @@ export function applyFilters(c: College, f: SearchFilters): boolean {
   if (f.placementRate === true && c.placement.placementRate < 85) return false;
 
   const fees = c.courses.map((course) => course.feePerYear);
-  const minFee = Math.min(...fees);
-  if (f.minFee !== null && minFee < (f.minFee ?? 0)) return false;
-  if (f.maxFee !== null && minFee > (f.maxFee ?? 0)) return false;
+  if (fees.length) {
+    const minFee = Math.min(...fees);
+    if (f.minFee !== null && minFee < (f.minFee ?? 0)) return false;
+    if (f.maxFee !== null && minFee > (f.maxFee ?? 0)) return false;
+  }
 
   return true;
+}
+
+/**
+ * Cheapest / priciest annual fee for a college, or `null` when it has no course
+ * data at all.
+ *
+ * The list projection (`mapCollegeListItem`) hard-sets `courses: []` to avoid a
+ * 9-request fan-out per row, so on `/colleges` this is `null` for every college
+ * today. Returning `null` rather than `Infinity`/`-Infinity` is what lets the
+ * callers distinguish "no data" from "an actual fee of zero" and sort it last
+ * instead of yielding a NaN comparator.
+ */
+function cheapestFee(c: College): number {
+  const fees = c.courses.map((x) => x.feePerYear).filter((f) => f > 0);
+  return fees.length ? Math.min(...fees) : Number.POSITIVE_INFINITY;
+}
+
+function priciestFee(c: College): number {
+  const fees = c.courses.map((x) => x.feePerYear).filter((f) => f > 0);
+  return fees.length ? Math.max(...fees) : Number.NEGATIVE_INFINITY;
 }
 
 export function sortColleges(list: College[], key: SortKey): College[] {
@@ -84,13 +158,14 @@ export function sortColleges(list: College[], key: SortKey): College[] {
     case "rating":
       return arr.sort((a, b) => b.rating - a.rating);
     case "fees-asc":
-      return arr.sort(
-        (a, b) => Math.min(...a.courses.map((x) => x.feePerYear)) - Math.min(...b.courses.map((x) => x.feePerYear)),
-      );
+      // `Math.min(...[])` is `Infinity` and `Infinity - Infinity` is `NaN`.
+      // `sort` treats a NaN comparator result as "equal", so a list of colleges
+      // with no fee data came back in unspecified order under this sort — the
+      // one ordering the user explicitly asked for. Colleges without fees sort
+      // last in both directions, which is honest: there is no fee to rank by.
+      return arr.sort((a, b) => cheapestFee(a) - cheapestFee(b));
     case "fees-desc":
-      return arr.sort(
-        (a, b) => Math.max(...b.courses.map((x) => x.feePerYear)) - Math.max(...a.courses.map((x) => x.feePerYear)),
-      );
+      return arr.sort((a, b) => priciestFee(b) - priciestFee(a));
     case "placement":
       return arr.sort((a, b) => b.placement.placementRate - a.placement.placementRate);
     case "reviews":
@@ -144,7 +219,11 @@ const uniqSorted = (values: (string | undefined)[]): string[] =>
 export function buildFacets(dataset: College[] = COLLEGES): CollegeFacets {
   return {
     states: uniqSorted(dataset.map((c) => c.state)),
-    cities: uniqSorted(dataset.map((c) => `${c.city}, ${c.state}`)),
+    // A comma-joined city/state pair, kept because it is what `getSuggestions`
+    // emits and what the city checkbox shows — but built defensively. With a
+    // missing city this produced the literal `", Karnataka"`, which then showed
+    // up as a selectable city option and as a suggestion labelled "City".
+    cities: uniqSorted(dataset.map((c) => (c.city ? `${c.city}, ${c.state}` : c.state))),
     types: uniqSorted(dataset.map((c) => c.type)),
     districts: uniqSorted(dataset.map((c) => c.district)),
     universities: uniqSorted(dataset.map((c) => c.university)),
@@ -193,13 +272,17 @@ export function getSuggestions(
   dataset: College[] = COLLEGES,
   facets: CollegeFacets = BUNDLED_FACETS,
 ): SearchSuggestion[] {
-  const q = expandQuery(query);
-  if (!q) return [];
+  // `expandQuery` now folds diacritics and turns punctuation into separators, so a
+  // single `.includes(q)` against a folded facet value cannot match a folded
+  // needle containing a space. Token-AND it, like every other search here.
+  const tokens = searchTokens(query);
+  if (tokens.length === 0) return [];
+  const contains = (value: string) => matchesTokens(value, tokens);
   const suggestions: SearchSuggestion[] = [];
   const seen = new Set<string>();
 
   for (const c of dataset) {
-    if (c.name.toLowerCase().includes(q) || c.shortName.toLowerCase().includes(q)) {
+    if (contains(c.name) || contains(c.shortName) || contains(c.initials)) {
       const label = c.shortName;
       if (!seen.has(label)) {
         seen.add(label);
@@ -215,7 +298,7 @@ export function getSuggestions(
   }
   if (suggestions.length < 6) {
     for (const degree of facets.degrees) {
-      if (degree.toLowerCase().includes(q) && !seen.has(degree)) {
+      if (contains(degree) && !seen.has(degree)) {
         seen.add(degree);
         suggestions.push({ type: "course", label: degree, sub: "Degree", value: degree });
       }
@@ -224,7 +307,7 @@ export function getSuggestions(
   }
   if (suggestions.length < 8) {
     for (const spec of facets.specializations) {
-      if (spec.toLowerCase().includes(q) && !seen.has(spec)) {
+      if (contains(spec) && !seen.has(spec)) {
         seen.add(spec);
         suggestions.push({
           type: "specialization",
@@ -238,7 +321,7 @@ export function getSuggestions(
   }
   if (suggestions.length < 8) {
     for (const city of facets.cities) {
-      if (city.toLowerCase().includes(q) && !seen.has(city)) {
+      if (contains(city) && !seen.has(city)) {
         seen.add(city);
         suggestions.push({ type: "city", label: city, sub: "City", value: city });
       }

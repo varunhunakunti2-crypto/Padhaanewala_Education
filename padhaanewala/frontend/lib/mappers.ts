@@ -419,12 +419,18 @@ export function mapCollege(bundle: ApiCollegeBundle): College {
   const reviewCount = num(detail.total_reviews) || ratings.length;
 
   const name = text(detail.name, "Unnamed institution");
+  // Trailing punctuation is stripped after truncation, not before: source names
+  // routinely end in a comma before a qualifier ("Alpha College Engineering,
+  // Bangalore"), so taking the first three words yielded the suggestion label
+  // "Alpha College Engineering," with the comma hanging off it.
   const shortName = name
     .replace(/^(Dr\.|Prof\.|Shri|Smt)\s+/i, "")
     .split(/\s+/)
     .filter((w) => !/^(of|the|and|for|in|a|an)$/i.test(w))
     .slice(0, 3)
-    .join(" ");
+    .join(" ")
+    .replace(/[^\w)\].]+$/u, "")
+    .trim();
 
   const accreditations = [
     text(detail.accreditation_naac) ? `NAAC ${text(detail.accreditation_naac)}` : "",
@@ -525,7 +531,27 @@ export function mapCollegeListItem(item: ApiCollegeListItem): College {
     admissions: [],
     faqs: [],
   });
-  return { ...college, admissionStatus: deriveAdmissionStatus(windows ?? []) };
+
+  // Course *names* are search input, not a detail rendering. The list endpoint
+  // returns them on `course_names` (see `ApiCollegeListItem`) but carries no fee,
+  // duration or specialisation, so this synthesises a minimal course row per
+  // name: enough for `matchesCollege` and the "Find colleges" links to match
+  // "B.Tech" or "MBA", and nothing more. The empty-`courses` shortcut was why
+  // searching a degree on `/colleges` returned nothing at all.
+  const listCourses: College["courses"] = list(item.course_names).map((name) => ({
+    name,
+    degree: name,
+    specialization: "",
+    duration: "",
+    seats: 0,
+    feePerYear: 0,
+  }));
+
+  return {
+    ...college,
+    courses: listCourses,
+    admissionStatus: deriveAdmissionStatus(windows ?? []),
+  };
 }
 
 /* -------------------------------- exam ------------------------------- */

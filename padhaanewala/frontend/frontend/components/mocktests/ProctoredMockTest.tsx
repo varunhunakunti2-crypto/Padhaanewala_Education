@@ -2,14 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  AlertTriangle,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
-  Eye,
   Flag,
   Lock,
-  Maximize2,
-  Mic,
-  MonitorUp,
+  MinusCircle,
   ShieldAlert,
   Timer,
 } from "lucide-react";
@@ -17,58 +16,112 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { cn } from "@/lib/utils";
-import { getTestQuestions, isNumericQuestion, resolveMarks } from "@/lib/data/mockTests";
-import type { MockTest, MockTestQuestion } from "@/lib/types";
+import { mockTestsApi, type AttemptQuestion, type AttemptRecord, type TestResult } from "@/lib/api";
+import {
+  answerKey,
+  answerTextFor,
+  attemptHasEnded,
+  describeAttemptSaveError,
+  describeAttemptStartError,
+  isAnswered,
+  isNumericQuestion,
+  resultSummary,
+  seedAnswers,
+  topicOf,
+  type AttemptAnswers,
+  type ResultSummary,
+} from "@/lib/attempt-session";
+import type { MockTest } from "@/lib/types";
 import { useApp } from "@/lib/context/AppContext";
 import { TestSetupScreen } from "@/components/mocktests/TestSetupScreen";
 import { TestResultScreen } from "@/components/mocktests/TestResultScreen";
 import {
   MAX_VIOLATIONS,
-  type AnswerState,
-  type BuildResult,
   type PermissionStatus,
   type Stage,
   type Violation,
 } from "@/components/mocktests/types";
 
-/** True only when the shared display surface covers the whole screen. */
+/** Capabilities the proctor bar reports on, keyed against `PermissionStatus`. */
+const FOCUS_INDICATORS = [
+  { key: "camera", label: "Camera" },
+  { key: "mic", label: "Mic" },
+  { key: "screen", label: "Screen" },
+  { key: "fullscreen", label: "Full screen" },
+] satisfies ReadonlyArray<{
+  key: keyof PermissionStatus;
+  label: string;
+}>;
+
+/**
+ * True only when the shared display surface covers a whole screen.
+ *
+ * `displaySurface` is the authoritative signal: the browser sets it to
+ * `"monitor"` when the student picked an entire screen, and to `"window"` or
+ * `"browser"` when they picked a single window or tab.
+ *
+ * The old check compared the track's `width`/`height` against
+ * `window.screen.width`/`height`, which can never be right on a scaled display.
+ * Track settings are in **device pixels**; `window.screen` is in **CSS pixels**.
+ * At 125% scaling a 1920x1080 panel reports `window.screen` as 1536x864, so
+ * picking "Entire screen" returned 1920x1080, failed the equality test, and the
+ * track was stopped and reported as denied. Every student on a scaled display —
+ * which is most of them — was told to retry a choice they had already made
+ * correctly.
+ *
+ * The size comparison is kept only as a fallback for browsers that do not
+ * populate `displaySurface`, and it now divides by the device pixel ratio
+ * instead of assuming the two spaces are the same.
+ */
 function isWholeScreen(stream: MediaStream): boolean {
   try {
     const settings = stream.getVideoTracks()[0]?.getSettings();
     if (!settings) return false;
-    return settings.width === window.screen.width && settings.height === window.screen.height;
+    const surface = (settings as { displaySurface?: string }).displaySurface;
+    if (surface) return surface === "monitor";
+    const dpr = window.devicePixelRatio || 1;
+    const w = window.screen.width * dpr;
+    const h = window.screen.height * dpr;
+    // 2px of slack absorbs the rounding in scaled track dimensions.
+    return (
+      Math.abs((settings.width ?? 0) - w) <= 2 && Math.abs((settings.height ?? 0) - h) <= 2
+    );
   } catch {
     return false;
   }
 }
 
 /**
- * Parses a numeric answer. Returns null for anything that is not a finite
- * number, so a blank or half-typed field counts as unattempted rather than
- * silently grading as 0. Fractions like "1/2" are not accepted — every
- * numerical question in this project has an integer key.
+ * How often the display is resynced from the server's clock.
+ *
+ * The countdown still ticks locally every second so the header animates smoothly,
+ * but the authoritative value is re-read on this interval and on every return to
+ * the tab. A local decrement alone is what let a backgrounded tab gain time: the
+ * interval stops firing when the tab is hidden and the counter resumes from
+ * whatever it was left at, so a student who alt-tabbed away for four minutes came
+ * back with four minutes still on the clock.
  */
-function parseNumeric(raw: string | undefined): number | null {
-  if (raw == null) return null;
-  const trimmed = raw.trim();
-  if (trimmed === "") return null;
-  const n = Number(trimmed);
-  return Number.isFinite(n) ? n : null;
-}
+const CLOCK_RESYNC_MS = 15_000;
 
-/** True when a question has been given an answer, of either kind. */
-function isAnswered(q: MockTestQuestion, a: AnswerState | undefined): boolean {
-  if (!a) return false;
-  if (isNumericQuestion(q)) return parseNumeric(a.numeric) !== null;
-  return a.selected !== undefined && a.selected !== null;
-}
+/**
+ * How long typing pauses before an answer is sent.
+ *
+ * Every keystroke in a numeric field is an answer change, and one request per
+ * keystroke is one request per character against an endpoint that commits a
+ * transaction. The trailing debounce also gets the final value for free, which is
+ * the one that matters: a save fired on each keystroke could land out of order and
+ * store "4" after "42".
+ */
+const NUMERIC_SAVE_DEBOUNCE_MS = 700;
 
 /**
  * Mock-test runner.
  *
- * Owns all session state and effects (permissions, timer, focus-violation
- * detection, question navigation, scoring). The two large screens are split out
- * into `TestSetupScreen` and `TestResultScreen`; shared types live in `types.ts`.
+ * Owns the session UI (permissions, focus-violation detection, navigation) and
+ * holds no paper of its own: the questions, the answers, the clock and the grade
+ * all live in the backend, reachable through `mockTestsApi`. The two large screens
+ * are split out into `TestSetupScreen` and `TestResultScreen`; shared types live
+ * in `types.ts`.
  */
 export function ProctoredMockTest({ test }: { test: MockTest }) {
   const { addTestResult } = useApp();
@@ -81,32 +134,66 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
     fullscreen: "pending",
   });
 
-  const [questions, setQuestions] = useState<MockTestQuestion[]>([]);
-  const [answers, setAnswers] = useState<Record<string, AnswerState>>({});
+  // The paper comes from `POST /mock-tests/{ref}/start`, never from the bundled
+  // catalogue, so a freshly imported and approved paper is immediately sittable.
+  const [questions, setQuestions] = useState<AttemptQuestion[]>([]);
+  const [attempt, setAttempt] = useState<AttemptRecord | null>(null);
+  const [answers, setAnswers] = useState<AttemptAnswers>({});
   const [current, setCurrent] = useState(0);
+  /** Question indexes the student has actually opened. Drives the palette. */
+  const [visited, setVisited] = useState<Set<number>>(() => new Set([0]));
   const [timeLeft, setTimeLeft] = useState(0);
-  const [result, setResult] = useState<BuildResult | null>(null);
+  const [result, setResult] = useState<ResultSummary | null>(null);
+  const [resultQuestions, setResultQuestions] = useState<TestResult["questions"]>([]);
   const [showSolutions, setShowSolutions] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [violations, setViolations] = useState<Violation[]>([]);
   const [warnOpen, setWarnOpen] = useState(false);
   const [lastWarning, setLastWarning] = useState<Violation | null>(null);
   const [screenError, setScreenError] = useState<string | null>(null);
+  /** Why the attempt could not be opened. Stays on the setup screen. */
+  const [startError, setStartError] = useState<string | null>(null);
+  const [starting, setStarting] = useState(false);
+  /** Set when an autosave fails. The answer stays on screen; the server lacks it. */
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const cameraStreamRef = useRef<MediaStream | null>(null);
+  /** Held apart from `cameraStreamRef` so the two can be granted independently. */
+  const micStreamRef = useRef<MediaStream | null>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const screenSurfaceIssueRef = useRef(false);
   const fullscreenIssueRef = useRef(false);
+  /** Pending numeric-autosave timers, one per question id. */
+  const numericTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   const stageRef = useRef<Stage>("setup");
+  /**
+   * Mirror of `timeLeft`, read by `registerViolation` to stamp a violation with the
+   * remaining time. A ref because `registerViolation` must stay stable.
+   */
   const timeLeftRef = useRef(0);
-  const answersRef = useRef<Record<string, AnswerState>>({});
-  const questionsRef = useRef<MockTestQuestion[]>([]);
   const violationsRef = useRef<Violation[]>([]);
+  const attemptRef = useRef<AttemptRecord | null>(null);
   const finishTestRef = useRef<() => void>(() => {});
-  const startedAtRef = useRef(0);
+  /** Guards a second submit while one is in flight; `submit` is not free. */
+  const submittingRef = useRef(false);
+  /**
+   * Whether the student opted into focus mode.
+   *
+   * Read by `registerViolation` and by the proctor bar. Held in a ref because
+   * `registerViolation` is a `useCallback` with an empty dependency list and
+   * must stay stable — the timer interval and the listener effect both take it
+   * as a dependency, so closing over the state directly would tear down and
+   * rebuild the one-second interval on every keystroke in a numeric field.
+   */
+  const focusModeRef = useRef(false);
+  /** Render-facing mirror of `focusModeRef`; see the note there. */
+  const [focusModeOn, setFocusModeOn] = useState(false);
+  /** Mirror of `perms` for the same reason: read inside the interval. */
+  const permsRef = useRef<PermissionStatus>(perms);
 
   useEffect(() => {
     stageRef.current = stage;
@@ -115,19 +202,34 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
     timeLeftRef.current = timeLeft;
   }, [timeLeft]);
   useEffect(() => {
-    answersRef.current = answers;
-  }, [answers]);
-  useEffect(() => {
-    questionsRef.current = questions;
-  }, [questions]);
-  useEffect(() => {
     violationsRef.current = violations;
   }, [violations]);
+  useEffect(() => {
+    permsRef.current = perms;
+  }, [perms]);
+  useEffect(() => {
+    attemptRef.current = attempt;
+  }, [attempt]);
+
+  /**
+   * Drop any queued numeric autosave.
+   *
+   * Called on unmount and on submit. A timer that fires after the attempt has been
+   * graded is not merely wasted: `saveAnswer` rejects with 400 once an attempt is
+   * submitted, which would pop the "already submitted" warning over the results
+   * screen the student is trying to read.
+   */
+  const cancelPendingSaves = useCallback(() => {
+    for (const timer of Object.values(numericTimersRef.current)) clearTimeout(timer);
+    numericTimersRef.current = {};
+  }, []);
 
   const cleanupMedia = useCallback(() => {
     cameraStreamRef.current?.getTracks().forEach((t) => t.stop());
+    micStreamRef.current?.getTracks().forEach((t) => t.stop());
     screenStreamRef.current?.getTracks().forEach((t) => t.stop());
     cameraStreamRef.current = null;
+    micStreamRef.current = null;
     screenStreamRef.current = null;
     if (document.fullscreenElement) {
       document.exitFullscreen().catch(() => {});
@@ -155,8 +257,21 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
   }, []);
 
   // ---------- Violations ----------
+  /**
+   * Count a focus violation.
+   *
+   * Returns immediately unless focus mode is actually armed. That guard is the
+   * difference between a study aid and a data-loss bug: at
+   * `MAX_VIOLATIONS` this calls `finishTest`, which submits the attempt. An
+   * operating-system notification, a password manager, or a single alt-tab
+   * away from the test all fire `blur`, and before focus mode was optional
+   * that meant a student who had declined proctoring could have their paper
+   * submitted out from under them by something outside the browser. Nobody
+   * consents to that by clicking "Begin test" on a practice paper.
+   */
   const registerViolation = useCallback((reason: string) => {
     if (stageRef.current !== "running") return;
+    if (!focusModeRef.current) return;
     const remaining = timeLeftRef.current;
     const viol: Violation = { reason, at: new Date(), remaining };
     const next = [...violationsRef.current, viol];
@@ -170,58 +285,117 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
     }
   }, []);
 
-  // ---------- Setup: request all proctoring permissions ----------
+  // ---------- Setup: opt into focus mode ----------
+  /**
+   * Focus mode is best-effort throughout.
+   *
+   * Every branch below ends in a permission *state*, never in a throw, because
+   * the one thing this function used to get wrong was fatal: `navigator.mediaDevices`
+   * is undefined outright on an insecure origin and on some embedded browsers,
+   * so the unguarded `.getUserMedia` call rejected the whole `Promise.all` and
+   * left the setup screen stuck on "Waiting…" with no path forward. The exam
+   * does not need any of this, so a missing API is now reported as
+   * `unavailable` and the student can still begin.
+   */
   const requestSetup = useCallback(async () => {
-    setPerms({
+    // One accumulator, one state write. The four `setPerms` calls this used to
+    // make raced each other, so the setup screen could settle on a state that
+    // mixed a fresh answer with a stale one.
+    const next: PermissionStatus = {
       camera: "pending",
       mic: "pending",
       screen: "pending",
       fullscreen: "pending",
-    });
+    };
+    setPerms(next);
 
-    const enterFullscreen = () =>
-      Promise.resolve(
-        document.documentElement.requestFullscreen
-          ? document.documentElement.requestFullscreen()
-          : Promise.reject(new Error("Full screen not supported")),
-      );
+    const media = typeof navigator !== "undefined" ? navigator.mediaDevices : undefined;
 
-    const fsPromise = enterFullscreen()
-      .then(() => setPerms((p) => ({ ...p, fullscreen: "granted" })))
-      .catch(() => setPerms((p) => ({ ...p, fullscreen: "denied" })));
+    const fsPromise = document.documentElement?.requestFullscreen
+      ? document.documentElement
+          .requestFullscreen()
+          .then(() => {
+            next.fullscreen = "granted";
+          })
+          .catch(() => {
+            next.fullscreen = "denied";
+          })
+      : Promise.resolve().then(() => {
+          next.fullscreen = "unavailable";
+        });
 
-    const camPromise = navigator.mediaDevices
-      .getUserMedia({ video: true, audio: true })
-      .then((stream) => {
-        cameraStreamRef.current = stream;
-        setPerms((p) => ({ ...p, camera: "granted", mic: "granted" }));
-      })
-      .catch(() => setPerms((p) => ({ ...p, camera: "denied", mic: "denied" })));
+    const camPromise = !media?.getUserMedia
+      ? Promise.resolve().then(() => {
+          next.camera = "unavailable";
+        })
+      : media
+          .getUserMedia({ video: true })
+          .then((stream) => {
+            cameraStreamRef.current = stream;
+            next.camera = "granted";
+          })
+          .catch(() => {
+            next.camera = "denied";
+          });
+
+    // Asked separately from the camera. A single `getUserMedia({ video: true,
+    // audio: true })` promises both or neither: one busy webcam took the
+    // microphone down with it, and the student saw two Blocked rows with no
+    // way to tell which device was at fault.
+    const micPromise = !media?.getUserMedia
+      ? Promise.resolve().then(() => {
+          next.mic = "unavailable";
+        })
+      : media
+          .getUserMedia({ audio: true })
+          .then((stream) => {
+            micStreamRef.current = stream;
+            next.mic = "granted";
+          })
+          .catch(() => {
+            next.mic = "denied";
+          });
 
     // Fired synchronously so every prompt keeps transient user activation
-    const scrPromise = navigator.mediaDevices
-      .getDisplayMedia({ video: true })
-      .then((stream) => {
-        if (!isWholeScreen(stream)) {
-          stream.getTracks().forEach((t) => t.stop());
-          setScreenError("You must share your ENTIRE screen, not just one window or browser tab. Please pick ‘Entire screen / Full screen’ and try again.");
-          setPerms((p) => ({ ...p, screen: "denied" }));
-          return;
-        }
-        screenStreamRef.current = stream;
-        screenSurfaceIssueRef.current = false;
-        setScreenError(null);
-        setPerms((p) => ({ ...p, screen: "granted" }));
-        stream.getVideoTracks()[0].onended = () => {
-          stopScreenSharingEvent();
-          if (stageRef.current === "running") {
-            registerViolation("Screen sharing was stopped");
-          }
-        };
-      })
-      .catch(() => setPerms((p) => ({ ...p, screen: "denied" })));
+    const scrPromise = !media?.getDisplayMedia
+      ? Promise.resolve().then(() => {
+          next.screen = "unavailable";
+        })
+      : media
+          .getDisplayMedia({ video: true })
+          .then((stream) => {
+            if (!isWholeScreen(stream)) {
+              stream.getTracks().forEach((t) => t.stop());
+              setScreenError(
+                "You must share your ENTIRE screen, not just one window or browser tab. Please pick ‘Entire screen / Full screen’ and try again.",
+              );
+              next.screen = "denied";
+              return;
+            }
+            screenStreamRef.current = stream;
+            screenSurfaceIssueRef.current = false;
+            setScreenError(null);
+            next.screen = "granted";
+            stream.getVideoTracks()[0].onended = () => {
+              stopScreenSharingEvent();
+              if (stageRef.current === "running") {
+                registerViolation("Screen sharing was stopped");
+              }
+            };
+          })
+          .catch(() => {
+            next.screen = "denied";
+          });
 
-    await Promise.all([fsPromise, camPromise, scrPromise]);
+    await Promise.all([fsPromise, camPromise, micPromise, scrPromise]);
+
+    // Arm focus mode only if something actually came up. Opting in and having
+    // every capability refused leaves it off, which is the honest reading of
+    // "I turned it on and the browser said no" — and it means no violation
+    // counting, rather than a test that counts violations it can never detect.
+    focusModeRef.current = Object.values(next).some((s) => s === "granted");
+    setFocusModeOn(focusModeRef.current);
+    setPerms({ ...next });
   }, [stopScreenSharingEvent, registerViolation]);
 
   // ---------- Timer ----------
@@ -236,24 +410,83 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
           registerViolation("Screen share no longer covers the entire screen");
         }
       }
-      if (!document.fullscreenElement && !fullscreenIssueRef.current) {
+      // Only meaningful if the student ever entered fullscreen. Without this
+      // guard, running the test windowed — the normal case, now that focus
+      // mode is optional — logged a "You exited full-screen mode" violation
+      // within the first second of every single attempt.
+      if (
+        permsRef.current.fullscreen === "granted" &&
+        !document.fullscreenElement &&
+        !fullscreenIssueRef.current
+      ) {
         fullscreenIssueRef.current = true;
         registerViolation("You exited full-screen mode");
       }
-      setTimeLeft((prev) => {
-        const n = prev - 1;
-        if (n <= 0) {
-          if (timerRef.current) clearInterval(timerRef.current);
-          finishTestRef.current();
-          return 0;
-        }
-        return n;
-      });
+      // Display-only. `submit` finalises an expired attempt server-side, so a
+      // countdown that drifted low still grades honestly -- this only makes the
+      // header catch up promptly, it does not enforce the deadline.
+      setTimeLeft((prev) => (prev > 0 ? prev - 1 : prev));
     }, 1000);
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
   }, [stage, registerViolation]);
+
+  // ---------- Authoritative clock ----------
+  /**
+   * Re-read the server's clock, and submit if the server says it is over.
+   *
+   * `getAttempt` is the only way to learn that the deadline passed while the tab
+   * was in the background: the deadline belongs to the server, and a counter in a
+   * throttled tab does not. Two exit paths matter here, and both go through
+   * `finishTestRef` -- the countdown reaching zero, and the server reporting a
+   * finalised attempt.
+   */
+  const resyncClock = useCallback(async () => {
+    const current = attemptRef.current;
+    if (!current || submittingRef.current) return;
+    try {
+      const fresh = await mockTestsApi.getAttempt(test.slug, current.id);
+      if (attemptHasEnded(fresh)) {
+        finishTestRef.current();
+        return;
+      }
+      setTimeLeft(fresh.time_remaining_seconds);
+      timeLeftRef.current = fresh.time_remaining_seconds;
+    } catch {
+      // A failed clock read is not worth interrupting the student over: the
+      // server still owns the deadline, and the next tick or the submit will
+      // settle it. Swallowing it keeps a flaky network from reading as an error.
+    }
+  }, [test.slug]);
+
+  useEffect(() => {
+    if (stage !== "running") return;
+    const id = setInterval(() => {
+      void resyncClock();
+    }, CLOCK_RESYNC_MS);
+    return () => clearInterval(id);
+  }, [stage, resyncClock]);
+
+  /**
+   * Catch the tab up the moment it comes back.
+   *
+   * Without this the header shows a stale remaining time for up to one resync
+   * interval after a long alt-tab, which is exactly when a student is looking at
+   * it to decide how much time they have.
+   */
+  useEffect(() => {
+    if (stage !== "running") return;
+    const onVisible = () => {
+      if (!document.hidden) void resyncClock();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
+  }, [stage, resyncClock]);
 
   // ---------- Proctoring event listeners + cleanup ----------
   useEffect(() => {
@@ -293,105 +526,206 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
   }, [stage]);
 
   // Release everything on final unmount
-  useEffect(() => cleanupMedia, [cleanupMedia]);
+  useEffect(() => {
+    cancelPendingSaves();
+    return cleanupMedia;
+  }, [cleanupMedia, cancelPendingSaves]);
 
-  // ---------- Test control ----------
-  function buildResult(t: MockTest, qs: MockTestQuestion[], ans: Record<string, AnswerState>, seconds: number): BuildResult {
-    let correct = 0;
-    let incorrect = 0;
-    let unattempted = 0;
-    const topicPerf: Record<string, { correct: number; total: number }> = {};
-    qs.forEach((q) => {
-      topicPerf[q.topic] ??= { correct: 0, total: 0 };
-      topicPerf[q.topic].total += 1;
-      const a = ans[q.id];
-      if (!isAnswered(q, a)) {
-        unattempted++;
-        return;
+  // ---------- Autosave ----------
+  /**
+   * Push one answer to the server.
+   *
+   * The local answer map is updated first, on purpose: the click lands on screen
+   * immediately and the round-trip is not part of the interaction. A failed save
+   * then leaves a truthful state -- the answer is visible, and the banner says the
+   * server does not have it -- rather than silently re-rendering the student's
+   * choice back to what the server last saw, which reads as the app losing their
+   * work.
+   */
+  const persistAnswer = useCallback(
+    async (questionId: number, text: string | null) => {
+      const current = attemptRef.current;
+      if (!current) return;
+      try {
+        await mockTestsApi.saveAnswer(test.slug, current.id, questionId, text);
+        setSaveError((prev) => (prev === null ? prev : null));
+      } catch (err) {
+        setSaveError(describeAttemptSaveError(err));
       }
-      const ok = isNumericQuestion(q)
-        ? parseNumeric(a?.numeric) === q.numericAnswer
-        : a?.selected === q.correctIndex;
-      if (ok) {
-        correct++;
-        topicPerf[q.topic].correct += 1;
-      } else incorrect++;
-    });
-    const marks = resolveMarks(t);
-    const score = correct * marks.correct - incorrect * marks.wrong;
-    const maxScore = qs.length * marks.correct;
-    const timeTakenSec = t.durationMins * 60 - seconds;
-    return { correct, incorrect, unattempted, score, maxScore, timeTakenSec, topicPerf };
-  }
+    },
+    [test.slug],
+  );
 
+  /**
+   * Queue a numeric autosave, replacing any pending one for that question.
+   *
+   * Debounced rather than fired per keystroke -- see `NUMERIC_SAVE_DEBOUNCE_MS`.
+   */
+  const queueNumericSave = useCallback(
+    (questionId: number, text: string | null) => {
+      const key = answerKey(questionId);
+      const existing = numericTimersRef.current[key];
+      if (existing) clearTimeout(existing);
+      numericTimersRef.current[key] = setTimeout(() => {
+        delete numericTimersRef.current[key];
+        void persistAnswer(questionId, text);
+      }, NUMERIC_SAVE_DEBOUNCE_MS);
+    },
+    [persistAnswer],
+  );
+
+  /**
+   * Submit everything and show the server's grade.
+   *
+   * `idempotent` on the backend, so the three ways an attempt ends -- the student
+   * pressing submit, the countdown reaching zero, and `MAX_VIOLATIONS` -- can all
+   * call this without coordinating. `submittingRef` still guards locally because
+   * the auto-submit path fires from a timer and the click from the confirm modal,
+   * and two in-flight submits would race their `setState`.
+   *
+   * Pending numeric saves are cancelled before submitting: the server grades what
+   * it has, and a keystroke that lands after grading is a 400 the student cannot
+   * act on.
+   */
   const finishTest = useCallback(() => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
+    if (submittingRef.current) return;
+    const current = attemptRef.current;
+    if (!current) return;
+    submittingRef.current = true;
+    cancelPendingSaves();
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    setSubmitting(true);
+
+    void (async () => {
+      try {
+        const graded = await mockTestsApi.submit(test.slug, current.id);
+        const summary = resultSummary(graded, test.durationMins);
+        setResult(summary);
+        setResultQuestions(graded.questions);
+        cleanupMedia();
+        setStage("result");
+        addTestResult({
+          id: `tr-${Date.now()}`,
+          testId: test.id,
+          testSlug: test.slug,
+          testTitle: test.title,
+          exam: test.exam,
+          date: new Date().toISOString().slice(0, 10),
+          total: graded.questions.length,
+          correct: summary.correct,
+          incorrect: summary.incorrect,
+          unattempted: summary.unattempted,
+          timeTakenSec: summary.timeTakenSec,
+          score: Math.max(0, summary.score),
+          maxScore: summary.maxScore,
+          topicPerformance: summary.topicPerf,
+        });
+      } catch (err) {
+        // The attempt is still open on the server, so the student is not stuck in
+        // a dead runner: the error is shown on the runner, which they can retry
+        // from. Swallowing this and moving to the results stage would show an empty
+        // result for an attempt that was never graded.
+        submittingRef.current = false;
+        setSubmitting(false);
+        setSaveError(describeAttemptSaveError(err));
       }
-      const t = test;
-      const qs = questionsRef.current;
-      const ans = answersRef.current;
-      const remaining = timeLeftRef.current;
-      const res = buildResult(t, qs, ans, remaining);
-      cleanupMedia();
-      setResult(res);
-      setStage("result");
-      addTestResult({
-        id: `tr-${Date.now()}`,
-        testId: t.id,
-        testSlug: t.slug,
-        testTitle: t.title,
-        exam: t.exam,
-        date: new Date().toISOString().slice(0, 10),
-        total: qs.length,
-        correct: res.correct,
-        incorrect: res.incorrect,
-        unattempted: res.unattempted,
-        timeTakenSec: res.timeTakenSec,
-        score: Math.max(0, res.score),
-        maxScore: res.maxScore,
-        topicPerformance: res.topicPerf,
-      });
-    }, [test, addTestResult, cleanupMedia]);
+    })();
+  }, [test, addTestResult, cleanupMedia, cancelPendingSaves]);
+
   useEffect(() => {
     finishTestRef.current = finishTest;
   });
 
-  const beginTest = useCallback(() => {
-    if (!cameraStreamRef.current || !screenStreamRef.current) return;
-    setQuestions(getTestQuestions(test));
-    setAnswers({});
-    setCurrent(0);
-    setTimeLeft(test.durationMins * 60);
-    setResult(null);
-    setShowSolutions(false);
-    setViolations([]);
-    setWarnOpen(false);
-    fullscreenIssueRef.current = false;
-    screenSurfaceIssueRef.current = false;
-    if (!document.fullscreenElement) {
-      try {
-        const p = document.documentElement.requestFullscreen?.();
-        if (p instanceof Promise) p.catch(() => {});
-      } catch {
-        // full screen entry is best-effort here
+  /**
+   * Open the attempt.
+   *
+   * The paper, its questions and the clock are all fetched here rather than
+   * assembled locally, which is what makes a newly imported and approved paper
+   * sittable without touching the bundled catalogue. `start` also resumes: the
+   * router finalises an expired attempt and reuses an unfinished one, so
+   * `seedAnswers` may well find answers already stored.
+   *
+   * The old guard on hardware permissions is deliberately gone. It used to bail
+   * silently while the button it disabled was elsewhere, which left a student
+   * without a webcam clicking "Begin test" and watching nothing happen.
+   */
+  const beginTest = useCallback(async () => {
+    setStarting(true);
+    setStartError(null);
+    try {
+      const started = await mockTestsApi.start(test.slug);
+      setAttempt(started.attempt);
+      attemptRef.current = started.attempt;
+      setQuestions(started.questions);
+      setAnswers(seedAnswers(started.questions));
+      setTimeLeft(started.attempt.time_remaining_seconds);
+      timeLeftRef.current = started.attempt.time_remaining_seconds;
+      setCurrent(0);
+      setVisited(new Set([0]));
+      setResult(null);
+      setResultQuestions([]);
+      setShowSolutions(false);
+      setSaveError(null);
+      setViolations([]);
+      setWarnOpen(false);
+      submittingRef.current = false;
+      setSubmitting(false);
+      fullscreenIssueRef.current = false;
+      screenSurfaceIssueRef.current = false;
+      violationsRef.current = [];
+      // Fullscreen is still worth entering when it is available and we got it
+      // during setup, but a refusal here is not an error -- the student is
+      // already in the exam by this point.
+      if (focusModeRef.current && !document.fullscreenElement) {
+        try {
+          const p = document.documentElement.requestFullscreen?.();
+          if (p instanceof Promise) p.catch(() => {});
+        } catch {
+          // full screen entry is best-effort here
+        }
       }
+      setStage("running");
+    } catch (err) {
+      // Stays on the setup screen with the server's own sentence. A 400 here is a
+      // refusal, not a transient fault -- "no questions yet" and "attempt limit
+      // reached" both need to be read, not retried.
+      setStartError(describeAttemptStartError(err));
+    } finally {
+      setStarting(false);
     }
-    startedAtRef.current = Date.now();
-    setStage("running");
   }, [test]);
 
   // ---------- ANSWER HELPERS ----------
+  /**
+   * The only way to move between questions.
+   *
+   * Every navigation path goes through here so a question is never opened
+   * without being recorded as visited -- otherwise the palette cannot tell
+   * "skipped" from "unseen", which is the one distinction it exists to make.
+   */
+  const goTo = useCallback((index: number) => {
+    const clamped = Math.max(0, index);
+    setCurrent(clamped);
+    setVisited((prev) => (prev.has(clamped) ? prev : new Set(prev).add(clamped)));
+  }, []);
+
   const selectAnswer = (qi: number, optionIdx: number) => {
     const q = questions[qi];
+    // Clicking the chosen option again clears it, so the text sent is recomputed
+    // from the state being written rather than from the tapped index.
+    const next =
+      optionIdx === answers[q.id]?.selected ? null : optionIdx;
     setAnswers((prev) => ({
       ...prev,
       [q.id]: {
         ...(prev[q.id] ?? { selected: null, marked: false }),
-        selected: optionIdx === prev[q.id]?.selected ? null : optionIdx,
+        selected: next,
       },
     }));
+    void persistAnswer(q.id, answerTextFor(q, { selected: next, marked: false }));
   };
 
   const toggleMark = (qi: number) => {
@@ -402,7 +736,7 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
     });
   };
 
-  const setNumericAnswer = (qi: number, raw: string) => {
+  const setNumericAnswer = useCallback((qi: number, raw: string) => {
     const q = questions[qi];
     setAnswers((prev) => ({
       ...prev,
@@ -411,14 +745,26 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
         numeric: raw,
       },
     }));
-  };
+    // Queued, not sent: see `NUMERIC_SAVE_DEBOUNCE_MS`.
+    queueNumericSave(q.id, answerTextFor(q, { selected: null, marked: false, numeric: raw }));
+  }, [questions, queueNumericSave]);
 
+  /**
+   * Palette state for one question.
+   *
+   * The `"unanswered"` arm used to be unreachable: the function returned
+   * `"not-visited"` for anything without an answer, so a question the student
+   * had looked at and left blank was indistinguishable from one they had never
+   * opened, and the palette's own legend ("Not answered", orange) could never
+   * appear. That distinction is the entire point of the legend -- it is how you
+   * find the questions you skipped -- so `"unanswered"` now keys off `visited`.
+   */
   const answerStatus = (qi: number): "answered" | "marked" | "unanswered" | "not-visited" => {
     const q = questions[qi];
     const a = answers[q?.id];
     if (a?.marked) return "marked";
     if (isAnswered(q, a)) return "answered";
-    return "not-visited";
+    return visited.has(qi) ? "unanswered" : "not-visited";
   };
 
   const answeredCount = useMemo(
@@ -433,6 +779,8 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
         test={test}
         perms={perms}
         screenError={screenError}
+        startError={startError}
+        starting={starting}
         onRequestSetup={requestSetup}
         onBegin={beginTest}
       />
@@ -444,8 +792,7 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
       <TestResultScreen
         test={test}
         result={result}
-        questions={questions}
-        answers={answers}
+        questions={resultQuestions}
         violations={violations}
         showSolutions={showSolutions}
         onToggleSolutions={() => setShowSolutions((v) => !v)}
@@ -465,23 +812,48 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
       {/* Proctor bar */}
       <div className="flex items-center justify-between gap-3 border-b border-red-900/40 bg-slate-950 px-4 py-2">
         <div className="flex items-center gap-2 text-xs font-semibold text-white">
-          <span className="relative flex h-2.5 w-2.5">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
-          </span>
-          <span className="tracking-widest text-red-400">REC</span>
-          <span className="hidden items-center gap-1 text-slate-300 sm:flex">
-            <Eye className="h-3.5 w-3.5 text-emerald-400" /> Camera
-          </span>
-          <span className="hidden items-center gap-1 text-slate-300 sm:flex">
-            <Mic className="h-3.5 w-3.5 text-emerald-400" /> Mic
-          </span>
-          <span className="hidden items-center gap-1 text-slate-300 sm:flex">
-            <MonitorUp className="h-3.5 w-3.5 text-emerald-400" /> Screen
-          </span>
-          <span className="hidden items-center gap-1 text-slate-300 sm:flex">
-            <Maximize2 className="h-3.5 w-3.5 text-emerald-400" /> Full screen
-          </span>
+          {focusModeOn ? (
+            <>
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
+              </span>
+              <span className="tracking-widest text-red-400">REC</span>
+            </>
+          ) : (
+            <>
+              {/* Nothing is recording, so nothing may claim to be. The bar used
+                  to render a pulsing red dot and a green tick beside all four
+                  labels unconditionally, which told a student running the test
+                  windowed with no camera that they were being recorded. */}
+              <ShieldAlert className="h-3.5 w-3.5 text-slate-500" />
+              <span className="tracking-wide text-slate-400">Focus mode off</span>
+            </>
+          )}
+          {FOCUS_INDICATORS.map(({ key, label }) => {
+            const live = perms[key] === "granted";
+            return (
+              <span
+                key={key}
+                className={cn(
+                  "hidden items-center gap-1 sm:flex",
+                  live ? "text-slate-300" : "text-slate-600 line-through",
+                )}
+                title={
+                  live
+                    ? `${label} is on`
+                    : `${label} is off — focus mode only checks what it can see`
+                }
+              >
+                {live ? (
+                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+                ) : (
+                  <MinusCircle className="h-3.5 w-3.5" />
+                )}{" "}
+                {label}
+              </span>
+            );
+          })}
         </div>
         {violations.length > 0 && (
           <span className="flex items-center gap-1 rounded-full bg-red-500/15 px-2 py-0.5 text-[11px] font-bold text-red-400">
@@ -503,18 +875,41 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
             <span className="flex items-center gap-1.5 rounded-full bg-purple-50 dark:bg-purple-950/70 text-purple-700 dark:text-purple-300 dark:border dark:border-purple-800/50 px-3 py-1.5 text-sm font-bold tabular-nums">
               <Timer className="h-4 w-4" /> {hh}:{mm}:{ss}
             </span>
-            <Button variant="danger" size="sm" onClick={() => setConfirmOpen(true)}>
-              Submit
+            <Button
+              variant="danger"
+              size="sm"
+              disabled={submitting}
+              onClick={() => setConfirmOpen(true)}
+            >
+              {submitting ? "Submitting…" : "Submit"}
             </Button>
           </div>
         </div>
+
+        {/* An autosave failure, or a submit failure, surfaced where the student is
+            looking. Both mean the same thing to them: something they did is not on
+            the server yet, so they need to know before they trust the paper is
+            recorded. */}
+        {saveError && (
+          <div className="mt-3 flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 dark:border-amber-800/60 dark:bg-amber-950/50 dark:text-amber-300">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span className="flex-1">{saveError}</span>
+            <button
+              type="button"
+              className="shrink-0 font-bold underline underline-offset-2"
+              onClick={() => void resyncClock()}
+            >
+              Retry
+            </button>
+          </div>
+        )}
 
         <div className="mt-4 grid flex-1 grid-cols-1 gap-4 overflow-hidden lg:grid-cols-[1fr_260px]">
           {/* Question */}
           <div className="overflow-y-auto rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 sm:p-6">
             <div className="flex items-start justify-between gap-3">
               <Badge variant="purple">
-                Q{current + 1} · {q.topic}
+                Q{current + 1} · {topicOf(q)}
                 {isNumericQuestion(q) ? " · Numerical" : ""}
               </Badge>
               <button
@@ -530,7 +925,7 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
                 <Flag className="h-3.5 w-3.5" /> {answers[q.id]?.marked ? "Marked" : "Mark for review"}
               </button>
             </div>
-            <p className="mt-4 text-base font-bold leading-relaxed text-gray-900 dark:text-white sm:text-lg">{q.text}</p>
+            <p className="mt-4 text-base font-bold leading-relaxed text-gray-900 dark:text-white sm:text-lg">{q.question_text}</p>
             <div className="mt-5 space-y-2.5">
               {isNumericQuestion(q) ? (
                 <div>
@@ -555,7 +950,7 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
                   </p>
                 </div>
               ) : (
-                q.options.map((opt, i) => {
+                (q.options ?? []).map((opt, i) => {
                   const selected = answers[q.id]?.selected === i;
                   return (
                     <button
@@ -586,10 +981,10 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
               )}
             </div>
             <div className="mt-6 flex items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-4">
-              <Button variant="ghost" disabled={current === 0} onClick={() => setCurrent((c) => Math.max(0, c - 1))} className="dark:text-slate-300 dark:hover:bg-slate-800">
+              <Button variant="ghost" disabled={current === 0} onClick={() => goTo(current - 1)} className="dark:text-slate-300 dark:hover:bg-slate-800">
                 <ChevronLeft className="h-4 w-4" /> Previous
               </Button>
-              <Button variant="secondary" onClick={() => setCurrent((c) => Math.min(questions.length - 1, c + 1))}>
+              <Button variant="secondary" onClick={() => goTo(current + 1)}>
                 {current === questions.length - 1 ? "Review" : "Next"} <ChevronRight className="h-4 w-4" />
               </Button>
             </div>
@@ -608,7 +1003,7 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
                   <button
                     key={qq.id}
                     type="button"
-                    onClick={() => setCurrent(i)}
+                    onClick={() => goTo(i)}
                     className={cn(
                       "grid h-8 w-8 place-items-center rounded-lg text-xs font-bold transition",
                       i === current ? "ring-2 ring-purple-500 ring-offset-1 dark:ring-offset-slate-900" : "",
@@ -630,18 +1025,34 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
               <p className="flex items-center gap-2"><span className="h-3 w-3 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700" /> Not visited</p>
             </div>
             <div className="mt-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 p-3">
-              <div className="flex items-center justify-center gap-2 text-[11px] font-medium text-gray-700 dark:text-slate-300">
-                <video
-                  ref={attachVideoNode}
-                  autoPlay
-                  playsInline
-                  muted
-                  className="aspect-[4/3] w-full max-w-[140px] rounded-lg border border-slate-300 dark:border-slate-700 bg-black object-cover"
-                />
-              </div>
-              <p className="mt-2 text-center text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 flex items-center justify-center gap-1">
-                <Lock className="h-3 w-3" /> Proctoring active
-              </p>
+              {perms.camera === "granted" ? (
+                <>
+                  <div className="flex items-center justify-center gap-2 text-[11px] font-medium text-gray-700 dark:text-slate-300">
+                    <video
+                      ref={attachVideoNode}
+                      autoPlay
+                      playsInline
+                      muted
+                      className="aspect-[4/3] w-full max-w-[140px] rounded-lg border border-slate-300 dark:border-slate-700 bg-black object-cover"
+                    />
+                  </div>
+                  <p className="mt-2 text-center text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 flex items-center justify-center gap-1">
+                    <Lock className="h-3 w-3" /> Proctoring active
+                  </p>
+                </>
+              ) : (
+                <>
+                  {/* No camera means no video to show. The tile used to render
+                      an empty black rectangle labelled "Proctoring active",
+                      which read as a dead camera rather than an absent one. */}
+                  <div className="flex aspect-[4/3] w-full max-w-[140px] items-center justify-center rounded-lg border border-dashed border-slate-300 text-[10px] font-medium text-slate-400 dark:border-slate-700">
+                    Camera off
+                  </div>
+                  <p className="mt-2 text-center text-[10px] font-semibold text-slate-400">
+                    Focus mode off
+                  </p>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -662,8 +1073,8 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
         </div>
         <div className="mt-6 flex justify-end gap-2">
           <Button variant="ghost" onClick={() => setConfirmOpen(false)}>Keep going</Button>
-          <Button variant="danger" onClick={() => { setConfirmOpen(false); finishTest(); }}>
-            Submit test
+          <Button variant="danger" disabled={submitting} onClick={() => { setConfirmOpen(false); finishTest(); }}>
+            {submitting ? "Submitting…" : "Submit test"}
           </Button>
         </div>
       </Modal>

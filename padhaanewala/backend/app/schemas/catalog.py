@@ -97,6 +97,12 @@ class CollegeListItemResponse(BaseModel):
     # looked broken because it was.
     admissions: list[AdmissionWindowResponse] = []
 
+    # Distinct names of this college's active courses. Search-only: the frontend
+    # matches a degree query against them, which it could not do while this was
+    # absent and `mapCollegeListItem` supplied an empty `courses` array. Names
+    # rather than full rows so the projection stays one cheap query.
+    course_names: list[str] = []
+
     model_config = {"from_attributes": True}
 
 

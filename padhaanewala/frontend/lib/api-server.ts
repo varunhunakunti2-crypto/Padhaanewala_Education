@@ -16,6 +16,8 @@
  * failure, so a silent-empty page is always traceable to a real status code.
  */
 
+import { cache } from "react";
+
 const RAW_BACKEND = (
   process.env.BACKEND_URL ||
   process.env.NEXT_PUBLIC_API_URL ||
@@ -44,6 +46,43 @@ const DEFAULT_TIMEOUT_MS = 6000;
  */
 const reportedFailures = new Set<string>();
 
+/**
+ * Cache tags, one per catalogue resource.
+ *
+ * Every cached fetch is tagged by the resource its path belongs to, so an admin
+ * write can expire exactly the entries it affected instead of the whole site.
+ * `app/api/revalidate/route.ts` holds the matching name → tag map and calls
+ * `revalidateTag` on these after a successful mutation; `tests/cache-tag-
+ * contract.test.ts` fails the build if the two lists drift apart.
+ *
+ * Without these, `revalidate: 300` meant a college created in the admin panel was
+ * invisible on `/colleges` for five minutes — and behind the never-cleared
+ * `pagedCache` below, for as long as the server process lived.
+ */
+export const CACHE_TAGS = {
+  colleges: "catalog:colleges",
+  courses: "catalog:courses",
+  exams: "catalog:exams",
+  scholarships: "catalog:scholarships",
+  mockTests: "catalog:mock-tests",
+  universities: "catalog:universities",
+  locations: "catalog:locations",
+  blogs: "content:blogs",
+  banners: "content:banners",
+} as const;
+
+/** First path segment that names a resource, e.g. `/colleges/abc` → `colleges`. */
+function tagsFor(path: string): string[] {
+  const base = path.split("?")[0].replace(/^\/+|\/+$/g, "").split("/")[0];
+  const known = CACHE_TAGS as Record<string, string>;
+  // `mock-tests` and `blog-categories` are hyphenated where the tag keys are
+  // camelCase, so normalise before looking up rather than maintaining a second
+  // parallel set of keys.
+  const camel = base.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
+  const tag = known[base] ?? known[camel];
+  return tag ? [tag] : [];
+}
+
 function reportFailure(path: string, res: Response): void {
   const key = `${res.status} ${path}`;
   if (reportedFailures.has(key)) return;
@@ -60,7 +99,7 @@ async function serverGet<T>(path: string, revalidate: number): Promise<T | null>
     const res = await fetch(`${SERVER_API}${path}`, {
       headers: { Accept: "application/json" },
       signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
-      next: { revalidate },
+      next: { revalidate, tags: tagsFor(path) },
     });
     if (!res.ok) {
       reportFailure(path, res);
@@ -100,11 +139,27 @@ async function serverGetAll<T>(path: string, revalidate: number): Promise<T[]> {
  * 341 colleges against a 100-row cap, so this is a real truncation today, not
  * a hypothetical.
  *
- * Pages are requested sequentially and the whole result is memoised per
- * (path, revalidate) for the lifetime of the build or request, so a page that
- * renders 300 colleges still issues one walk rather than 300.
+ * Pages are requested sequentially. The walk is de-duplicated per request (see
+ * `dedupePaged`) so a page that renders 300 colleges still issues one walk rather
+ * than 300, while cross-request caching is left entirely to the Next data cache
+ * and its tags.
+ *
+ * ## Why the old module-level `Map` had to go
+ *
+ * This used to be `const pagedCache = new Map<string, Promise<unknown[]>>()`
+ * keyed on `(path, revalidate, pageSize)`, with no expiry and no way to clear it.
+ * That made it strictly stronger than the ISR window it was layered on: a
+ * college created in `/admin` stayed off `/colleges` for five minutes *if the
+ * server restarted often enough*, and otherwise until the process was recycled.
+ * `revalidateTag` cannot fix that, because a hand-rolled map is invisible to the
+ * data cache — the tag was marked stale and nothing looked at it. Deleting the
+ * entry was the only cure, and nothing outside this module could do that.
+ *
+ * Per-request de-duplication is the correct scope for this: it removes the N+1
+ * walk within a render, and leaves "may a later request reuse this response" to
+ * the one layer that can be invalidated.
  */
-const pagedCache = new Map<string, Promise<unknown[]>>();
+const dedupePaged = cache(async <T,>(key: string, walk: () => Promise<T[]>) => walk());
 
 /** Hard ceiling on rows so a runaway endpoint cannot exhaust memory. */
 const MAX_PAGED_ROWS = 5000;
@@ -151,11 +206,11 @@ async function serverGetAllPaged<T>(
   revalidate: number,
 ): Promise<T[]> {
   const pageSize = pageSizeFor(path);
+  // The key is an argument so React's per-request memo sees different walks as
+  // different entries; without it every caller would share the first one's rows.
   const cacheKey = `${path}|${revalidate}|${pageSize}`;
-  const cached = pagedCache.get(cacheKey);
-  if (cached) return (await cached) as T[];
 
-  const run = (async () => {
+  return dedupePaged(cacheKey, async () => {
     const rows: T[] = [];
     const separator = path.includes("?") ? "&" : "?";
     for (;;) {
@@ -170,10 +225,7 @@ async function serverGetAllPaged<T>(
       if (rows.length >= MAX_PAGED_ROWS) break;
     }
     return rows;
-  })();
-
-  pagedCache.set(cacheKey, run);
-  return (await run) as T[];
+  });
 }
 
 /* ------------------------------------------------------------------ *
@@ -242,6 +294,16 @@ export interface ApiCollegeListItem {
    * `/colleges` sends these so a list row can derive its admission status;
    * the full `ApiAdmission` rows still come from the detail fan-out. */
   admissions?: ApiAdmissionWindow[];
+  /**
+   * Distinct names of this college's active courses.
+   *
+   * Search input, not render input. `mapCollegeListItem` used to synthesise
+   * `courses: []` here to avoid a fan-out per row, which left the course arm of
+   * every college haystack permanently empty — so `/colleges?q=B.Tech`, the link
+   * on every course card, matched nothing. The backend sends names only; fee,
+   * duration and specialisation stay detail-only.
+   */
+  course_names?: string[];
 }
 
 export interface ApiAdmissionWindow {

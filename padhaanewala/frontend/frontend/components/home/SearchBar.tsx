@@ -38,6 +38,15 @@ interface SearchBarProps {
   /** Dataset + facets to suggest from; defaults to the bundled college list. */
   colleges?: College[];
   facets?: CollegeFacets;
+  /**
+   * Fires on every keystroke. Omitted on the hero, where there is nothing to
+   * filter yet and pressing Enter is the action.
+   *
+   * On `/colleges` this is what makes the box filter: it previously only wrote
+   * to the URL on submit, so the grid below sat unchanged while the user typed,
+   * which is indistinguishable from a search box that does not work.
+   */
+  onChange?: (value: string) => void;
 }
 
 export function SearchBar({
@@ -49,11 +58,26 @@ export function SearchBar({
   variant = "default",
   colleges,
   facets,
+  onChange,
 }: SearchBarProps) {
   const router = useRouter();
   const { recentSearches, addRecentSearch, addRecentLocation } = useApp();
   const [value, setValue] = useState(initial ?? "");
   const [focused, setFocused] = useState(false);
+
+  // Mirror `initial` into local state when the owner changes it.
+  //
+  // `initial` was read on the first render only, so anything that changed the
+  // query afterwards left the box showing stale text: clearing the query chip,
+  // pressing "Clear all", or going back. The grid would be unfiltered while the
+  // input still read "Bengaluru". Comparing to the previous prop (rather than
+  // running an effect) means this happens in the same commit that changes it, so
+  // there is no render where the two disagree.
+  const [lastInitial, setLastInitial] = useState(initial);
+  if (initial !== lastInitial) {
+    setLastInitial(initial);
+    setValue(initial ?? "");
+  }
   const [highlight, setHighlight] = useState(-1);
   const [suggestions, setSuggestions] = useState<SearchSuggestion[]>([]);
   const boxRef = useRef<HTMLDivElement>(null);
@@ -165,10 +189,11 @@ export function SearchBar({
           autoFocus={autoFocus}
           onFocus={() => setFocused(true)}
           onBlur={() => window.setTimeout(() => setHighlight(-1), 120)}
-          onChange={(e) => {
-            setValue(e.target.value);
-            setHighlight(-1);
-          }}
+onChange={(e) => {
+              setValue(e.target.value);
+              setHighlight(-1);
+              onChange?.(e.target.value);
+            }}
           onKeyDown={onKeyDown}
           role="combobox"
           aria-expanded={focused}
@@ -187,6 +212,11 @@ export function SearchBar({
             aria-label="Clear search"
             onClick={() => {
               setValue("");
+              setSuggestions([]);
+              // Without this the box read empty while the grid stayed filtered on
+              // the old query: the clear button cleared the text and nothing
+              // else, because it never touched `filters.query` or `?q=`.
+              onChange?.("");
               inputRef.current?.focus();
             }}
             className="mr-1 grid h-7 w-7 place-items-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 focus:outline-none focus-visible:outline-none"
