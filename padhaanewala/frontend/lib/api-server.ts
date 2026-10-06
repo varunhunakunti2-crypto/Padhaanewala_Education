@@ -36,7 +36,7 @@ export const REVALIDATE = {
   stats: 900,
 } as const;
 
-const DEFAULT_TIMEOUT_MS = 6000;
+const DEFAULT_TIMEOUT_MS = Number(process.env.API_TIMEOUT_MS) || 25000;
 
 /**
  * Statuses already reported, so a persistently broken endpoint produces one log
