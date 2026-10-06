@@ -46,6 +46,13 @@ export default function LoginPage() {
   const [mode, setMode] = useState<Mode>(
     searchParams.get("mode") === "signup" ? "signup" : "login",
   );
+
+  useEffect(() => {
+    const targetMode = searchParams.get("mode") === "signup" ? "signup" : "login";
+    setMode(targetMode);
+    setServerError("");
+    setErrors({});
+  }, [searchParams]);
   const [name, setName] = useState("");
   const [mobile, setMobile] = useState("");
   const [email, setEmail] = useState("");
