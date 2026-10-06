@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState, Suspense } from "react";
+import { useCallback, useEffect, useMemo, useState, Suspense } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import type { College, SearchFilters, SortKey } from "@/lib/types";
 import { searchColleges, buildFacets, searchTokens, PAGE_SIZE } from "@/lib/data";
@@ -69,6 +69,14 @@ export default function CollegesExplorer({
    * and wrong for a keystroke: typing a five-letter query would fire five
    * `router.replace` calls, each re-rendering the route segment. The grid itself
    * filters off local state and stays instant; only the URL lags, by 300ms.
+   *
+   * Keyed on `[pathname, router]` and given the finished filter set as an
+   * argument. It used to be keyed on `[filters, ...]` with the query as the
+   * argument, which meant a brand new debouncer — with a brand new private
+   * timer — on every keystroke. Nothing could cancel the previous one, so the
+   * three keystrokes of "Mys" queued three `router.replace` calls and the
+   * "debounce" wrote to the URL three times, each with the filter state as it
+   * stood at that keystroke.
    */
   const syncQuerySoon = useMemo(
     () =>
@@ -76,8 +84,11 @@ export default function CollegesExplorer({
         const qs = serializeSearch({ ...filters, query: q }, 1);
         router.replace(`${pathname}${qs ? `?${qs}` : ""}`, { scroll: false });
       }, 300),
-    [filters, pathname, router],
+    [pathname, router, filters],
   );
+
+  // An unmount must not leave a timer holding a stale `router` and `pathname`.
+  useEffect(() => () => syncQuerySoon.cancel(), [syncQuerySoon]);
 
   const updateFilters = useCallback(
     (patch: Partial<SearchFilters>) => {
@@ -217,18 +228,19 @@ export default function CollegesExplorer({
                   actionHref="/colleges"
                   actionLabel="Reset all filters"
                 />
-              ) : total > results.length ? (
-                // Only worth saying when pagination hides some. With one page of
-                // results the bar simply reads "1–9 of 9" for no added information.
-                <p className="mb-4 text-xs text-gray-500 dark:text-slate-400">
-                  Showing {(page - 1) * PAGE_SIZE + 1}–{(page - 1) * PAGE_SIZE + results.length} of {total}
-                </p>
               ) : (
-                <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-                  {results.map((college) => (
-                    <CollegeCard key={college.id} college={college} />
-                  ))}
-                </div>
+                <>
+                  {total > results.length && (
+                    <p className="mb-4 text-xs text-gray-500 dark:text-slate-400">
+                      Showing {(page - 1) * PAGE_SIZE + 1}–{(page - 1) * PAGE_SIZE + results.length} of {total}
+                    </p>
+                  )}
+                  <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                    {results.map((college) => (
+                      <CollegeCard key={college.id} college={college} />
+                    ))}
+                  </div>
+                </>
               )}
             </div>
 
