@@ -189,7 +189,7 @@ export function SearchBar({
           autoFocus={autoFocus}
           onFocus={() => setFocused(true)}
           onBlur={() => window.setTimeout(() => setHighlight(-1), 120)}
-onChange={(e) => {
+          onChange={(e) => {
               setValue(e.target.value);
               setHighlight(-1);
               onChange?.(e.target.value);

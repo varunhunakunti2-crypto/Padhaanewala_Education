@@ -134,10 +134,32 @@ export function formatDate(input: string): string {
 
 export function debounce<A extends unknown[]>(fn: (...args: A) => void, ms: number) {
   let t: ReturnType<typeof setTimeout> | undefined;
-  return (...args: A) => {
+
+  const run = (...args: A) => {
     if (t) clearTimeout(t);
-    t = setTimeout(() => fn(...args), ms);
+    t = setTimeout(() => {
+      t = undefined;
+      fn(...args);
+    }, ms);
   };
+
+  /**
+   * Drop the pending call without running it.
+   *
+   * Without this, a `debounce` created inside `useMemo` is a trap: every
+   * dependency change produces a *new* debouncer with its own private timer, so
+   * the previous one's pending call can never be cleared. Re-keying
+   * `useMemo(() => debounce(...), [state])` therefore silently stops
+   * debouncing — one pending timer per render — and each one fires with the
+   * closure captured at that render. Call `cancel` from an effect cleanup so
+   * an unmount cannot land a late `setState` or a late `router.replace`.
+   */
+  run.cancel = () => {
+    if (t) clearTimeout(t);
+    t = undefined;
+  };
+
+  return run;
 }
 
 /** Neutral object brand colors for campus banners, keyed to data.gradientId */

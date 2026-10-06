@@ -59,10 +59,16 @@ export function ExamCard({ exam }: { exam: Exam }) {
           <FileText className="h-3.5 w-3.5 text-purple-500 dark:text-purple-400" />
           {exam.type}
         </span>
-        <span className="flex items-center gap-1.5">
-          <Users className="h-3.5 w-3.5 text-purple-500 dark:text-purple-400" />
-          {exam.coursesAccepted[0]}
-        </span>
+        {/* `coursesAccepted` is `[]` for every exam that came off the API —
+            `mapExam` has no source field for it — so `coursesAccepted[0]` was
+            `undefined` and this cell rendered as a bare Users icon with nothing
+            beside it, on all 40-odd cards. Rendered only when populated. */}
+        {exam.coursesAccepted?.[0] ? (
+          <span className="flex items-center gap-1.5">
+            <Users className="h-3.5 w-3.5 text-purple-500 dark:text-purple-400" />
+            {exam.coursesAccepted[0]}
+          </span>
+        ) : null}
       </div>
 
       <div className="mt-4 flex items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-3">

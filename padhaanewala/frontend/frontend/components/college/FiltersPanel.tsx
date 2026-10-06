@@ -63,11 +63,11 @@ function CheckboxRow({
       role="checkbox"
       aria-checked={checked}
       onClick={() => onChange(!checked)}
-      className="group flex w-full items-center gap-2.5 rounded-lg px-1 py-1.5 text-left transition-colors hover:bg-purple-50/60"
+      className="group flex w-full items-start gap-2.5 rounded-lg px-1 py-1.5 text-left transition-colors hover:bg-purple-50/60"
     >
       <span
         className={cn(
-          "grid h-4.5 w-4.5 shrink-0 place-items-center rounded border transition-colors",
+          "mt-0.5 grid h-4.5 w-4.5 shrink-0 place-items-center rounded border transition-colors",
           checked ? "border-purple-600 bg-purple-600 text-white" : "border-gray-300 bg-white",
         )}
       >
@@ -77,9 +77,9 @@ function CheckboxRow({
           </svg>
         )}
       </span>
-      <span className="flex-1 truncate text-sm text-gray-700 group-hover:text-purple-800">{label}</span>
+      <span className="flex-1 text-sm leading-snug text-gray-700 break-words group-hover:text-purple-800">{label}</span>
       {typeof count === "number" && (
-        <span className="text-xs text-gray-400">{count}</span>
+        <span className="shrink-0 text-xs text-gray-400">{count}</span>
       )}
     </button>
   );
@@ -271,7 +271,7 @@ export function FiltersPanel({ filters, onChange, onClear, onClose, facets = BUN
             {[4.5, 4.0, 3.5].map((r) => (
               <CheckboxRow
                 key={r}
-                label={`${r}? & above`}
+                label={`${r}★ & above`}
                 checked={filters.minRating === r}
                 onChange={(v) => onChange({ minRating: v ? r : null })}
               />
