@@ -11,6 +11,7 @@ fastapi==0.141.1
 greenlet==3.5.5
 h11==0.16.0
 httptools==0.8.0
+httpx==0.28.1  # app/services/question_generation.py, imported at module scope
 idna==3.19
 Mako==1.4.1
 MarkupSafe==3.0.3
