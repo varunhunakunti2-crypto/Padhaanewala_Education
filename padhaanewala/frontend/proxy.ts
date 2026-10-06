@@ -107,17 +107,15 @@ const csp = (isDev: boolean): string =>
     "frame-ancestors 'none'",
     "form-action 'self'",
     `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
-    "style-src 'self' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     // `data:` for inline SVG/canvas, `blob:` for object URLs. next/image
     // proxies every remote image through /_next/image, so the only third-party
     // origin that can appear is one an admin typed into the media library —
     // list it in CSP_IMAGE_HOSTS rather than allowing https: wholesale.
     ["img-src 'self' data: blob:", ...extraImageHosts].join(" "),
-    "font-src 'self' data:",
-    // Everything the browser fetches is same-origin: /api/v1/* and /api/ai are
-    // both served by this app (see the rewrite in next.config.ts). The OpenAI
-    // call is made server-side in app/api/ai/route.ts and is not subject to CSP.
-    "connect-src 'self'",
+    "font-src 'self' data: https://fonts.gstatic.com",
+    // Same-origin /api/v1/* plus configured backend API hosts (e.g. Render).
+    `connect-src 'self' ${[process.env.NEXT_PUBLIC_API_URL, process.env.BACKEND_URL, "https://*.onrender.com"].filter(Boolean).map((u) => (u?.startsWith("http") ? u : "")).filter(Boolean).join(" ")}`.trim(),
     "media-src 'self' blob:",
     // blob: is here for the object-URL worker path three.js and the WebGL
     // loader can take; nothing in the repo constructs a worker today, and the
