@@ -149,7 +149,7 @@ export async function POST(request: Request) {
       unknown.push(name);
       continue;
     }
-    revalidateTag(tag, { expire: 0 });
+    revalidateTag(tag);
     done.push(name);
   }
 
