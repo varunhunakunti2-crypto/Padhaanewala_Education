@@ -4,7 +4,10 @@ import type { StudentProfile } from "@/lib/types";
 // read-only list type is already imported from here by `CollegesSection`.
 import type { ApiCollegeDetail, ApiCollegeListItem } from "@/lib/api-server";
 
-export const API_BASE = (process.env.NEXT_PUBLIC_API_URL || "/api/v1").replace(/\/+$/, "");
+const rawApiUrl = process.env.NEXT_PUBLIC_API_URL;
+export const API_BASE = rawApiUrl
+  ? `${rawApiUrl.replace(/\/api\/v1\/?$/, "").replace(/\/+$/, "")}/api/v1`
+  : "/api/v1";
 
 const USER_KEY = "cp_user";
 
