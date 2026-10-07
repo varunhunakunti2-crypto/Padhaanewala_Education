@@ -149,7 +149,7 @@ export async function POST(request: Request) {
       unknown.push(name);
       continue;
     }
-    revalidateTag(tag);
+    (revalidateTag as unknown as (t: string) => void)(tag);
     done.push(name);
   }
 
