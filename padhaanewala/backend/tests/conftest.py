@@ -90,7 +90,7 @@ def _stub_redis():
     `app.middleware.ratelimit.get_redis` for the limiter, and the two patches
     are independent.
     """
-    import app.services.redis_client as redis_client
+    from app.services import redis_client
 
     original = redis_client.get_redis
     redis_client.get_redis = lambda: _StubRedis()

@@ -595,13 +595,13 @@ class TestQuestionCreate(BaseModel):
     )
     # Absolute margin, so it cannot be negative.
     tolerance: Decimal = Field(
-        default=Decimal("0"), ge=Decimal("0"), le=Decimal("9999.9999")
+        default=Decimal(0), ge=Decimal(0), le=Decimal("9999.9999")
     )
     marks: Decimal = Field(
-        default=Decimal("1"), ge=Decimal("0"), le=Decimal("9999.99")
+        default=Decimal(1), ge=Decimal(0), le=Decimal("9999.99")
     )
     negative_marks: Decimal = Field(
-        default=Decimal("0"), ge=Decimal("0"), le=Decimal("9999.99")
+        default=Decimal(0), ge=Decimal(0), le=Decimal("9999.99")
     )
     difficulty: str = Field(default="medium", max_length=20)
     explanation: str | None = None
@@ -627,11 +627,11 @@ class TestQuestionUpdate(BaseModel):
         default=None, ge=Decimal("-99999999.9999"), le=Decimal("99999999.9999")
     )
     tolerance: Decimal | None = Field(
-        default=None, ge=Decimal("0"), le=Decimal("9999.9999")
+        default=None, ge=Decimal(0), le=Decimal("9999.9999")
     )
-    marks: Decimal | None = Field(default=None, ge=Decimal("0"), le=Decimal("9999.99"))
+    marks: Decimal | None = Field(default=None, ge=Decimal(0), le=Decimal("9999.99"))
     negative_marks: Decimal | None = Field(
-        default=None, ge=Decimal("0"), le=Decimal("9999.99")
+        default=None, ge=Decimal(0), le=Decimal("9999.99")
     )
     difficulty: str | None = Field(default=None, max_length=20)
     explanation: str | None = None
@@ -741,9 +741,9 @@ class MockTestCreate(BaseModel):
     difficulty: str = Field(default="medium", max_length=20)
     question_type: QuestionType = QuestionType.MCQ
     duration_minutes: int = Field(default=60, ge=1)
-    total_marks: Decimal = Field(default=Decimal("0"))
+    total_marks: Decimal = Field(default=Decimal(0))
     negative_marking: bool = False
-    negative_marks_value: Decimal = Field(default=Decimal("0"))
+    negative_marks_value: Decimal = Field(default=Decimal(0))
     attempts_allowed: int = Field(default=1, ge=0)
     question_randomization: bool = False
     option_randomization: bool = False

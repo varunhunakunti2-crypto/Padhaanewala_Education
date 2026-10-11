@@ -16,7 +16,7 @@ one are different obligations: `completed` and `rejected` both end the clock,
 `received` / `acknowledged` / `in_progress` do not.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -55,7 +55,7 @@ def sla_due_at(received_at: datetime) -> datetime:
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class DataRequest(Base):

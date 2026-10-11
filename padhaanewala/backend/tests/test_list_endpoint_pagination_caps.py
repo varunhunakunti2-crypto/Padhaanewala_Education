@@ -29,7 +29,7 @@ from fastapi.testclient import TestClient
 
 from app.database import SessionLocal
 from app.main import app
-from app.models import Banner, BlogCategory, FAQ, University
+from app.models import FAQ, Banner, BlogCategory, University
 from app.routers.banners import _is_visible, _visibility_predicate
 
 client = TestClient(app)

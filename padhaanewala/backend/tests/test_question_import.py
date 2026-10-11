@@ -24,7 +24,7 @@ The load-bearing assertions, in order of how badly they would hurt if they broke
 """
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -1147,7 +1147,7 @@ def _attempt(paper: MockTest, student_headers: dict) -> int:
             status="in_progress",
             # `expires_at` is NOT NULL: `start_mock_test` always sets it, and the
             # deadline is what the auto-submit path reads.
-            expires_at=datetime.now(timezone.utc) + timedelta(minutes=30),
+            expires_at=datetime.now(UTC) + timedelta(minutes=30),
         )
         db.add(attempt)
         db.commit()

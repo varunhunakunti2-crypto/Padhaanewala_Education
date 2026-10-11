@@ -12,8 +12,8 @@ from app.dependencies import (
     require_role,
 )
 from app.models import Exam, User
-from app.schemas.catalog import ExamCreate, ExamResponse, ExamUpdate
 from app.roles import ADMIN_ROLES, CONTENT_ROLES
+from app.schemas.catalog import ExamCreate, ExamResponse, ExamUpdate
 from app.utils import audit
 
 router = APIRouter(prefix="/api/v1/exams", tags=["exams"])

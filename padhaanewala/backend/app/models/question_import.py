@@ -40,7 +40,7 @@ invisible to every student-facing query in either state, so keeping it costs
 nothing but a row.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sqlalchemy import (
     CheckConstraint,

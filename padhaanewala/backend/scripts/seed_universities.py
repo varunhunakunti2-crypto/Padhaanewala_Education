@@ -8,8 +8,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import re
 
-from app.database import SessionLocal
 from app.data.india_universities import UNIVERSITIES
+from app.database import SessionLocal
 from app.models import State, University
 
 

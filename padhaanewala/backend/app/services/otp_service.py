@@ -25,7 +25,7 @@ import hashlib
 import logging
 import secrets
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
@@ -113,7 +113,7 @@ class IssuedSecret:
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def normalize_email(email: str) -> str:
@@ -228,7 +228,7 @@ def _advisory_key(purpose: OtpPurpose, identifier: str) -> int:
     — silently restoring exactly the race this is here to close.
     """
     digest = hashlib.blake2b(
-        f"{purpose}:{identifier}".encode("utf-8"), digest_size=8
+        f"{purpose}:{identifier}".encode(), digest_size=8
     ).digest()
     key = int.from_bytes(digest, "big")
     # Postgres bigint is signed; fold the top half down so the value is
@@ -367,7 +367,7 @@ def _check_and_consume(db: Session, record: OtpRecord, secret: str) -> OtpRecord
     if expires_at.tzinfo is None:
         # Defensive: a timestamptz column read through a driver that drops the
         # offset would otherwise raise TypeError on the comparison.
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
+        expires_at = expires_at.replace(tzinfo=UTC)
     if expires_at <= now:
         record.is_used = True
         record.consumed_at = now

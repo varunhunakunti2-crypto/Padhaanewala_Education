@@ -44,17 +44,17 @@ Phase 9 (DPDP legal and compliance). Three changes:
    migration; the schema requires the field on every new submission, so nothing
    can arrive undeclared.
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "c7d4e9a1b308"
-down_revision: Union[str, Sequence[str], None] = "9f3c2a7e8d21"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = "9f3c2a7e8d21"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:

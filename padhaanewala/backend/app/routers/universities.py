@@ -11,12 +11,12 @@ from app.dependencies import (
     require_role,
 )
 from app.models import University, User
+from app.roles import ADMIN_ROLES, CONTENT_ROLES
 from app.schemas.catalog import (
     UniversityCreate,
     UniversityResponse,
     UniversityUpdate,
 )
-from app.roles import ADMIN_ROLES, CONTENT_ROLES
 from app.utils import audit
 
 router = APIRouter(prefix="/api/v1/universities", tags=["universities"])

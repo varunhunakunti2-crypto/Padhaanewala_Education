@@ -1,6 +1,5 @@
-from datetime import datetime, timezone
-
 import logging
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
@@ -130,7 +129,7 @@ def _dispatch_email_verification(
     except email_service.EmailDeliveryError:
         # Burn the link rather than leaving a record that claims delivery.
         issued.record.is_used = True
-        issued.record.consumed_at = datetime.now(timezone.utc)
+        issued.record.consumed_at = datetime.now(UTC)
         db.commit()
         return None
     return issued
@@ -158,7 +157,7 @@ def _dispatch_mobile_verification(
         sms_service.send_otp(user.mobile, issued.secret)
     except sms_service.SmsDeliveryError:
         issued.record.is_used = True
-        issued.record.consumed_at = datetime.now(timezone.utc)
+        issued.record.consumed_at = datetime.now(UTC)
         db.commit()
         return None
     return issued
@@ -306,7 +305,7 @@ def login(
     if settings.EMAIL_VERIFICATION_REQUIRED and not user.is_email_verified:
         raise _email_not_verified(user)
 
-    user.last_login_at = datetime.now(timezone.utc)
+    user.last_login_at = datetime.now(UTC)
     body = _issue_session(db, user, request, response)
     db.commit()
 
@@ -564,13 +563,13 @@ def send_login_otp(
     except sms_service.SmsDeliveryError:
         # Burn the code so a record never claims a delivery that failed.
         issued.record.is_used = True
-        issued.record.consumed_at = datetime.now(timezone.utc)
+        issued.record.consumed_at = datetime.now(UTC)
         db.commit()
         # Not surfaced as 502: a provider rejection (bad DLT template, unapproved
         # sender id) would then answer 502 for registered numbers and 200 for
         # everyone else, which is the same oracle by another route. Logged at
         # ERROR so a real outage is still visible to monitoring.
-        logger.error("OTP login send failed for user_id=%s", user.id, exc_info=True)
+        logger.exception("OTP login send failed for user_id=%s", user.id)
         return generic
 
     if settings.EMAIL_VERIFICATION_REQUIRED and not user.is_email_verified:
@@ -620,7 +619,7 @@ def verify_login_otp(
     # the natural moment to settle the flag rather than asking for it twice.
     if not user.is_mobile_verified:
         user.is_mobile_verified = True
-    user.last_login_at = datetime.now(timezone.utc)
+    user.last_login_at = datetime.now(UTC)
     body = _issue_session(db, user, request, response)
     db.commit()
 
@@ -663,7 +662,7 @@ def send_mobile_otp(
         sms_service.send_otp(user.mobile, issued.secret)
     except sms_service.SmsDeliveryError:
         issued.record.is_used = True
-        issued.record.consumed_at = datetime.now(timezone.utc)
+        issued.record.consumed_at = datetime.now(UTC)
         db.commit()
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -740,7 +739,7 @@ def forgot_password(
                 email_service.send_email(user.email, subject, text, html)
             except email_service.EmailDeliveryError:
                 issued.record.is_used = True
-                issued.record.consumed_at = datetime.now(timezone.utc)
+                issued.record.consumed_at = datetime.now(UTC)
                 db.commit()
 
     return StandardResponse(

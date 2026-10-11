@@ -22,6 +22,7 @@ the admin who is reviewing it and to the student who has finished.
 
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -176,10 +177,10 @@ class DraftQuestionUpdate(BaseModel):
     difficulty: str | None = Field(default=None, max_length=20)
     explanation: str | None = None
     marks: Decimal | None = Field(
-        default=None, ge=Decimal("0"), le=Decimal("9999.99")
+        default=None, ge=Decimal(0), le=Decimal("9999.99")
     )
     negative_marks: Decimal | None = Field(
-        default=None, ge=Decimal("0"), le=Decimal("9999.99")
+        default=None, ge=Decimal(0), le=Decimal("9999.99")
     )
 
 

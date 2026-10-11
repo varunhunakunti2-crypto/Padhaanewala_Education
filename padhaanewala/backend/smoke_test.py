@@ -10,13 +10,11 @@ migration that ran at container start, and the frontend that calls these.
 
 Run: python smoke_test.py [base_url]
 """
-import json
-import os
-import ssl
 import sys
 import time
-import urllib3
+
 import httpx
+import urllib3
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 

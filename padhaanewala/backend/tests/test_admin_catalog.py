@@ -625,7 +625,7 @@ def test_nested_read_filters():
     course_a = _create_course(f"Filter Course A {uuid.uuid4().hex[:6]}")
     course_b = _create_course(f"Filter Course B {uuid.uuid4().hex[:6]}")
     cc_a = _link(college.id, course_a.id)
-    cc_b = _link(college.id, course_b.id)
+    _link(college.id, course_b.id)
     try:
         admin = _register_admin()
         headers = _auth_headers(admin["access_token"])
@@ -855,7 +855,7 @@ def test_college_courses_filters():
     college = _create_college(f"CC Filter College {uuid.uuid4().hex[:6]}")
     course_a = _create_course(f"CC Filter A {uuid.uuid4().hex[:6]}")
     course_b = _create_course(f"CC Filter B {uuid.uuid4().hex[:6]}")
-    cc_a = _link(college.id, course_a.id)
+    _link(college.id, course_a.id)
     cc_b = _link(college.id, course_b.id)
     cc_b_id = cc_b.id
     admin = _register_admin()

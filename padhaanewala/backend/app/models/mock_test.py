@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from sqlalchemy import (
@@ -17,8 +17,6 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 from app.models.question_import import (
-    QUESTION_SOURCES,
-    REVIEW_STATUSES,
     _REVIEW_STATUS_CHECK,
     _SOURCE_CHECK,
 )
@@ -229,10 +227,10 @@ class TestAttempt(Base):
 
     @property
     def time_remaining_seconds(self) -> int:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         expires = self.expires_at
         if expires.tzinfo is None:
-            expires = expires.replace(tzinfo=timezone.utc)
+            expires = expires.replace(tzinfo=UTC)
         return max(0, int((expires - now).total_seconds()))
 
 

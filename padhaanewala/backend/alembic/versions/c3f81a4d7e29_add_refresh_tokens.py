@@ -14,11 +14,11 @@ token having been rotated away, so a replay was invisible.
 is indexed because reuse detection revokes a whole rotation chain, and that must
 not be a table scan.
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = 'c3f81a4d7e29'
@@ -28,9 +28,9 @@ revision: str = 'c3f81a4d7e29'
 # chain is linear again:
 # b4e91d7a2c58 -> a7e4c1b93d02 -> d5f2a8c71e63 -> b7c3d91e5a20 ->
 # c3f81a4d7e29 -> 9f3c2a7e8d21
-down_revision: Union[str, Sequence[str], None] = 'b7c3d91e5a20'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = 'b7c3d91e5a20'
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:

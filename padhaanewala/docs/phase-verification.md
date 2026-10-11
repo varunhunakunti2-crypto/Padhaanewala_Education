@@ -228,7 +228,7 @@ Highest-priority cleanup — these render as live facts and are not:
 | "12K+ Colleges / 500+ Courses / 2.4M+ Students / **98% Satisfaction — From verified reviews**" | `home/hero/HeroStats.tsx:5-10` | 10 colleges, 0 students, 0 reviews |
 | "240+ colleges" per course tile | `home/PopularCourses.tsx:20-70` | Invented per tile |
 | "Colleges listed **1,400+**", "Students/month **2.4 lakh+**" | `app/about/page.tsx:143-144` | Invented |
-| Analytics: 184.2K page views, 6.2% conversion, 4m 32s session, 4-stage funnel | `admin/sections/AnalyticsSection.tsx:14-40` | **All invented.** Nothing is tracked |
+| ~~Analytics: 184.2K page views, 6.2% conversion, 4m 32s session, 4-stage funnel~~ | ~~`admin/sections/AnalyticsSection.tsx:14-40`~~ | **RESOLVED 11 Oct 2026.** Placeholder deleted. `AnalyticsSection` now renders `GET /api/v1/admin/analytics/overview`, an admin-only aggregation of real rows (users + roles, enquiries by status/source, mock-test attempts & scores, approved reviews, saved colleges, a 14-day activity series). No traffic/page-view numbers are shown because none are tracked. |
 | SEO: 6 audit scores, 142 indexed pages, 1.2K backlinks, 0.9s CWV | `admin/sections/SeoSection.tsx:12-26` | **All invented** |
 | "PostgreSQL — connectivity **verified** — Healthy" | `admin/sections/DashboardSection.tsx:149` | Hardcoded `ok: true`; never checked |
 | "REST API: healthy" over a dead backend | `app/api/stats/route.ts:36-44` returns `ok: true` unconditionally | All 6 fetches can fail → still "healthy" |
@@ -259,7 +259,7 @@ Three decisions explain most of the 🔶 verdicts. Fixing these is higher levera
 
 **Before anyone sees the site:**
 1. Fix `/dashboard` — it is a different product behind a login. Either wire it to real data or gate it off.
-2. Delete or clearly label the fabricated blocks (Analytics, SEO, System status, Sheryians testimonials, hero stats). They are the reputational risk.
+2. Delete or clearly label the fabricated blocks (SEO, System status, Sheryians testimonials, hero stats). They are the reputational risk.
 3. Fix `/api/stats` to report real `ok`, and make the Admin "PostgreSQL verified" line actually check.
 
 **Blocking correctness:**

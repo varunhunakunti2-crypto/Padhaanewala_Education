@@ -9,14 +9,18 @@ plain values so callers decide what a failure means for HTTP.
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models import RefreshToken
-from app.utils.security import create_access_token, create_refresh_token, new_token_family
+from app.utils.security import (
+    create_access_token,
+    create_refresh_token,
+    new_token_family,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +70,7 @@ def rotate(db: Session, record: RefreshToken, user, role_names: str, request=Non
         raise RefreshReuseDetected(record.family)
 
     tokens = issue(db, user, role_names, request=request, family=record.family)
-    record.used_at = datetime.now(timezone.utc)
+    record.used_at = datetime.now(UTC)
     record.rotated_to_jti = tokens["refresh"].jti
     return tokens
 
@@ -80,7 +84,7 @@ def revoke_family(db: Session, user_id: int, family: str, reason: str) -> int:
             RefreshToken.family == family,
             RefreshToken.revoked_at.is_(None),
         )
-        .values(revoked_at=datetime.now(timezone.utc))
+        .values(revoked_at=datetime.now(UTC))
     )
     count = result.rowcount or 0
     # WARNING, not INFO: this fires for logout as well as for detected theft, but
@@ -109,7 +113,7 @@ def revoke_all_sessions(db: Session, user_id: int, reason: str) -> int:
             RefreshToken.user_id == user_id,
             RefreshToken.revoked_at.is_(None),
         )
-        .values(revoked_at=datetime.now(timezone.utc))
+        .values(revoked_at=datetime.now(UTC))
     )
     count = result.rowcount or 0
     logger.warning(
@@ -159,7 +163,7 @@ def enforce_active_token_ceiling(db: Session, user_id: int, current_family: str)
         return
 
     doomed = others[:surplus]
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     for family in doomed:
         db.execute(
             update(RefreshToken)
@@ -189,7 +193,7 @@ def is_live(record: RefreshToken, now: datetime | None = None) -> bool:
     Three independent disqualifiers, and all three must hold: not consumed by a
     rotation, not revoked, not past its own expiry.
     """
-    now = now or datetime.now(timezone.utc)
+    now = now or datetime.now(UTC)
     return (
         record.used_at is None
         and record.revoked_at is None

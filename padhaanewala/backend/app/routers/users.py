@@ -91,7 +91,7 @@ def update_my_profile(
             continue
         setattr(profile, field, value)
 
-    if "name" in updates and updates["name"]:
+    if updates.get("name"):
         profile.name = updates["name"]
 
     db.commit()

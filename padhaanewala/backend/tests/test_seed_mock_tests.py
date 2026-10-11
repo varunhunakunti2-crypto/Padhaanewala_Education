@@ -32,8 +32,8 @@ seed = importlib.util.module_from_spec(_spec)
 sys.modules["_seed_mock_tests"] = seed
 _spec.loader.exec_module(seed)
 
-from app.models import MockTest, TestQuestion  # noqa: E402
-from app.question_types import QuestionType  # noqa: E402
+from app.models import MockTest, TestQuestion
+from app.question_types import QuestionType
 
 CANONICAL_PAPERS = {
     "jee-main-hardcore-mock-paper-2-2026": 75,

@@ -1,8 +1,8 @@
 import uuid
 
+import jwt
 import pytest
 from fastapi.testclient import TestClient
-import jwt
 
 from app.database import SessionLocal
 from app.main import app

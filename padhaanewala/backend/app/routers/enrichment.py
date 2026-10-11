@@ -48,6 +48,7 @@ catalog_router = APIRouter(prefix="/api/v1", tags=["catalog-data"])
 
 from app.roles import ENRICHMENT_ROLES as CONTENT_ROLES
 
+
 def _find_college_by_ref(db: Session, ref: str) -> College | None:
     cond = College.id == int(ref) if ref.isdigit() else College.slug == ref
     return db.scalar(select(College).where(cond))

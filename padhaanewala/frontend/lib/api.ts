@@ -1593,6 +1593,66 @@ export interface AdminUserQuery {
   offset?: number;
 }
 
+/** One `{name, count}` bucket of a grouped breakdown from the analytics endpoint. */
+export interface AdminAnalyticsNameCount {
+  name: string;
+  count: number;
+}
+
+/** Activity on one calendar day of `GET /api/v1/admin/analytics/overview`. */
+export interface AdminAnalyticsSeriesPoint {
+  date: string;
+  leads: number;
+  registrations: number;
+  attempts: number;
+  reviews: number;
+}
+
+/**
+ * Payload of `GET /api/v1/admin/analytics/overview` — live aggregates over the
+ * platform's own tables, never a fabricated number. Field names mirror the
+ * backend schema (`analytics.py`) verbatim, trailing underscores included.
+ */
+export interface AdminAnalytics {
+  generated_at: string;
+  catalogue: {
+    colleges: number;
+    courses: number;
+    exams: number;
+    scholarships: number;
+    blogs: number;
+    mock_tests: number;
+  };
+  users: {
+    total: number;
+    active: number;
+    new_30d: number;
+    by_role: AdminAnalyticsNameCount[];
+  };
+  leads: {
+    total: number;
+    new_7d: number;
+    new_30d: number;
+    by_status: AdminAnalyticsNameCount[];
+    by_source: AdminAnalyticsNameCount[];
+  };
+  mock_tests: {
+    papers: number;
+    attempts_total: number;
+    attempts_completed: number;
+    average_percentage: number | null;
+    attempts_30d: number;
+    top_papers: { name: string; slug: string; attempts: number }[];
+  };
+  reviews: {
+    total: number;
+    average_rating: number | null;
+    new_30d: number;
+  };
+  saved_colleges: number;
+  series: AdminAnalyticsSeriesPoint[];
+}
+
 /**
  * `MediaResponse` from `backend/app/schemas/content.py`.
  *
@@ -1747,6 +1807,14 @@ export const adminApi = {
   },
 
   roles: () => apiFetch<AdminRole[]>("/roles"),
+
+  /**
+   * Live platform analytics for the console. One aggregation endpoint backs the
+   * whole Analytics panel; there is deliberately no visitor/traffic data (this
+   * codebase tracks no page-view events), so the panel says exactly what the
+   * response contains.
+   */
+  analytics: () => apiFetch<AdminAnalytics>("/admin/analytics/overview"),
 
   updateUser: (id: number, payload: AdminUpdateUserPayload) =>
     apiFetch<AdminUser>(`/users/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),

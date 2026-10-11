@@ -1,10 +1,10 @@
 ﻿import random
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
@@ -39,6 +39,7 @@ from app.utils import audit
 router = APIRouter(prefix="/api/v1/mock-tests", tags=["mock-tests"])
 
 from app.roles import CONTENT_ROLES
+
 
 def _slugify(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.strip().lower()).strip("-")
@@ -261,7 +262,7 @@ def _grade_attempt(db: Session, attempt: TestAttempt) -> None:
         answer.marks_awarded = _marks_for(attempt, q, answer.is_correct)
     _recompute_attempt_totals(db, attempt)
     attempt.status = "submitted"
-    attempt.submitted_at = datetime.now(timezone.utc)
+    attempt.submitted_at = datetime.now(UTC)
 
 def _recompute_attempt_totals(db: Session, attempt: TestAttempt) -> None:
     """Rebuild score, the four tallies and the percentage from stored verdicts.
@@ -443,7 +444,7 @@ def _save_answer(
     # A blank submission clears `answered_at` as well as the verdict, so an
     # abandoned question is not left looking answered.
     answer.answered_at = (
-        datetime.now(timezone.utc) if not _is_blank(selected_answer) else None
+        datetime.now(UTC) if not _is_blank(selected_answer) else None
     )
     is_correct = _is_answer_correct(attempt, question, answer)
     answer.is_correct = is_correct
@@ -858,7 +859,7 @@ def start_mock_test(
         mock_test_id=mock_test.id,
         user_id=user.id,
         status="in_progress",
-        expires_at=datetime.now(timezone.utc)
+        expires_at=datetime.now(UTC)
         + timedelta(minutes=mock_test.duration_minutes),
     )
 
@@ -946,7 +947,7 @@ def submit_mock_test(
             mock_test_id=mock_test.id,
             user_id=user.id,
             status="in_progress",
-            expires_at=datetime.now(timezone.utc)
+            expires_at=datetime.now(UTC)
             + timedelta(minutes=mock_test.duration_minutes),
         )
         db.add(attempt)
@@ -1483,7 +1484,7 @@ def grade_answer(
     answer.marks_awarded = payload.marks_awarded
     answer.grader_feedback = payload.grader_feedback
     answer.graded_by = grader.id
-    answer.graded_at = datetime.now(timezone.utc)
+    answer.graded_at = datetime.now(UTC)
 
     # Recount rather than re-grade: see `_recompute_attempt_totals`.
     _recompute_attempt_totals(db, attempt)

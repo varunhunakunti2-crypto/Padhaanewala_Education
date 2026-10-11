@@ -21,7 +21,6 @@ rollback-only connections behind it.
 """
 
 import pytest
-from sqlalchemy import text
 
 from app.database import SCHEMA, engine
 

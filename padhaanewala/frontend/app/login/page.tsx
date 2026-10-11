@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { Suspense, useEffect, useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
@@ -40,39 +40,65 @@ type OtpStage = "mobile" | "code";
 const RESEND_COOLDOWN_SECONDS = 45;
 
 export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <section className="mx-auto flex max-w-lg flex-col items-center px-4 pt-28 pb-16 sm:px-6 sm:pt-32 lg:px-8 lg:pt-36">
+          <div className="w-full rounded-2xl bg-white p-8 ring-1 ring-purple-100/60 card-shadow sm:p-10">
+            <div className="mx-auto h-8 w-48 animate-pulse rounded bg-purple-100 mb-4" />
+            <div className="mx-auto h-4 w-64 animate-pulse rounded bg-gray-100 mb-8" />
+            <div className="h-11 w-full animate-pulse rounded-xl bg-gray-100" />
+          </div>
+        </section>
+      }
+    >
+      <LoginFormContent />
+    </Suspense>
+  );
+}
+
+function LoginFormContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const modeParam = searchParams.get("mode");
   const { setProfile, setAuthenticated, showToast } = useApp();
-  const [mode, setMode] = useState<Mode>(
-    searchParams.get("mode") === "signup" ? "signup" : "login",
-  );
 
-  useEffect(() => {
-    const targetMode = searchParams.get("mode") === "signup" ? "signup" : "login";
-    setMode(targetMode);
-    setServerError("");
-    setErrors({});
-  }, [searchParams]);
+  const initialMode: Mode =
+    modeParam === "signup" ? "signup" : modeParam === "otp" ? "otp" : "login";
+  const [mode, setMode] = useState<Mode>(initialMode);
   const [name, setName] = useState("");
   const [mobile, setMobile] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
-// Signup only, and deliberately not defaulted: `RegisterRequest.age_band` has no
-// default on the server either, because an account whose age is unknown would
-// have to be treated as either adult or blocked, and the first of those is the
-// failure DPDP s.9 exists to close. Empty means "not asked yet", so the form
-// cannot be submitted before the question is answered.
-const [ageBand, setAgeBand] = useState<AgeBand | "">("");
+  // Signup only, and deliberately not defaulted: `RegisterRequest.age_band` has no
+  // default on the server either, because an account whose age is unknown would
+  // have to be treated as either adult or blocked, and the first of those is the
+  // failure DPDP s.9 exists to close. Empty means "not asked yet", so the form
+  // cannot be submitted before the question is answered.
+  const [ageBand, setAgeBand] = useState<AgeBand | "">("");
   const [errors, setErrors] = useState<{
-  name?: string;
-  mobile?: string;
-  email?: string;
-  password?: string;
-  age?: string;
-}>({});
+    name?: string;
+    mobile?: string;
+    email?: string;
+    password?: string;
+    age?: string;
+  }>({});
   const [serverError, setServerError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // Re-sync the form when the URL's `?mode=` parameter changes.
+  // We compare the string primitive `modeParam` rather than the searchParams object instance
+  // to avoid infinite re-render resets on component state updates.
+  const [lastModeParam, setLastModeParam] = useState<string | null>(modeParam);
+  if (lastModeParam !== modeParam) {
+    setLastModeParam(modeParam);
+    const nextMode: Mode =
+      modeParam === "signup" ? "signup" : modeParam === "otp" ? "otp" : "login";
+    setMode(nextMode);
+    setServerError("");
+    setErrors({});
+  }
 
   // --- Phase 3: OTP login + email-verification gate ---
   const [otpStage, setOtpStage] = useState<OtpStage>("mobile");
@@ -265,6 +291,17 @@ const [ageBand, setAgeBand] = useState<AgeBand | "">("");
       setOtpStage("mobile");
       setOtpCode("");
     }
+    const params = new URLSearchParams(searchParams.toString());
+    if (next === "signup") {
+      params.set("mode", "signup");
+    } else if (next === "otp") {
+      params.set("mode", "otp");
+    } else {
+      params.delete("mode");
+    }
+    const qs = params.toString();
+    const nextPath = qs ? `/login?${qs}` : "/login";
+    router.replace(nextPath, { scroll: false });
   };
 
   return (

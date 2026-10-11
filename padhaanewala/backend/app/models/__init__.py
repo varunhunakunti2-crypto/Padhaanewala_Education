@@ -38,6 +38,7 @@ from app.models.user import (
 )
 
 __all__ = [
+    "FAQ",
     "Admin",
     "Admission",
     "AuditLog",
@@ -55,7 +56,6 @@ __all__ = [
     "District",
     "Enquiry",
     "Exam",
-    "FAQ",
     "Fee",
     "GuardianConsent",
     "LeadNote",
@@ -66,8 +66,8 @@ __all__ = [
     "Notification",
     "OtherRanking",
     "OtpRecord",
-    "QuestionImportJob",
     "PlacementRecord",
+    "QuestionImportJob",
     "RefreshToken",
     "Review",
     "Role",

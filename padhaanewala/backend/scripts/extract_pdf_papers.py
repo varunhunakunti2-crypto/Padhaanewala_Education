@@ -24,7 +24,6 @@ than dropped, because a missing question means the parse lost content.
 
 import json
 import re
-import sys
 from pathlib import Path
 
 import pdfplumber
@@ -183,7 +182,7 @@ def parse_full_length(path: Path) -> dict:
         questions: list[dict] = []
         for index in range(len(pdf.pages)):
             text = "\n".join(page_lines(pdf, index))
-            if re.search(r"ANSWER KEY|DETAILED SOLUTIONS|QUALITY-AUDIT", text, re.I):
+            if re.search(r"ANSWER KEY|DETAILED SOLUTIONS|QUALITY-AUDIT", text, re.IGNORECASE):
                 continue
             for line in text.splitlines():
                 line = clean_body(line)
@@ -231,7 +230,7 @@ def _full_key(path: Path) -> dict[tuple[str, int], str]:
             text = "\n".join(page_lines(pdf, index))
             if "FINAL ANSWER KEY" in text:
                 in_key = True
-            elif in_key and re.search(r"DETAILED SOLUTIONS|QUALITY-AUDIT", text, re.I):
+            elif in_key and re.search(r"DETAILED SOLUTIONS|QUALITY-AUDIT", text, re.IGNORECASE):
                 break
             if not in_key:
                 continue
@@ -262,14 +261,14 @@ def parse_neet(path: Path) -> dict:
         questions: list[dict] = []
         for index in range(len(pdf.pages)):
             text = "\n".join(page_lines(pdf, index))
-            if re.search(r"ANSWER KEY|QUALITY|NENEET|MADIHA", text, re.I) and "SECTION" not in text:
+            if re.search(r"ANSWER KEY|QUALITY|NENEET|MADIHA", text, re.IGNORECASE) and "SECTION" not in text:
                 if "ANSWER KEY" in text.upper():
                     break
             for line in text.splitlines():
                 line = clean_body(line)
                 if not line:
                     continue
-                section = re.match(r"^SECTION\s+[IVX]+\s*[\-\u2013\u2014]\s*(\w+)", line, re.I)
+                section = re.match(r"^SECTION\s+[IVX]+\s*[\-\u2013\u2014]\s*(\w+)", line, re.IGNORECASE)
                 if section:
                     subject = subject_of(section.group(1)) or section.group(1).capitalize()
                     continue
@@ -329,11 +328,7 @@ def main() -> int:
         target = None
         for candidate in matches:
             lowered = candidate.name.lower()
-            if name == "paper-3" and "paper_3" in lowered:
-                target = candidate
-            elif name == "full-length" and "full_length" in lowered:
-                target = candidate
-            elif name == "neet" and lowered.startswith("neet"):
+            if name == "paper-3" and "paper_3" in lowered or name == "full-length" and "full_length" in lowered or name == "neet" and lowered.startswith("neet"):
                 target = candidate
         if target is None:
             payload[name] = {"error": "no matching PDF found"}

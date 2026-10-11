@@ -6,8 +6,9 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
 from app.dependencies import get_current_user_roles, require_role
-from app.roles import ADMIN_ROLES, LEAD_ROLES as _LEAD_ROLES
 from app.models import Counsellor, Enquiry, LeadNote, LeadStatusHistory, User
+from app.roles import ADMIN_ROLES
+from app.roles import LEAD_ROLES as _LEAD_ROLES
 from app.schemas.engagement import (
     LEAD_STATUSES,
     AddLeadNoteRequest,

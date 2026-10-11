@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from fastapi.testclient import TestClient
@@ -86,7 +86,7 @@ def _expire_attempt(attempt_id: int, minutes_ago: int = 5) -> datetime:
     """Backdate an attempt's deadline and return the expiry that was written."""
     with SessionLocal() as db:
         attempt = db.get(TestAttempt, attempt_id)
-        expires_at = datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)
+        expires_at = datetime.now(UTC) - timedelta(minutes=minutes_ago)
         attempt.expires_at = expires_at
         db.commit()
         return expires_at
@@ -137,7 +137,7 @@ def test_full_attempt_flow():
             assert "selected_answer" not in q or q["selected_answer"] is None
             assert "correct_answer" not in q
 
-        q1, q2, q3 = [q["id"] for q in body["questions"]]
+        q1, q2, _q3 = [q["id"] for q in body["questions"]]
 
         correct = client.put(
             f"/api/v1/mock-tests/{mock_test.slug}/attempts/{attempt_id}/answers/{q1}",
@@ -318,7 +318,7 @@ def test_submit_endpoint_bulk_flow():
             f"/api/v1/mock-tests/{mock_test.slug}/questions"
         ).json()
         assert len(question_bank) == 3
-        q1, q2, q3 = [q["id"] for q in question_bank]
+        q1, q2, _q3 = [q["id"] for q in question_bank]
 
         submit = client.post(
             f"/api/v1/mock-tests/{mock_test.slug}/submit",
@@ -367,7 +367,7 @@ def test_submit_endpoint_uses_in_progress_attempt():
             headers=headers,
         ).json()
         attempt_id = start["attempt"]["id"]
-        q1, q2, q3 = [q["id"] for q in start["questions"]]
+        q1, q2, _q3 = [q["id"] for q in start["questions"]]
 
         client.put(
             f"/api/v1/mock-tests/{mock_test.slug}/attempts/{attempt_id}/answers/{q1}",
@@ -580,7 +580,7 @@ def test_expired_attempt_submit_is_finalised_at_the_deadline():
         assert stored.submitted_at is not None
         committed = stored.submitted_at
         if committed.tzinfo is None:
-            committed = committed.replace(tzinfo=timezone.utc)
+            committed = committed.replace(tzinfo=UTC)
         assert abs((committed - expires_at).total_seconds()) < 1
         # The one correct answer saved before the deadline still counts.
         assert stored.correct_count == 1
@@ -627,7 +627,7 @@ def test_bulk_submit_after_expiry_persists_the_auto_grade():
         assert stored.status == "submitted"
         committed = stored.submitted_at
         if committed.tzinfo is None:
-            committed = committed.replace(tzinfo=timezone.utc)
+            committed = committed.replace(tzinfo=UTC)
         assert abs((committed - expires_at).total_seconds()) < 1
 
         # The late answer to q2 was discarded, so only q1 is graded.
@@ -647,7 +647,7 @@ def test_save_answer_after_expiry_is_rejected_and_finalises():
             f"/api/v1/mock-tests/{mock_test.slug}/start", headers=headers
         ).json()
         attempt_id = start["attempt"]["id"]
-        q1, q2, _ = [q["id"] for q in start["questions"]]
+        q1, _q2, _ = [q["id"] for q in start["questions"]]
 
         _expire_attempt(attempt_id)
 
