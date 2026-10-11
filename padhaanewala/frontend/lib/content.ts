@@ -3,17 +3,12 @@
  *
  * Single entry point every server component uses to read catalog content.
  *
- * Resolution is API-only. These resolvers used to fall back to hardcoded
- * literals in `lib/data/*` whenever the backend was unreachable or returned an
- * empty list, which meant the site kept serving invented colleges, courses,
- * exams, scholarships, blog posts and an 83-question mock-test bank during a
- * backend outage — and quietly hid a dead or empty database behind a page that
- * looked populated.
- *
- * Those literal datasets are now empty (see the comments in `lib/data/*`). The
- * resolvers therefore return whatever the API actually holds: an empty list when
- * the table is empty, `undefined` when a record does not exist. Rendering an
- * honest empty state is the correct behaviour when there is no data.
+ * The resolvers prefer the API and fall back to the curated literals in
+ * `lib/data/*` only when the backend is unreachable or returns an empty list —
+ * so the public catalogue stays populated during an outage. That is a
+ * deliberate trade-off: with the fallback in place, an empty database renders
+ * the curated list instead of an honest empty state. `BLOG_POSTS` alone is
+ * intentionally empty, so blogs still degrade to an honest empty list.
  *
  * EXCEPTION — mock tests, and the reason has changed. When the runner graded in
  * the browser it never touched the attempt endpoints, so a locally listed paper
@@ -148,13 +143,19 @@ export async function resolveScholarships(): Promise<Resolved<Scholarship[]>> {
   return { data: SCHOLARSHIPS, source: SCHOLARSHIPS.length ? "local" : "empty" };
 }
 
+/**
+ * Scholarship detail by its catalogue identifier.
+ *
+ * The backend addresses scholarships by `scholarship_ref` (the record's `id`);
+ * there is no `slug` field on a scholarship, contrary to the other catalogues.
+ */
 export async function resolveScholarship(
-  slug: string,
+  id: string,
 ): Promise<Resolved<Scholarship | undefined>> {
-  const row = await getScholarshipBySlug(slug);
+  const row = await getScholarshipBySlug(id);
   const mapped = row ? mapScholarship(row) : undefined;
   if (mapped) return { data: mapped, source: "api" };
-  const local = SCHOLARSHIPS.find((s) => s.id === slug);
+  const local = SCHOLARSHIPS.find((s) => s.id === id);
   return { data: local, source: local ? "local" : "empty" };
 }
 
