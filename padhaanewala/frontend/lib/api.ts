@@ -1871,6 +1871,48 @@ export const adminApi = {
       body: JSON.stringify({ status }),
     }),
 
+  updateLeadDetails: (
+    enquiryId: number,
+    payload: {
+      name?: string;
+      mobile?: string;
+      email?: string;
+      city?: string;
+      qualification?: string;
+      message?: string;
+    },
+  ) =>
+    apiFetch<AdminLeadDetail>(`/leads/${enquiryId}/details`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+
+  createLead: (payload: {
+    name: string;
+    mobile: string;
+    email?: string | null;
+    course_id?: number | null;
+    college_id?: number | null;
+    state_id?: number | null;
+    city?: string | null;
+    qualification?: string | null;
+    message?: string | null;
+    source?: string | null;
+    age_band: "18_plus" | "under_18";
+    guardian_contact?: string | null;
+  }) =>
+    apiFetch<{ id: number; name: string; status: string }>("/enquiries", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  deleteLead: (enquiryId: number) =>
+    apiFetch<void>(`/leads/${enquiryId}`, {
+      method: "DELETE",
+    }),
+
+  revalidate: (resources: string[]) => revalidatePublic(resources),
+
   /**
    * Admin-only roster for the assign dropdown; 403s for a counsellor.
    *

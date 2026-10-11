@@ -18,6 +18,7 @@ from app.schemas.engagement import (
     LeadNoteResponse,
     LeadStatusHistoryResponse,
     SetFollowUpRequest,
+    UpdateLeadDetailsRequest,
     UpdateLeadStatusRequest,
 )
 from app.services.lead_handoff import CLOSED_LEAD_STATUSES
@@ -279,3 +280,61 @@ def set_follow_up(
     enquiry.follow_up_date = payload.follow_up_date
     db.commit()
     return _to_detail(_get_enquiry(db, enquiry_id))
+
+
+@router.patch("/{enquiry_id}/details", response_model=LeadDetailResponse)
+def update_lead_details(
+    enquiry_id: int,
+    payload: UpdateLeadDetailsRequest,
+    user: User = Depends(require_role(*_LEAD_ROLES)),
+    db: Session = Depends(get_db),
+):
+    if not _can_access(db, user, enquiry_id):
+        raise HTTPException(status_code=404, detail="Lead not found")
+    enquiry = db.get(Enquiry, enquiry_id)
+    if enquiry is None:
+        raise HTTPException(status_code=404, detail="Lead not found")
+
+    if payload.name is not None:
+        enquiry.name = payload.name
+    if payload.mobile is not None:
+        enquiry.mobile = payload.mobile
+    if payload.email is not None:
+        enquiry.email = payload.email
+    if payload.city is not None:
+        enquiry.city = payload.city
+    if payload.qualification is not None:
+        enquiry.qualification = payload.qualification
+    if payload.message is not None:
+        enquiry.message = payload.message
+
+    db.commit()
+    return _to_detail(_get_enquiry(db, enquiry_id))
+
+
+@router.delete(
+    "/{enquiry_id}",
+    status_code=204,
+    dependencies=[Depends(require_role(*ADMIN_ROLES))],
+)
+def delete_lead(
+    enquiry_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(*ADMIN_ROLES)),
+):
+    enquiry = db.get(Enquiry, enquiry_id)
+    if enquiry is None:
+        raise HTTPException(status_code=404, detail="Lead not found")
+
+    audit.record(
+        db,
+        request=request,
+        action="delete_lead",
+        entity_type="enquiry",
+        entity_id=enquiry.id,
+        actor=user,
+        old_value={"name": enquiry.name, "mobile": enquiry.mobile, "status": enquiry.status},
+    )
+    db.delete(enquiry)
+    db.commit()
