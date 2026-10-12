@@ -13,7 +13,7 @@ behaviour that still *looks* correct in a manual click-through:
   app reported `ok` while the rate limiter was down.
 """
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -70,6 +70,26 @@ class BrokenRedis:
         raise RedisConnectionError("Error 111 connecting to redis:6379. Connection refused.")
 
 
+class FlakyRedis(FakeRedis):
+    """Fails the first command the way a stale pooled socket does, then works.
+
+    A Redis restart leaves the pool holding a socket the server has already
+    closed: the first command against it raises, the pool discards it, and the
+    next one succeeds. The limiter must not turn that single dead socket into a
+    503 on a login that works a moment later.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.failures_remaining = 1
+
+    async def eval(self, script: str, numkeys: int, key: str, window: str) -> list[int]:
+        if self.failures_remaining > 0:
+            self.failures_remaining -= 1
+            raise RedisConnectionError("Connection reset by peer")
+        return await super().eval(script, numkeys, key, window)
+
+
 @pytest.fixture
 def fake_redis():
     """Enable the limiter for one test with a working counter behind it.
@@ -95,6 +115,23 @@ def broken_redis():
         patch("app.middleware.ratelimit.get_redis", return_value=BrokenRedis()),
     ):
         yield
+
+
+@pytest.fixture
+def flaky_redis():
+    """Redis whose first command hits a stale pooled socket, then recovers.
+
+    `close_redis` is stubbed because the real one would drain the process-wide
+    pool the retry is meant to be handed a fresh connection from; this test is
+    about the retry decision, not about the pool implementation.
+    """
+    redis = FlakyRedis()
+    with (
+        patch.object(settings, "RATE_LIMIT_ENABLED", True),
+        patch("app.middleware.ratelimit.get_redis", return_value=redis),
+        patch("app.middleware.ratelimit.close_redis", new=AsyncMock()),
+    ):
+        yield redis
 
 
 # --------------------------------------------------------------------- limits
@@ -171,6 +208,23 @@ def test_auth_fails_closed_when_redis_is_down(broken_redis):
     # 503, not 429: a 429 invites immediate retries, which turns one Redis blip
     # into a retry storm against a dependency that is already struggling.
     assert body["error"]["code"] == "SERVICE_UNAVAILABLE"
+
+
+def test_auth_recovers_from_one_stale_connection(flaky_redis):
+    """A single dead pooled socket must not 503 a login that then works.
+
+    The pool hands out a socket the server has already closed; the first command
+    raises, the retry runs against a fresh one and succeeds. Before the retry
+    existed this was a 503 on `/auth`, which is what a Redis restart looked like
+    to a user trying to sign in.
+    """
+    resp = client.post(AUTH_PATH, json=LOGIN_BODY)
+
+    # 401 (wrong credentials), not 503: the request reached the router, so the
+    # limiter completed on its retry instead of failing closed.
+    assert resp.status_code == 401, resp.text
+    assert flaky_redis.failures_remaining == 0, "the retry was never attempted"
+    assert flaky_redis.eval_calls == 1, "exactly one successful count"
 
 
 def test_public_write_fails_open_when_redis_is_down(broken_redis):

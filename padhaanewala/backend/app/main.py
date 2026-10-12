@@ -44,6 +44,7 @@ from app.routers import (
     saved_colleges,
     scholarships,
     seo,
+    site_settings,
     stats,
     universities,
     users,
@@ -138,6 +139,7 @@ app.include_router(blogs.router)
 app.include_router(faqs.router)
 app.include_router(media.router)
 app.include_router(seo.router)
+app.include_router(site_settings.router)
 app.include_router(notifications.router)
 app.include_router(audit.router)
 app.include_router(banners.router)

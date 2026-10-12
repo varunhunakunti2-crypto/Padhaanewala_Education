@@ -82,6 +82,7 @@ _NON_SETTINGS = _ADMIN_SCRIPT_VARS | {
     # both Next.js server-side, neither a `Settings` field.
     "CSP_IMAGE_HOSTS",
     "OPENAI_API_KEY",
+    "OPENAI_BASE_URL",
     "OPENAI_MODEL",
 }
 

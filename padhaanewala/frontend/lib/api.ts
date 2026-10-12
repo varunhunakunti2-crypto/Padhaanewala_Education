@@ -1788,6 +1788,41 @@ export interface AdminFaq {
   created_at: string;
 }
 
+/**
+ * `SiteSettingsResponse` from `GET` / `PUT /settings`.
+ *
+ * The Settings panel is the only editor. These are the same values the public
+ * site's `SITE` constant publishes, which is why the route is admin-only: the
+ * support address and default formatting are what visitors are shown, so a
+ * mis-edit here is a mis-edit to the site, not to a private preference.
+ */
+export interface SiteSettings {
+  site_name: string;
+  support_email: string;
+  contact_phone: string;
+  counselling_hours: string;
+  default_timezone: string;
+  number_formatting: string;
+  updated_at: string;
+}
+
+/**
+ * The writable subset of {@link SiteSettings}. Every field is optional because
+ * the route is a partial update (`exclude_unset`): the panel sends only the
+ * fields that changed, so saving one field cannot blank the others.
+ */
+export type SiteSettingsUpdate = Partial<
+  Pick<
+    SiteSettings,
+    | "site_name"
+    | "support_email"
+    | "contact_phone"
+    | "counselling_hours"
+    | "default_timezone"
+    | "number_formatting"
+  >
+>;
+
 export const adminApi = {
   /**
    * Filtering and paging happen on the server. The console can only ever hold one
@@ -1815,6 +1850,18 @@ export const adminApi = {
    * response contains.
    */
   analytics: () => apiFetch<AdminAnalytics>("/admin/analytics/overview"),
+
+  /** `GET /settings` — admin-only. See {@link SiteSettings}. */
+  settings: () => apiFetch<SiteSettings>("/settings"),
+
+  /**
+   * `PUT /settings`. Send only the fields that changed; the server's
+   * `exclude_unset` leaves every field it does not receive untouched, so a
+   * one-field save is a one-field save. `adminApi.settings` reads the merged
+   * result back.
+   */
+  updateSettings: (payload: SiteSettingsUpdate) =>
+    apiFetch<SiteSettings>("/settings", { method: "PUT", body: JSON.stringify(payload) }),
 
   updateUser: (id: number, payload: AdminUpdateUserPayload) =>
     apiFetch<AdminUser>(`/users/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),

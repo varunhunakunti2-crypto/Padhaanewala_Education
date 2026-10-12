@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { ExternalLink } from "lucide-react";
@@ -46,13 +46,19 @@ export function AdminDashboard() {
   );
   const { enquiries, roles } = useApp();
 
-  // Watch URL param if changed externally
-  useEffect(() => {
+  // Watch URL param if changed externally. Adjusting state during render — the
+  // "remember the previous URL, update when it changes" pattern — is the
+  // replacement for setState-in-an-effect the react-hooks rules now demand: the
+  // guard means the update fires only when the URL actually changed, at which
+  // point React re-renders immediately with the new section.
+  const [lastSearchParams, setLastSearchParams] = useState(searchParams);
+  if (lastSearchParams !== searchParams) {
+    setLastSearchParams(searchParams);
     const s = searchParams.get("section") as SectionKey;
     if (s && NAV.some((n) => n.key === s)) {
       setSection(s);
     }
-  }, [searchParams]);
+  }
 
   const { data: realLeads } = useAdminResource<AdminLead[]>(() => adminApi.leads());
 

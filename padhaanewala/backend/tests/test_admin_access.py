@@ -94,6 +94,10 @@ ADMIN_GATED_READS = [
     # the same assertion as every other admin read, rather than by a student
     # discovering someone else's notification history.
     "/api/v1/notifications",
+    # Platform-wide configuration. Public in spirit, but with the support address
+    # and internal defaults in it, so it is admin-only until something actually
+    # needs to read it anonymously.
+    "/api/v1/settings",
 ]
 
 # Reads that are deliberately public because the same rows render on the
@@ -110,6 +114,7 @@ ADMIN_GATED_WRITES = [
     ("post", "/api/v1/colleges", {}),
     ("post", "/api/v1/exams", {}),
     ("post", "/api/v1/notifications", {}),
+    ("put", "/api/v1/settings", {}),
 ]
 
 

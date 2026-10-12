@@ -6,7 +6,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from app.config import settings
-from app.services.redis_client import get_redis
+from app.services.redis_client import close_redis, get_redis
 from app.utils.client_ip import client_ip
 
 logger = logging.getLogger("padhaanewala.ratelimit")
@@ -128,6 +128,33 @@ def _dependency_unavailable() -> JSONResponse:
     )
 
 
+async def _increment_counter(key: str, window: int) -> list[int]:
+    """Run the atomic limiter script, retrying once against a fresh pool.
+
+    A Redis restart leaves the pool holding sockets the server has already
+    closed. `health_check_interval` only re-checks a connection that has been
+    idle for 30 seconds, so the first request after a restart can be handed a
+    socket the peer is in the middle of closing and raise `ConnectionError` or
+    `TimeoutError`. On the auth namespace that surfaces as a 503 on a login that
+    would have succeeded a moment later, which reads as "login is broken" rather
+    than "Redis just came back". A dead pooled socket is therefore not treated as
+    evidence that Redis is down: the counter is attempted a second time after
+    dropping the pool, and only if *that* also fails is the open/closed decision
+    taken.
+
+    The retry re-runs `INCR`, so a read that timed out after the server had
+    already counted the request is counted twice. That can only ever shorten a
+    bucket by one, which is the safe direction for a limiter.
+    """
+    try:
+        return await get_redis().eval(_RATE_LIMIT_SCRIPT, 1, key, str(window))
+    except (RedisError, OSError, TimeoutError):
+        # Drop the singleton so the retry cannot be handed the same dead socket;
+        # the next `get_redis()` call reconnects.
+        await close_redis()
+        return await get_redis().eval(_RATE_LIMIT_SCRIPT, 1, key, str(window))
+
+
 class RateLimitMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         if not settings.RATE_LIMIT_ENABLED:
@@ -145,9 +172,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         namespace, max_requests, window = limit
         key = f"rl:{namespace}:{request.url.path}:{_client_key(request)}"
         try:
-            count, retry = await get_redis().eval(
-                _RATE_LIMIT_SCRIPT, 1, key, str(window)
-            )
+            count, retry = await _increment_counter(key, window)
         except (RedisError, OSError, TimeoutError) as exc:
             # The counter is the only thing standing between an attacker and
             # unlimited login attempts, so "cannot count" must not mean

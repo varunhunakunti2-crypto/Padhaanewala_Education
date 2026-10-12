@@ -415,7 +415,7 @@ export function RobotViewer({
 
   if (error) {
     return (
-      <span className={`grid place-items-center rounded-full bg-purple-500/20 text-white ${className}`}>
+      <span className={`grid place-items-center text-purple-400 ${className}`}>
         <Sparkles className="h-5 w-5" />
       </span>
     );
@@ -424,7 +424,7 @@ export function RobotViewer({
   return (
     <div className={`relative flex items-center justify-center overflow-hidden ${className}`}>
       {!loaded && (
-        <span className="absolute inset-0 grid place-items-center rounded-full bg-purple-500/20 text-white animate-pulse">
+        <span className="absolute inset-0 grid place-items-center text-purple-400 animate-pulse">
           <Sparkles className="h-4 w-4" />
         </span>
       )}

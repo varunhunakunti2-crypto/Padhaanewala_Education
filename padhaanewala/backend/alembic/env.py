@@ -31,6 +31,7 @@ from app.models import saved_college as saved_college_models  # noqa: F401
 from app.models import scholarship as scholarship_models  # noqa: F401
 from app.models import seat_matrix as seat_matrix_models  # noqa: F401
 from app.models import seo_metadata as seo_metadata_models  # noqa: F401
+from app.models import site_setting as site_setting_models  # noqa: F401
 from app.models import university as university_models  # noqa: F401
 from app.models import user as user_models  # noqa: F401
 

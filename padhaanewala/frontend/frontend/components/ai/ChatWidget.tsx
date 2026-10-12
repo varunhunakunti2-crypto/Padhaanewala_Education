@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { ArrowUpRight, Bot, Loader2, RotateCcw, Send, User, X } from "lucide-react";
+import { ArrowUpRight, Loader2, RotateCcw, Send, User, X } from "lucide-react";
 import Link from "next/link";
+
+import { RobotViewer } from "@/components/ai/RobotViewer";
 
 import { getAiResponse } from "@/lib/data/notifications";
 
@@ -95,8 +97,8 @@ export function ChatWidget({ onClose }: { onClose: () => void }) {
       className="fixed inset-x-3 bottom-32 z-[80] flex h-[min(32rem,70dvh)] flex-col overflow-hidden rounded-3xl border border-purple-100 bg-white shadow-2xl shadow-purple-900/20 dark:border-slate-800 dark:bg-slate-900 dark:shadow-black/50 sm:inset-x-auto sm:right-6 sm:h-[32rem] sm:w-[23rem]"
     >
       <div className="flex items-center gap-3 bg-gradient-to-r from-purple-700 to-indigo-700 px-4 py-3.5">
-        <span className="grid h-9 w-9 flex-shrink-0 place-items-center rounded-full bg-white/15 text-white">
-          <Bot className="h-5 w-5" aria-hidden="true" />
+        <span className="relative flex h-9 w-9 flex-shrink-0 items-center justify-center">
+          <RobotViewer className="h-full w-full" autoRotate={true} modelScale={1.6} />
         </span>
         <div className="min-w-0 flex-1">
           <p id={titleId} className="truncate text-sm font-bold text-white">
@@ -131,13 +133,13 @@ export function ChatWidget({ onClose }: { onClose: () => void }) {
               className={
                 m.role === "user"
                   ? "mt-0.5 grid h-7 w-7 flex-shrink-0 place-items-center rounded-full bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300"
-                  : "mt-0.5 grid h-7 w-7 flex-shrink-0 place-items-center rounded-full bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300"
+                  : "mt-0.5 relative flex h-7 w-7 flex-shrink-0 items-center justify-center"
               }
             >
               {m.role === "user" ? (
                 <User className="h-3.5 w-3.5" aria-hidden="true" />
               ) : (
-                <Bot className="h-3.5 w-3.5" aria-hidden="true" />
+                <RobotViewer className="h-full w-full" autoRotate={false} modelScale={1.35} animationMode="middle" />
               )}
             </span>
             <div
@@ -154,8 +156,8 @@ export function ChatWidget({ onClose }: { onClose: () => void }) {
 
         {loading && (
           <div className="flex gap-2.5">
-            <span className="mt-0.5 grid h-7 w-7 flex-shrink-0 place-items-center rounded-full bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300">
-              <Bot className="h-3.5 w-3.5" aria-hidden="true" />
+            <span className="mt-0.5 relative flex h-7 w-7 flex-shrink-0 items-center justify-center">
+              <RobotViewer className="h-full w-full" autoRotate={true} modelScale={1.35} animationMode="bounce" />
             </span>
             <span className="flex items-center gap-2 rounded-2xl rounded-tl-sm border border-slate-100 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-800/80 dark:text-slate-400">
               <Loader2 className="h-4 w-4 animate-spin text-purple-500" aria-hidden="true" />

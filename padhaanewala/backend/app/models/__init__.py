@@ -27,6 +27,7 @@ from app.models.saved_college import SavedCollege
 from app.models.scholarship import Scholarship
 from app.models.seat_matrix import SeatMatrix
 from app.models.seo_metadata import SeoMetadata
+from app.models.site_setting import SiteSetting
 from app.models.university import University
 from app.models.user import (
     Admin,
@@ -75,6 +76,7 @@ __all__ = [
     "Scholarship",
     "SeatMatrix",
     "SeoMetadata",
+    "SiteSetting",
     "State",
     "StudentProfile",
     "TestAnswer",
