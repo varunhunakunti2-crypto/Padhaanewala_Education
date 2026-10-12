@@ -16,7 +16,6 @@ Idempotent: it regenerates the file wholesale from current DB state.
 
 import argparse
 import json
-import sys
 from pathlib import Path
 
 import psycopg2

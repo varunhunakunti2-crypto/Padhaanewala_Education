@@ -34,8 +34,8 @@ nothing observable.
 gone for the same reason; neither is imported anywhere in the project.
 """
 
-from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import jwt
@@ -69,7 +69,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 
 def create_access_token(subject: str | int, role: str) -> str:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     payload = {
         "sub": str(subject),
         "role": role,
@@ -106,7 +106,7 @@ def new_token_family() -> str:
 
 
 def create_refresh_token(subject: str | int, role: str) -> SignedRefreshToken:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     jti = uuid4().hex
     expires_at = now + timedelta(days=settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS)
     payload = {

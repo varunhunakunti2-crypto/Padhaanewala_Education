@@ -39,7 +39,7 @@ What each step is allowed to do, and why:
 
 import argparse
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 # Allow `python scripts/retention_sweep.py` from any working directory: the repo
@@ -47,18 +47,18 @@ from pathlib import Path
 # Python puts the *script's* directory there instead.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from sqlalchemy import func, select, text  # noqa: E402
+from sqlalchemy import func, select, text
 
-from app.config import settings  # noqa: E402
-from app.database import SessionLocal  # noqa: E402
-from app.models import (  # noqa: E402
+from app.config import settings
+from app.database import SessionLocal
+from app.models import (
     AuditLog,
     GuardianConsent,
     OtpRecord,
     RefreshToken,
     User,
 )
-from app.models.data_request import OPEN_STATUSES, DataRequest  # noqa: E402
+from app.models.data_request import OPEN_STATUSES, DataRequest
 
 #: How long a dead OTP row is kept before the sweep removes it. Not zero: a code
 #: is only purged once it has been expired for long enough that no in-flight
@@ -77,7 +77,7 @@ ERASURE_GRACE_DAYS = 30
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _cutoff(days: int) -> datetime:
@@ -214,7 +214,7 @@ def report_sla(db, apply: bool) -> None:
 
 
 def _aware(value: datetime) -> datetime:
-    return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 
 #: Matches the placeholder `anonymise_erased_users` writes. `invalid.` is a

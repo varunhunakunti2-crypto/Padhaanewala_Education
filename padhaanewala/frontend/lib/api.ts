@@ -1593,6 +1593,66 @@ export interface AdminUserQuery {
   offset?: number;
 }
 
+/** One `{name, count}` bucket of a grouped breakdown from the analytics endpoint. */
+export interface AdminAnalyticsNameCount {
+  name: string;
+  count: number;
+}
+
+/** Activity on one calendar day of `GET /api/v1/admin/analytics/overview`. */
+export interface AdminAnalyticsSeriesPoint {
+  date: string;
+  leads: number;
+  registrations: number;
+  attempts: number;
+  reviews: number;
+}
+
+/**
+ * Payload of `GET /api/v1/admin/analytics/overview` — live aggregates over the
+ * platform's own tables, never a fabricated number. Field names mirror the
+ * backend schema (`analytics.py`) verbatim, trailing underscores included.
+ */
+export interface AdminAnalytics {
+  generated_at: string;
+  catalogue: {
+    colleges: number;
+    courses: number;
+    exams: number;
+    scholarships: number;
+    blogs: number;
+    mock_tests: number;
+  };
+  users: {
+    total: number;
+    active: number;
+    new_30d: number;
+    by_role: AdminAnalyticsNameCount[];
+  };
+  leads: {
+    total: number;
+    new_7d: number;
+    new_30d: number;
+    by_status: AdminAnalyticsNameCount[];
+    by_source: AdminAnalyticsNameCount[];
+  };
+  mock_tests: {
+    papers: number;
+    attempts_total: number;
+    attempts_completed: number;
+    average_percentage: number | null;
+    attempts_30d: number;
+    top_papers: { name: string; slug: string; attempts: number }[];
+  };
+  reviews: {
+    total: number;
+    average_rating: number | null;
+    new_30d: number;
+  };
+  saved_colleges: number;
+  series: AdminAnalyticsSeriesPoint[];
+}
+
 /**
  * `MediaResponse` from `backend/app/schemas/content.py`.
  *
@@ -1748,6 +1808,14 @@ export const adminApi = {
 
   roles: () => apiFetch<AdminRole[]>("/roles"),
 
+  /**
+   * Live platform analytics for the console. One aggregation endpoint backs the
+   * whole Analytics panel; there is deliberately no visitor/traffic data (this
+   * codebase tracks no page-view events), so the panel says exactly what the
+   * response contains.
+   */
+  analytics: () => apiFetch<AdminAnalytics>("/admin/analytics/overview"),
+
   updateUser: (id: number, payload: AdminUpdateUserPayload) =>
     apiFetch<AdminUser>(`/users/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
 
@@ -1802,6 +1870,48 @@ export const adminApi = {
       method: "PATCH",
       body: JSON.stringify({ status }),
     }),
+
+  updateLeadDetails: (
+    enquiryId: number,
+    payload: {
+      name?: string;
+      mobile?: string;
+      email?: string;
+      city?: string;
+      qualification?: string;
+      message?: string;
+    },
+  ) =>
+    apiFetch<AdminLeadDetail>(`/leads/${enquiryId}/details`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+
+  createLead: (payload: {
+    name: string;
+    mobile: string;
+    email?: string | null;
+    course_id?: number | null;
+    college_id?: number | null;
+    state_id?: number | null;
+    city?: string | null;
+    qualification?: string | null;
+    message?: string | null;
+    source?: string | null;
+    age_band: "18_plus" | "under_18";
+    guardian_contact?: string | null;
+  }) =>
+    apiFetch<{ id: number; name: string; status: string }>("/enquiries", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  deleteLead: (enquiryId: number) =>
+    apiFetch<void>(`/leads/${enquiryId}`, {
+      method: "DELETE",
+    }),
+
+  revalidate: (resources: string[]) => revalidatePublic(resources),
 
   /**
    * Admin-only roster for the assign dropdown; 403s for a counsellor.

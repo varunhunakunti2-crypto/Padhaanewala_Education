@@ -8,9 +8,9 @@ roleless-account bug, R5.2 a silent role wipe.
 
 import uuid
 
+import jwt
 import pytest
 from fastapi.testclient import TestClient
-import jwt
 from sqlalchemy import text
 
 from app.config import settings
@@ -307,7 +307,7 @@ def test_r4_8_super_admin_can_still_demote_a_peer():
     demote a *different* `super_admin`, and an `admin` a peer `admin`.
     """
     caller = _register("boss1")
-    caller_id = _set_roles(caller["email"], [RoleName.SUPER_ADMIN.value])
+    _set_roles(caller["email"], [RoleName.SUPER_ADMIN.value])
     peer = _register("boss2")
     peer_id = _set_roles(peer["email"], [RoleName.SUPER_ADMIN.value])
 

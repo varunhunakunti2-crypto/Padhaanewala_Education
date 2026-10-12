@@ -1,0 +1,22 @@
+# Ruff configuration for the FastAPI backend.
+#
+# Adopted during a lint/typing cleanup pass. The selected rule set is a
+# behaviour-preserving baseline -- pyflakes (F), import sorting (I) and
+# pyupgrade (UP) -- rather than ruff's full default set, which flags two
+# framework idioms this codebase relies on. Those are exempted below instead of
+# being worked around in the source.
+
+target-version = "py311"
+line-length = 88
+
+[lint]
+select = ["E9", "F", "I", "UP"]
+
+[lint.per-file-ignores]
+# SQLAlchemy relationships and `foreign_keys=` accept string forward references
+# that the declarative registry resolves by class name when mappers are
+# configured. They are not module globals, so F821 is a false positive here.
+"app/models/*.py" = ["F821"]
+
+[lint.isort]
+known-first-party = ["app"]

@@ -399,11 +399,10 @@ def test_send_is_rate_limited_per_mobile(user, outbox):
             == 200
         )
 
-    with SessionLocal() as db:
-        with pytest.raises(otp_service.OtpRateLimited):
-            otp_service.issue(
-                db, purpose=otp_service.LOGIN, identifier=user["mobile"]
-            )
+    with SessionLocal() as db, pytest.raises(otp_service.OtpRateLimited):
+        otp_service.issue(
+            db, purpose=otp_service.LOGIN, identifier=user["mobile"]
+        )
 
 
 def test_rate_limit_does_not_apply_to_a_different_mobile(user, outbox):

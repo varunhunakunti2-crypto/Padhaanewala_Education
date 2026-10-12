@@ -1,8 +1,8 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import (
@@ -11,13 +11,13 @@ from app.dependencies import (
     require_role,
 )
 from app.models import College, Course, Review, User
+from app.roles import ADMIN_ROLES, CONTENT_ROLES
 from app.schemas.content import (
     ReviewCreate,
     ReviewModerate,
     ReviewResponse,
     ReviewUpdate,
 )
-from app.roles import ADMIN_ROLES, CONTENT_ROLES
 from app.utils import audit
 
 router = APIRouter(prefix="/api/v1/reviews", tags=["reviews"])
@@ -185,7 +185,7 @@ def moderate_review(
     review.status = payload.status
     review.moderation_notes = payload.moderation_notes
     review.moderated_by = moderator.id
-    review.moderated_at = datetime.now(timezone.utc)
+    review.moderated_at = datetime.now(UTC)
     if payload.status == "approved":
         review.is_verified = True
 

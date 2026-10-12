@@ -6,8 +6,8 @@ from pathlib import Path
 # Python puts the *script's* directory there instead.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from app.data.india_locations import DISTRICT_TOTAL, STATES
 from app.database import SessionLocal
-from app.data.india_locations import STATES, DISTRICT_TOTAL
 from app.models import City, District, State
 
 # Major cities whose name substring-matches multiple districts; pin the right one.

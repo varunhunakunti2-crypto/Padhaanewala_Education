@@ -3,7 +3,8 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Search, Bookmark, Clock, IndianRupee, Building2, ArrowRight } from "lucide-react";
-import { searchCourses, collegesOffering, type CourseMeta } from "@/lib/data/courses";
+import { searchCourses, collegesOffering, COURSES, type CourseMeta } from "@/lib/data/courses";
+import { COLLEGES } from "@/lib/data/colleges";
 import { useApp } from "@/lib/context/AppContext";
 import type { College } from "@/lib/types";
 import { cn, formatINR } from "@/lib/utils";
@@ -24,9 +25,9 @@ import { EmptyState } from "@/components/ui/EmptyState";
  */
 function levelsFor(catalog: CourseMeta[]): string[] {
   // `Set<string>` explicitly: `new Set(catalog.map(c => c.level))` infers the
-// literal union, and `has("Diploma")` from a `string[]` of candidates would not
-// typecheck against it.
-const present = new Set<string>(catalog.map((c) => c.level));
+  // literal union, and `has("Diploma")` from a `string[]` of candidates would not
+  // typecheck against it.
+  const present = new Set<string>(catalog.map((c) => c.level));
   // Stable, familiar order; anything unrecognised sorts to the end rather than
   // disappearing.
   const preferred = ["UG", "PG", "Diploma", "Doctoral"];
@@ -35,19 +36,22 @@ const present = new Set<string>(catalog.map((c) => c.level));
 }
 
 export default function CoursesExplorer({
-  courses: catalog,
-  colleges: dataset,
+  courses: catalogProp,
+  colleges: datasetProp,
 }: {
   /** Course catalogue resolved on the server. */
   courses?: CourseMeta[];
   /** College dataset used for the "N colleges offer this" count. */
   colleges?: College[];
 }) {
+  const catalog = useMemo(() => catalogProp?.length ? catalogProp : COURSES, [catalogProp]);
+  const dataset = useMemo(() => datasetProp?.length ? datasetProp : COLLEGES, [datasetProp]);
+
   const [query, setQuery] = useState("");
   const [level, setLevel] = useState<string>("All");
   const { isCourseSaved, toggleCourseSave } = useApp();
 
-  const levels = useMemo(() => levelsFor(catalog ?? []), [catalog]);
+  const levels = useMemo(() => levelsFor(catalog), [catalog]);
 
   const results = useMemo(() => {
     const list = searchCourses(query, catalog);

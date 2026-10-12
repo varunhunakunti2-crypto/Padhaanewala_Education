@@ -67,7 +67,7 @@ security argument is about sniffing content types. Nothing serves this file back
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -78,7 +78,6 @@ from fastapi import (
     File,
     Form,
     HTTPException,
-    Query,
     Request,
     UploadFile,
 )
@@ -326,7 +325,7 @@ def _generate(job_id: int, subject: str | None, per_chunk: int | None) -> None:
         job.text_length = result.text_length
         job.status = "ready"
         job.error_message = None
-        job.completed_at = datetime.now(timezone.utc)
+        job.completed_at = datetime.now(UTC)
         _recount_job(db, job)
         db.commit()
     except qg.GenerationFailed as exc:
@@ -356,7 +355,7 @@ def _mark_failed(db: Session, job_id: int, message: str) -> None:
         return
     job.status = "failed"
     job.error_message = message[:2000]
-    job.completed_at = datetime.now(timezone.utc)
+    job.completed_at = datetime.now(UTC)
     db.commit()
 
 

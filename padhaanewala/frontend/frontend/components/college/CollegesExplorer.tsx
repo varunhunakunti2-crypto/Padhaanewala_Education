@@ -34,7 +34,6 @@ export default function CollegesExplorer({
    * an explicit close — the scrim, the ✕, or "Show N results" — closes it.
    */
   const [filterOpen, setFilterOpen] = useState(false);
-  const isDrawerOpen = filterOpen;
 
   const colleges = useMemo(() => dataset?.length ? dataset : COLLEGES, [dataset]);
   const facets = useMemo(() => buildFacets(colleges), [colleges]);

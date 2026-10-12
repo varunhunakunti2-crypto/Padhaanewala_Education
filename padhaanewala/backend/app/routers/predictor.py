@@ -1,13 +1,12 @@
 import hashlib
-from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
-from app.models import College, CollegeCourse, Cutoff, Course, SeatMatrix
+from app.models import College, CollegeCourse, Cutoff, SeatMatrix
 from app.schemas.catalog import CollegeListItemResponse
 
 router = APIRouter(prefix="/api/v1/predictor", tags=["predictor"])

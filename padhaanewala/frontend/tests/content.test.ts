@@ -72,33 +72,36 @@ const collegeRow = {
 };
 
 describe("resolveColleges", () => {
-  it("returns an empty list — not bundled literals — when the table is empty", async () => {
+  it("falls back to local bundled dataset when the table is empty", async () => {
     stubFetch(() => json([]));
     const { resolveColleges } = await freshContent();
+    const { COLLEGES } = await import("@/lib/data/colleges");
 
     const result = await resolveColleges();
 
-    expect(result.source).toBe("empty");
-    expect(result.data).toEqual([]);
+    expect(result.source).toBe("local");
+    expect(result.data).toEqual(COLLEGES);
   });
 
-  it("returns an empty list when the backend cannot be reached at all", async () => {
+  it("falls back to local bundled dataset when the backend cannot be reached at all", async () => {
     stubFetch(() => {
       throw new Error("connect ECONNREFUSED 127.0.0.1:8000");
     });
     const { resolveColleges } = await freshContent();
+    const { COLLEGES } = await import("@/lib/data/colleges");
 
     const result = await resolveColleges();
 
-    expect(result.source).toBe("empty");
-    expect(result.data).toEqual([]);
+    expect(result.source).toBe("local");
+    expect(result.data).toEqual(COLLEGES);
   });
 
-  it("returns an empty list when the backend answers 500", async () => {
+  it("falls back to local bundled dataset when the backend answers 500", async () => {
     stubFetch(() => json({ detail: "boom" }, 500));
     const { resolveColleges } = await freshContent();
+    const { COLLEGES } = await import("@/lib/data/colleges");
 
-    expect((await resolveColleges()).data).toEqual([]);
+    expect((await resolveColleges()).data).toEqual(COLLEGES);
   });
 
   it("reports `api` and maps the rows it was given", async () => {
@@ -114,7 +117,7 @@ describe("resolveColleges", () => {
 });
 
 describe("resolveCollege", () => {
-  it("reports `empty` for a slug the backend does not know", async () => {
+  it("reports `empty` for a slug neither backend nor local catalogue knows", async () => {
     stubFetch(() => json(null, 404));
     const { resolveCollege } = await freshContent();
 
@@ -133,45 +136,49 @@ describe("resolveFeaturedColleges", () => {
     expect((await resolveFeaturedColleges(1)).data).toHaveLength(1);
   });
 
-  it("is empty when the backend has nothing", async () => {
+  it("falls back to local featured colleges when the backend has nothing", async () => {
     stubFetch(() => json([]));
     const { resolveFeaturedColleges } = await freshContent();
 
     const result = await resolveFeaturedColleges();
-    expect(result.source).toBe("empty");
-    expect(result.data).toEqual([]);
+    expect(result.source).toBe("local");
+    expect(result.data.length).toBeGreaterThan(0);
   });
 });
 
 describe("list resolvers", () => {
-  it("resolveExams reports empty for an empty table", async () => {
+  it("resolveExams falls back to local dataset for an empty table", async () => {
     stubFetch(() => json([]));
     const { resolveExams } = await freshContent();
+    const { EXAMS } = await import("@/lib/data/exams");
 
     const result = await resolveExams();
-    expect(result.source).toBe("empty");
-    expect(result.data).toEqual([]);
+    expect(result.source).toBe("local");
+    expect(result.data).toEqual(EXAMS);
   });
 
-  it("resolveScholarships reports empty for an empty table", async () => {
+  it("resolveScholarships falls back to local dataset for an empty table", async () => {
     stubFetch(() => json([]));
     const { resolveScholarships } = await freshContent();
 
-    expect((await resolveScholarships()).source).toBe("empty");
+    expect((await resolveScholarships()).source).toBe("local");
   });
 
-  it("resolveBlogPosts reports empty for an empty table", async () => {
+  it("resolveBlogPosts reports empty for an empty table when no local posts exist", async () => {
     stubFetch(() => json([]));
     const { resolveBlogPosts } = await freshContent();
 
     expect((await resolveBlogPosts()).source).toBe("empty");
   });
 
-  it("resolveCourses reports empty for an empty table", async () => {
+  it("resolveCourses falls back to local dataset for an empty table", async () => {
     stubFetch(() => json([]));
     const { resolveCourses } = await freshContent();
+    const { COURSES } = await import("@/lib/data/courses");
 
-    expect((await resolveCourses()).source).toBe("empty");
+    const result = await resolveCourses();
+    expect(result.source).toBe("local");
+    expect(result.data).toEqual(COURSES);
   });
 
   it("resolveCourse reports empty for a slug it cannot find", async () => {
@@ -240,14 +247,11 @@ describe("resolveMockTests", () => {
     expect(result.data[0].title).toBe("Paper from the database");
   });
 
-  it("does not let the local exception spread to a non-mock resolver", async () => {
-    // The exception is scoped by a single code path. This asserts the scoping
-    // from the outside: the same empty response makes a college list empty but
-    // a mock-test list populated, and only that one.
+  it("verifies both mock tests and colleges return local source when API is empty", async () => {
     stubFetch(() => json([]));
     const { resolveColleges, resolveMockTests } = await freshContent();
 
-    expect((await resolveColleges()).source).toBe("empty");
+    expect((await resolveColleges()).source).toBe("local");
     expect((await resolveMockTests()).source).toBe("local");
   });
 });
@@ -362,12 +366,14 @@ describe("resolveSlugs", () => {
     expect(await resolveSlugs("colleges")).toEqual(["one", "two"]);
   });
 
-  it("returns an empty list for an empty catalogue rather than throwing", async () => {
+  it("falls back to local slugs for an empty API response", async () => {
     stubFetch(() => json([]));
     const { resolveSlugs } = await freshContent();
+    const { EXAMS } = await import("@/lib/data/exams");
+    const { COURSES } = await import("@/lib/data/courses");
 
-    expect(await resolveSlugs("exams")).toEqual([]);
-    expect(await resolveSlugs("courses")).toEqual([]);
+    expect(await resolveSlugs("exams")).toEqual(EXAMS.map((e) => e.slug));
+    expect(await resolveSlugs("courses")).toEqual(COURSES.map((c) => c.slug));
     expect(await resolveSlugs("blogs")).toEqual([]);
   });
 

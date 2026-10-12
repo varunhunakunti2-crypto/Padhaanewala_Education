@@ -368,7 +368,7 @@ def test_numeric_trailing_zeros_and_whitespace_are_equivalent():
 
 
 def test_numeric_wrong_answer_is_counted_incorrect():
-    paper = _create_paper([_numeric("What is ten times two?", 1, Decimal("20"))])
+    paper = _create_paper([_numeric("What is ten times two?", 1, Decimal(20))])
     try:
         result = _submit_one(paper, "What is ten times two?", "21")
         assert result["questions"][0]["is_correct"] is False
@@ -423,7 +423,7 @@ def test_tolerance_of_zero_is_exact():
 
 
 def test_numeric_accepts_thousands_separators():
-    paper = _create_paper([_numeric("A population figure.", 1, Decimal("1500000"))])
+    paper = _create_paper([_numeric("A population figure.", 1, Decimal(1500000))])
     try:
         result = _submit_one(paper, "A population figure.", "1,500,000")
         assert result["questions"][0]["is_correct"] is True
@@ -521,7 +521,7 @@ def test_mcq_grading_is_unchanged_by_the_numeric_key():
     """The numeric branch must not capture a question that happens to carry a
     numeric_answer alongside its letter key."""
     paper = _create_paper(
-        [_mcq("Pick A.", 1, numeric_answer=Decimal("7"))]
+        [_mcq("Pick A.", 1, numeric_answer=Decimal(7))]
     )
     try:
         assert _submit_one(paper, "Pick A.", "A")["questions"][0]["is_correct"] is True
@@ -539,7 +539,7 @@ def test_essay_grading_is_unchanged_by_the_numeric_key():
                 question_type="essay",
                 options=None,
                 correct_answer="A model answer",
-                numeric_answer=Decimal("5"),
+                numeric_answer=Decimal(5),
                 marks=4,
                 negative_marks=2,
                 sort_order=1,
@@ -559,7 +559,7 @@ def test_mixed_three_subject_paper_grades_each_section():
     """A single paper carrying all three JEE Main sections, end to end."""
     paper = _create_paper(
         [
-            _numeric("Physics: speed of a body.", 1, Decimal("20"), subject="Physics", topic="Kinematics"),
+            _numeric("Physics: speed of a body.", 1, Decimal(20), subject="Physics", topic="Kinematics"),
             _mcq("Chemistry: oxidation state of Cr.", 2, subject="Chemistry", topic="Redox"),
             _mcq("Maths: the value of 7!.", 3, subject="Mathematics", topic="Permutations"),
         ],
@@ -741,7 +741,7 @@ def test_admin_detail_exposes_the_full_key():
 
 def test_tolerance_defaults_to_zero_for_a_new_question():
     """Exact by default: 0 is what makes "20" and "20.0" the same answer."""
-    paper = _create_paper([_numeric("Default tolerance.", 1, Decimal("5"))])
+    paper = _create_paper([_numeric("Default tolerance.", 1, Decimal(5))])
     try:
         with SessionLocal() as db:
             stored = db.get(TestQuestion, _question_ids(paper)["Default tolerance."])

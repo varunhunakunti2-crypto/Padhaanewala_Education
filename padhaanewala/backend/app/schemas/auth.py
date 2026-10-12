@@ -3,8 +3,6 @@ from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
-from app.schemas.common import TokenResponse
-
 
 class RegisterRequest(BaseModel):
     name: str = Field(..., min_length=2, max_length=255)

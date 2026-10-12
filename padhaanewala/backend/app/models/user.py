@@ -1,15 +1,15 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import (
     Boolean,
+    Column,
     DateTime,
     ForeignKey,
     Integer,
+    Numeric,
     String,
     Table,
-    Column,
     Text,
-    Numeric,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -67,10 +67,10 @@ class User(Base):
         DateTime(timezone=True), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=datetime.now(timezone.utc)
+        DateTime(timezone=True), default=datetime.now(UTC)
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc)
+        DateTime(timezone=True), default=datetime.now(UTC), onupdate=datetime.now(UTC)
     )
 
     student_profile: Mapped["StudentProfile | None"] = relationship(
@@ -120,10 +120,10 @@ class StudentProfile(Base):
     budget_min: Mapped[float | None] = mapped_column(Numeric(14, 2), nullable=True)
     budget_max: Mapped[float | None] = mapped_column(Numeric(14, 2), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=datetime.now(timezone.utc)
+        DateTime(timezone=True), default=datetime.now(UTC)
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc)
+        DateTime(timezone=True), default=datetime.now(UTC), onupdate=datetime.now(UTC)
     )
 
     user: Mapped["User"] = relationship(back_populates="student_profile")
@@ -139,7 +139,7 @@ class Admin(Base):
     name: Mapped[str] = mapped_column(String(255))
     department: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=datetime.now(timezone.utc)
+        DateTime(timezone=True), default=datetime.now(UTC)
     )
 
 
@@ -155,7 +155,7 @@ class Counsellor(Base):
     max_leads: Mapped[int] = mapped_column(Integer, default=100)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=datetime.now(timezone.utc)
+        DateTime(timezone=True), default=datetime.now(UTC)
     )
 
 
@@ -166,7 +166,7 @@ class Role(Base):
     name: Mapped[str] = mapped_column(String(50), unique=True, index=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=datetime.now(timezone.utc)
+        DateTime(timezone=True), default=datetime.now(UTC)
     )
 
     users: Mapped[list["User"]] = relationship(

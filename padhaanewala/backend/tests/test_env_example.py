@@ -201,7 +201,6 @@ class TestSettingsAcceptsTheTemplate:
             "seed_admin_under_test", Path(__file__).resolve().parents[1] / "scripts" / "seed_admin.py"
         )
         assert spec and spec.loader
-        module = importlib.util.module_from_spec(spec)
         source = Path(spec.origin).read_text(encoding="utf-8")
 
         for name in _ADMIN_SCRIPT_VARS:

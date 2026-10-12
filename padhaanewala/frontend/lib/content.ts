@@ -3,17 +3,12 @@
  *
  * Single entry point every server component uses to read catalog content.
  *
- * Resolution is API-only. These resolvers used to fall back to hardcoded
- * literals in `lib/data/*` whenever the backend was unreachable or returned an
- * empty list, which meant the site kept serving invented colleges, courses,
- * exams, scholarships, blog posts and an 83-question mock-test bank during a
- * backend outage — and quietly hid a dead or empty database behind a page that
- * looked populated.
- *
- * Those literal datasets are now empty (see the comments in `lib/data/*`). The
- * resolvers therefore return whatever the API actually holds: an empty list when
- * the table is empty, `undefined` when a record does not exist. Rendering an
- * honest empty state is the correct behaviour when there is no data.
+ * The resolvers prefer the API and fall back to the curated literals in
+ * `lib/data/*` only when the backend is unreachable or returns an empty list —
+ * so the public catalogue stays populated during an outage. That is a
+ * deliberate trade-off: with the fallback in place, an empty database renders
+ * the curated list instead of an honest empty state. `BLOG_POSTS` alone is
+ * intentionally empty, so blogs still degrade to an honest empty list.
  *
  * EXCEPTION — mock tests, and the reason has changed. When the runner graded in
  * the browser it never touched the attempt endpoints, so a locally listed paper
@@ -32,6 +27,11 @@
 
 import type { BlogPost, College, Exam, MockTest, Scholarship } from "@/lib/types";
 import type { CourseMeta } from "@/lib/data/courses";
+import { COLLEGES } from "@/lib/data/colleges";
+import { COURSES } from "@/lib/data/courses";
+import { EXAMS } from "@/lib/data/exams";
+import { SCHOLARSHIPS } from "@/lib/data/scholarships";
+import { BLOG_POSTS } from "@/lib/data/blog";
 import { MOCK_TESTS, getMockTest } from "@/lib/data/mockTests";
 import {
   getBlogBySlug,
@@ -77,73 +77,103 @@ const list = <In, Out>(rows: In[] | null | undefined, mapped: Out[]): Resolved<O
 
 export async function resolveColleges(): Promise<Resolved<College[]>> {
   const rows = await getColleges();
-  return list(rows, rows.map((r) => mapCollegeListItem(r)));
+  const mapped = rows.map((r) => mapCollegeListItem(r));
+  if (mapped.length) return { data: mapped, source: "api" };
+  return { data: COLLEGES, source: COLLEGES.length ? "local" : "empty" };
 }
 
 export async function resolveCollege(slug: string): Promise<Resolved<College | undefined>> {
   const bundle = await getCollegeBundle(slug);
   const college = bundle ? mapCollege(bundle) : undefined;
-  return { data: college, source: college ? "api" : "empty" };
+  if (college) return { data: college, source: "api" };
+  const local = COLLEGES.find((c) => c.slug === slug);
+  return { data: local, source: local ? "local" : "empty" };
 }
 
 export async function resolveFeaturedColleges(limit = 9): Promise<Resolved<College[]>> {
   const rows = await getColleges("featured=true&limit=50");
-  return list(rows, rows.slice(0, limit).map((r) => mapCollegeListItem(r)));
+  const mapped = rows.slice(0, limit).map((r) => mapCollegeListItem(r));
+  if (mapped.length) return { data: mapped, source: "api" };
+  const featured = COLLEGES.filter((c) => c.featured).slice(0, limit);
+  const data = featured.length ? featured : COLLEGES.slice(0, limit);
+  return { data, source: data.length ? "local" : "empty" };
 }
 
 /* -------------------------------- courses ----------------------------- */
 
 export async function resolveCourses(): Promise<Resolved<CourseMeta[]>> {
   const rows = await getCourses();
-  return list(rows, rows.map((r, i) => mapCourseMeta(r, i)));
+  const mapped = rows.map((r, i) => mapCourseMeta(r, i));
+  if (mapped.length) return { data: mapped, source: "api" };
+  return { data: COURSES, source: COURSES.length ? "local" : "empty" };
 }
 
 export async function resolveCourse(slug: string): Promise<Resolved<CourseMeta | undefined>> {
   const rows = await getCourses();
   const hit = rows.find((c) => c.slug === slug);
   const course = hit ? mapCourseMeta(hit) : undefined;
-  return { data: course, source: course ? "api" : "empty" };
+  if (course) return { data: course, source: "api" };
+  const local = COURSES.find((c) => c.slug === slug);
+  return { data: local, source: local ? "local" : "empty" };
 }
 
 /* --------------------------------- exams ------------------------------ */
 
 export async function resolveExams(): Promise<Resolved<Exam[]>> {
   const rows = await getExams();
-  return list(rows, rows.map(mapExam));
+  const mapped = rows.map(mapExam);
+  if (mapped.length) return { data: mapped, source: "api" };
+  return { data: EXAMS, source: EXAMS.length ? "local" : "empty" };
 }
 
 export async function resolveExam(slug: string): Promise<Resolved<Exam | undefined>> {
   const exam = await getExamBySlug(slug);
   const mapped = exam ? mapExam(exam) : undefined;
-  return { data: mapped, source: mapped ? "api" : "empty" };
+  if (mapped) return { data: mapped, source: "api" };
+  const local = EXAMS.find((e) => e.slug === slug);
+  return { data: local, source: local ? "local" : "empty" };
 }
 
 /* ----------------------------- scholarships --------------------------- */
 
 export async function resolveScholarships(): Promise<Resolved<Scholarship[]>> {
   const rows = await getScholarships();
-  return list(rows, rows.map(mapScholarship));
+  const mapped = rows.map(mapScholarship);
+  if (mapped.length) return { data: mapped, source: "api" };
+  return { data: SCHOLARSHIPS, source: SCHOLARSHIPS.length ? "local" : "empty" };
 }
 
+/**
+ * Scholarship detail by its catalogue identifier.
+ *
+ * The backend addresses scholarships by `scholarship_ref` (the record's `id`);
+ * there is no `slug` field on a scholarship, contrary to the other catalogues.
+ */
 export async function resolveScholarship(
-  slug: string,
+  id: string,
 ): Promise<Resolved<Scholarship | undefined>> {
-  const row = await getScholarshipBySlug(slug);
+  const row = await getScholarshipBySlug(id);
   const mapped = row ? mapScholarship(row) : undefined;
-  return { data: mapped, source: mapped ? "api" : "empty" };
+  if (mapped) return { data: mapped, source: "api" };
+  const local = SCHOLARSHIPS.find((s) => s.id === id);
+  return { data: local, source: local ? "local" : "empty" };
 }
 
 /* --------------------------------- blogs ------------------------------ */
 
 export async function resolveBlogPosts(): Promise<Resolved<BlogPost[]>> {
   const rows = await getBlogs();
-  return list(rows, rows.map(mapBlogPost));
+  const mapped = rows.map(mapBlogPost);
+  if (mapped.length) return { data: mapped, source: "api" };
+  return { data: BLOG_POSTS, source: BLOG_POSTS.length ? "local" : "empty" };
 }
 
 export async function resolveBlogPost(slug: string): Promise<Resolved<BlogPost | undefined>> {
   const post = await getBlogBySlug(slug);
   const mapped = post ? mapBlogPost(post) : undefined;
-  return { data: mapped, source: mapped ? "api" : "empty" };
+  if (mapped) return { data: mapped, source: "api" };
+  const local = BLOG_POSTS.find((p) => p.slug === slug);
+  return { data: local, source: local ? "local" : "empty" };
 }
 
 /* ------------------------------ mock tests ---------------------------- */
@@ -229,29 +259,27 @@ export async function resolveSlugs(
   switch (kind) {
     case "colleges": {
       const rows = await getColleges();
-      return cap(rows.map((r) => r.slug));
+      if (rows.length) return cap(rows.map((r) => r.slug));
+      return cap(COLLEGES.map((c) => c.slug));
     }
     case "exams": {
       const rows = await getExams();
-      return cap(rows.map((r) => r.slug));
+      if (rows.length) return cap(rows.map((r) => r.slug));
+      return cap(EXAMS.map((e) => e.slug));
     }
     case "courses": {
       const rows = await getCourses();
-      return cap(rows.map((r) => r.slug));
+      if (rows.length) return cap(rows.map((r) => r.slug));
+      return cap(COURSES.map((c) => c.slug));
     }
     case "blogs": {
       const rows = await getBlogs();
-      return cap(rows.map((r) => r.slug));
+      if (rows.length) return cap(rows.map((r) => r.slug));
+      return cap(BLOG_POSTS.map((b) => b.slug));
     }
     case "mock-tests": {
       const rows = await getMockTests();
       if (rows.length) return cap(rows.map((r) => r.slug));
-      // `cap` applies here too. This branch used to return the whole local
-      // catalogue regardless of `limit`, so a caller that capped the list to
-      // keep `generateStaticParams` inside the build budget — which is the
-      // entire reason `limit` exists — got an uncapped one whenever the API
-      // was empty. Found by `tests/content.test.ts`, which is exactly the case
-      // a limit is written for.
       return cap(MOCK_TESTS.map((t) => t.slug));
     }
   }

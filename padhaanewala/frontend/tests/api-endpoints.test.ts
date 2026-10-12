@@ -109,6 +109,15 @@ describe("backend route reader", () => {
 /** Dummy arguments, indexed by position. Every value survives JSON encoding. */
 const DUMMY = ["ref", 1, {}, "note"] as const;
 
+/**
+ * Wrappers held out of the route sweep. `revalidate` is the only one: it posts
+ * to the Next.js-internal `/api/revalidate` route — not a backend `/api/v1`
+ * endpoint — and it is a deliberate no-op when no access token is present, so
+ * the sweep's "every method issues a backend request" contract does not apply.
+ * Every other `adminApi` method goes through `apiFetch` and stays covered.
+ */
+const NOT_BACKEND_REQUESTS = new Set(["revalidate"]);
+
 interface SweepResult {
   name: string;
   url: string;
@@ -147,6 +156,7 @@ async function callWrapper(fn: unknown, name: string): Promise<SweepResult> {
 async function sweep(api: object, label: string): Promise<SweepResult[]> {
   const results: SweepResult[] = [];
   for (const [name, fn] of Object.entries(api)) {
+    if (NOT_BACKEND_REQUESTS.has(name)) continue;
     results.push(await callWrapper(fn, `${label}.${name}`));
   }
   return results;

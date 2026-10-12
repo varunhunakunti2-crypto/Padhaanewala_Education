@@ -14,7 +14,7 @@ import {
 import { Badge } from "@/components/ui/Badge";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { useApp } from "@/lib/context/AppContext";
-import { adminApi, type AdminScholarship } from "@/lib/api";
+import { adminApi, type AdminLead, type AdminScholarship } from "@/lib/api";
 import type { ApiCollegeListItem } from "@/lib/api-server";
 import { useAdminResource } from "@/components/admin/useAdminResource";
 import { useCatalogStats, useBackendHealth } from "@/lib/useStats";
@@ -54,6 +54,7 @@ export function DashboardSection({ go }: { go: (s: SectionKey) => void }) {
     adminApi.scholarships(),
   );
   const { data: colleges } = useAdminResource<ApiCollegeListItem[]>(() => adminApi.colleges());
+  const { data: realLeads } = useAdminResource<AdminLead[]>(() => adminApi.leads());
 
   // "Now" is captured once at mount: reading the clock during render makes the
   // deadline list depend on when React happened to re-render.
@@ -133,7 +134,7 @@ export function DashboardSection({ go }: { go: (s: SectionKey) => void }) {
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="Scholarships" value={String(stats.scholarships)} />
         <StatCard label="Blog posts" value={String(stats.blogs)} />
-        <StatCard label="Admission leads" value={String(enquiries.length)} />
+        <StatCard label="Admission leads" value={String(realLeads ? realLeads.length : enquiries.length)} />
         <StatCard label="Mock tests you took" value={String(testHistory.length)} />
       </div>
 
@@ -155,11 +156,41 @@ export function DashboardSection({ go }: { go: (s: SectionKey) => void }) {
       </Panel>
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-        <Panel title="Recent leads" description="Latest admission enquiries">
-          {enquiries.length ? (
+        <Panel
+          title="Recent leads"
+          description="Latest admission enquiries"
+          action={
+            <Button type="button" size="xs" variant="outline" onClick={() => go("leads")}>
+              View all
+            </Button>
+          }
+        >
+          {realLeads && realLeads.length > 0 ? (
+            <div className="space-y-3">
+              {realLeads.slice(0, 5).map((l) => (
+                <div
+                  key={l.id}
+                  onClick={() => go("leads")}
+                  className="flex cursor-pointer flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-50 px-3 py-2.5 transition hover:bg-purple-50"
+                >
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">{l.name}</p>
+                    <p className="text-xs text-slate-400">
+                      {l.course_name || "—"} · {[l.state_name, l.city].filter(Boolean).join(", ") || "—"} · {l.mobile}
+                    </p>
+                  </div>
+                  <Badge variant={BadgeForStatus(l.status)}>{l.status}</Badge>
+                </div>
+              ))}
+            </div>
+          ) : enquiries.length ? (
             <div className="space-y-3">
               {enquiries.slice(0, 5).map((e) => (
-                <div key={e.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-50 px-3 py-2.5">
+                <div
+                  key={e.id}
+                  onClick={() => go("leads")}
+                  className="flex cursor-pointer flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-50 px-3 py-2.5 transition hover:bg-purple-50"
+                >
                   <div>
                     <p className="text-sm font-semibold text-gray-900">{e.name}</p>
                     <p className="text-xs text-slate-400">{e.course} · {e.state || "—"} · {e.mobile}</p>

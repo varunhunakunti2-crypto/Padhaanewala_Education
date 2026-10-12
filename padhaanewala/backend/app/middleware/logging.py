@@ -32,7 +32,7 @@ class ErrorHandlingMiddleware(BaseHTTPMiddleware):
         try:
             response = await call_next(request)
             return response
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.exception("Unhandled error on %s %s", request.method, request.url.path)
             request_id = getattr(request.state, "request_id", None)
             return JSONResponse(

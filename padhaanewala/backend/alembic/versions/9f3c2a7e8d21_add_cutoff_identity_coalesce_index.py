@@ -18,15 +18,15 @@ id) and the text columns are either NULL or meaningful strings, never the empty
 string. The legacy constraint stays for downgrade compatibility; the index is
 what actually enforces identity.
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "9f3c2a7e8d21"
-down_revision: Union[str, Sequence[str], None] = "c3f81a4d7e29"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = "c3f81a4d7e29"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 _INDEX = "uq_cutoff_identity_coalesce"
 
