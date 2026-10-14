@@ -102,6 +102,15 @@ class SetFollowUpRequest(BaseModel):
     follow_up_date: date | None = None
 
 
+class UpdateLeadDetailsRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=255)
+    mobile: str | None = Field(default=None, min_length=10, max_length=20)
+    email: str | None = Field(default=None, max_length=255)
+    city: str | None = Field(default=None, max_length=100)
+    qualification: str | None = Field(default=None, max_length=100)
+    message: str | None = Field(default=None, max_length=2000)
+
+
 class CounsellorListItem(BaseModel):
     """A counsellor the admin console can hand a lead to.
 

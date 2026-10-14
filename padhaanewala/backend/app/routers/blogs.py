@@ -1,14 +1,20 @@
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from sqlalchemy import func, or_, select, update
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy import func, select, update
+from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import get_current_user, get_current_user_roles, get_optional_current_user, require_role
-from app.roles import ADMIN_ROLES, BLOG_ROLES as CONTENT_ROLES
+from app.dependencies import (
+    get_current_user,
+    get_current_user_roles,
+    get_optional_current_user,
+    require_role,
+)
 from app.models import Blog, BlogCategory, User
+from app.roles import ADMIN_ROLES
+from app.roles import BLOG_ROLES as CONTENT_ROLES
 from app.schemas.content import (
     BlogCategoryCreate,
     BlogCategoryResponse,
@@ -185,7 +191,7 @@ def create_blog(
         category_id=payload.category_id,
         author_id=user.id,
         status=payload.status,
-        published_at=datetime.now(timezone.utc) if payload.status == "published" else None,
+        published_at=datetime.now(UTC) if payload.status == "published" else None,
         meta_title=payload.meta_title,
         meta_description=payload.meta_description,
         canonical_url=payload.canonical_url,
@@ -245,7 +251,7 @@ def update_blog(
             raise HTTPException(status_code=400, detail="Blog with this slug exists")
         blog.slug = slug
     if "status" in data and data["status"] == "published" and blog.published_at is None:
-        blog.published_at = datetime.now(timezone.utc)
+        blog.published_at = datetime.now(UTC)
     for field, value in data.items():
         setattr(blog, field, value)
     db.commit()

@@ -82,6 +82,7 @@ _NON_SETTINGS = _ADMIN_SCRIPT_VARS | {
     # both Next.js server-side, neither a `Settings` field.
     "CSP_IMAGE_HOSTS",
     "OPENAI_API_KEY",
+    "OPENAI_BASE_URL",
     "OPENAI_MODEL",
 }
 
@@ -201,7 +202,6 @@ class TestSettingsAcceptsTheTemplate:
             "seed_admin_under_test", Path(__file__).resolve().parents[1] / "scripts" / "seed_admin.py"
         )
         assert spec and spec.loader
-        module = importlib.util.module_from_spec(spec)
         source = Path(spec.origin).read_text(encoding="utf-8")
 
         for name in _ADMIN_SCRIPT_VARS:

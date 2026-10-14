@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Bot, MessagesSquare, Send, Sparkles } from "lucide-react";
+import { MessagesSquare, Send, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { College } from "@/lib/types";
+import { RobotViewer } from "@/components/ai/RobotViewer";
 
 function buildComparisonInsight(colleges: College[]): string {
   if (colleges.length < 2) {
@@ -36,8 +37,8 @@ export function MiniChat({ colleges }: { colleges: College[] }) {
   return (
     <div className="overflow-hidden rounded-3xl border border-purple-100 bg-white shadow-xl shadow-purple-900/5">
       <div className="flex items-center gap-3 border-b border-purple-100 bg-gradient-to-r from-purple-700 to-indigo-700 px-5 py-4">
-        <span className="grid h-9 w-9 place-items-center rounded-full bg-white/15 text-white">
-          <Bot className="h-5 w-5" />
+        <span className="relative flex h-9 w-9 shrink-0 items-center justify-center">
+          <RobotViewer className="h-full w-full" autoRotate={true} modelScale={1.5} />
         </span>
         <div>
           <p className="flex items-center gap-1.5 text-sm font-bold text-white">

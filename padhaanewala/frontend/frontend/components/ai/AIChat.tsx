@@ -178,7 +178,7 @@ export function AIChat() {
           Suggested questions
         </p>
         <div className="flex flex-nowrap gap-2 overflow-x-auto pb-1 no-scrollbar">
-          {AI_SUGGESTED_QUESTIONS.slice(0, 5).map((q) => (
+          {AI_SUGGESTED_QUESTIONS.map((q) => (
             <button
               key={q}
               type="button"

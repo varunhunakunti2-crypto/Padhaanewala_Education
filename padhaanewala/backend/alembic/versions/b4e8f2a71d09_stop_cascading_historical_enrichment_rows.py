@@ -28,15 +28,15 @@ Two consequences worth stating rather than discovering:
   the correct failure direction for a unique index that exists to stop
   duplicate rows skewing the predictor.
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "b4e8f2a71d09"
-down_revision: Union[str, Sequence[str], None] = "c7d4e9a1b308"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = "c7d4e9a1b308"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 # (constraint, table, column, referenced table)

@@ -11,17 +11,17 @@ verification / password-reset links.
 `code_hash` stores a bcrypt digest rather than the secret, so this table cannot
 become a store of usable OTPs if the database is ever exposed.
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = 'b4e91d7a2c58'
-down_revision: Union[str, Sequence[str], None] = 'f1a7c9e2d3b4'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = 'f1a7c9e2d3b4'
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:

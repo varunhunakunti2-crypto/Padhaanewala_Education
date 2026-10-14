@@ -12,6 +12,7 @@ router = APIRouter(prefix="/api/v1/seo", tags=["seo"])
 
 from app.roles import SEO_ROLES
 
+
 def _to_response(seo: SeoMetadata) -> SeoMetadataResponse:
     return SeoMetadataResponse(
         id=seo.id,

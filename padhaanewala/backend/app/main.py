@@ -1,7 +1,7 @@
 import logging
 import time
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,17 +16,17 @@ from app.middleware.logging import (
     RequestContextMiddleware,
 )
 from app.middleware.ratelimit import RateLimitMiddleware
-from app.services.redis_client import close_redis, redis_is_reachable
 from app.routers import (
-audit,
+    analytics,
+    audit,
     auth,
     banners,
     blogs,
     colleges,
     compliance,
     consent,
-    courses,
     counsellors,
+    courses,
     enquiries,
     enrichment,
     exams,
@@ -35,19 +35,21 @@ audit,
     locations,
     media,
     mock_tests,
-    questions,
-    question_imports,
     notifications,
     predictor,
+    question_imports,
+    questions,
     reviews,
     roles,
     saved_colleges,
     scholarships,
     seo,
+    site_settings,
     stats,
     universities,
     users,
 )
+from app.services.redis_client import close_redis, redis_is_reachable
 
 logging.basicConfig(
     level=logging.INFO,
@@ -113,6 +115,7 @@ app.add_middleware(
 )
 
 app.include_router(auth.router)
+app.include_router(analytics.router)
 app.include_router(users.router)
 app.include_router(roles.router)
 app.include_router(locations.router)
@@ -136,6 +139,7 @@ app.include_router(blogs.router)
 app.include_router(faqs.router)
 app.include_router(media.router)
 app.include_router(seo.router)
+app.include_router(site_settings.router)
 app.include_router(notifications.router)
 app.include_router(audit.router)
 app.include_router(banners.router)
@@ -209,5 +213,5 @@ async def health_check(response: Response) -> dict[str, object]:
     return {
         "status": "ok" if healthy else "degraded",
         "checks": checks,
-        "checked_at": datetime.now(timezone.utc).isoformat(),
+        "checked_at": datetime.now(UTC).isoformat(),
     }

@@ -39,16 +39,17 @@ for the reason the existing `question_type` CHECK exists: rows still arrive by
 hand and by script, and a typo there is silent.
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
+
+import sqlalchemy as sa
 
 from alembic import op
-import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = "d7e1b4c9a205"
-down_revision: Union[str, Sequence[str], None] = "c2a7e9f4b613"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = "c2a7e9f4b613"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:

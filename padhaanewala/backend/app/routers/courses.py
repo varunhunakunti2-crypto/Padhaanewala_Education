@@ -11,8 +11,8 @@ from app.dependencies import (
     require_role,
 )
 from app.models import CollegeCourse, Course, User
-from app.schemas.catalog import CourseCreate, CourseResponse, CourseUpdate
 from app.roles import ADMIN_ROLES, CONTENT_ROLES
+from app.schemas.catalog import CourseCreate, CourseResponse, CourseUpdate
 from app.utils import audit
 
 router = APIRouter(prefix="/api/v1/courses", tags=["courses"])

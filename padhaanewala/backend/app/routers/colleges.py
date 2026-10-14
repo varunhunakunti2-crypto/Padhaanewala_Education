@@ -26,7 +26,7 @@ from app.models import (
     SeatMatrix,
     User,
 )
-from app.roles import ADMIN_ROLES, CONTENT_ROLES, SUPER_ADMIN_ROLES
+from app.roles import ADMIN_ROLES, SUPER_ADMIN_ROLES
 from app.schemas.catalog import (
     AdmissionWindowResponse,
     CollegeCourseResponse,

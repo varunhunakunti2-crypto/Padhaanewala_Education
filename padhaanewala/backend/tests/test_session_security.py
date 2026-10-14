@@ -21,6 +21,7 @@ cookie from one test authenticate a request in another.
 """
 
 import uuid
+from datetime import UTC
 
 import pytest
 from fastapi.testclient import TestClient
@@ -550,9 +551,9 @@ def test_expired_token_is_refused(account):
             .first()
         )
         assert row is not None
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
-        row.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+        row.expires_at = datetime.now(UTC) - timedelta(seconds=1)
         db.commit()
 
     assert client.post("/api/v1/auth/refresh", json={"refresh_token": token}).status_code == 401

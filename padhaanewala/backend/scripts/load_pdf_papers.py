@@ -31,7 +31,7 @@ for stream in (sys.stdout, sys.stderr):
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from app.database import SessionLocal
 from app.models import Exam, MockTest, TestQuestion

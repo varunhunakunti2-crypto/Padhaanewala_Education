@@ -1,13 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { ExternalLink } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/lib/context/AppContext";
 import { NAV } from "@/components/admin/nav";
 import type { SectionKey } from "@/components/admin/types";
+import { adminApi, type AdminLead } from "@/lib/api";
+import { useAdminResource } from "@/components/admin/useAdminResource";
 import {
   AnalyticsSection,
   AuditSection,
@@ -34,37 +37,35 @@ import {
 
 /**
  * Admin console shell: sidebar navigation plus a section switch.
- *
- * Each panel lives in its own module under `admin/sections/`, and the shared
- * presentational pieces are in `admin/primitives.tsx`. This file previously held
- * all 20 panels inline (1279 lines).
  */
 export function AdminDashboard() {
-  const [section, setSection] = useState<SectionKey>("dashboard");
+  const searchParams = useSearchParams();
+  const initialSection = (searchParams.get("section") as SectionKey) || "dashboard";
+  const [section, setSection] = useState<SectionKey>(
+    NAV.some((n) => n.key === initialSection) ? initialSection : "dashboard",
+  );
   const { enquiries, roles } = useApp();
 
-  // The console header used to read `profile?.name || "Super Admin"`. `profile`
-  // is a `StudentProfile` hydrated from the `cp_profile` localStorage key, not
-  // an admin identity, so an admin without a student profile in that browser —
-  // which is every admin who signed up through a different route — was
-  // labelled "Super Admin" on screen. The role now comes from
-  // `GET /users/me/roles`, which is the same source the authorization guards
-  // use, so what the header says and what the API enforces cannot diverge.
+  // Watch URL param if changed externally. Adjusting state during render — the
+  // "remember the previous URL, update when it changes" pattern — is the
+  // replacement for setState-in-an-effect the react-hooks rules now demand: the
+  // guard means the update fires only when the URL actually changed, at which
+  // point React re-renders immediately with the new section.
+  const [lastSearchParams, setLastSearchParams] = useState(searchParams);
+  if (lastSearchParams !== searchParams) {
+    setLastSearchParams(searchParams);
+    const s = searchParams.get("section") as SectionKey;
+    if (s && NAV.some((n) => n.key === s)) {
+      setSection(s);
+    }
+  }
+
+  const { data: realLeads } = useAdminResource<AdminLead[]>(() => adminApi.leads());
+
   const isSuperAdmin = roles.includes("super_admin");
   const roleLabel = isSuperAdmin ? "Super Admin" : "Admin";
 
-  const leads = useMemo(
-    () =>
-      enquiries.map((e) => ({
-        id: e.id,
-        name: e.name,
-        mobile: e.mobile,
-        course: e.course,
-        state: e.state || "—",
-        status: e.status,
-      })),
-    [enquiries],
-  );
+  const totalLeadsCount = realLeads ? realLeads.length : enquiries.length;
 
   return (
     <div className="mx-auto max-w-7xl">
@@ -105,7 +106,8 @@ export function AdminDashboard() {
                 const active = section === item.key;
                 const badge =
                   item.key === "leads"
-                    ? leads.length                      : undefined;
+                    ? totalLeadsCount
+                    : undefined;
                 return (
                   <button
                     key={item.key}

@@ -1593,6 +1593,66 @@ export interface AdminUserQuery {
   offset?: number;
 }
 
+/** One `{name, count}` bucket of a grouped breakdown from the analytics endpoint. */
+export interface AdminAnalyticsNameCount {
+  name: string;
+  count: number;
+}
+
+/** Activity on one calendar day of `GET /api/v1/admin/analytics/overview`. */
+export interface AdminAnalyticsSeriesPoint {
+  date: string;
+  leads: number;
+  registrations: number;
+  attempts: number;
+  reviews: number;
+}
+
+/**
+ * Payload of `GET /api/v1/admin/analytics/overview` — live aggregates over the
+ * platform's own tables, never a fabricated number. Field names mirror the
+ * backend schema (`analytics.py`) verbatim, trailing underscores included.
+ */
+export interface AdminAnalytics {
+  generated_at: string;
+  catalogue: {
+    colleges: number;
+    courses: number;
+    exams: number;
+    scholarships: number;
+    blogs: number;
+    mock_tests: number;
+  };
+  users: {
+    total: number;
+    active: number;
+    new_30d: number;
+    by_role: AdminAnalyticsNameCount[];
+  };
+  leads: {
+    total: number;
+    new_7d: number;
+    new_30d: number;
+    by_status: AdminAnalyticsNameCount[];
+    by_source: AdminAnalyticsNameCount[];
+  };
+  mock_tests: {
+    papers: number;
+    attempts_total: number;
+    attempts_completed: number;
+    average_percentage: number | null;
+    attempts_30d: number;
+    top_papers: { name: string; slug: string; attempts: number }[];
+  };
+  reviews: {
+    total: number;
+    average_rating: number | null;
+    new_30d: number;
+  };
+  saved_colleges: number;
+  series: AdminAnalyticsSeriesPoint[];
+}
+
 /**
  * `MediaResponse` from `backend/app/schemas/content.py`.
  *
@@ -1728,6 +1788,41 @@ export interface AdminFaq {
   created_at: string;
 }
 
+/**
+ * `SiteSettingsResponse` from `GET` / `PUT /settings`.
+ *
+ * The Settings panel is the only editor. These are the same values the public
+ * site's `SITE` constant publishes, which is why the route is admin-only: the
+ * support address and default formatting are what visitors are shown, so a
+ * mis-edit here is a mis-edit to the site, not to a private preference.
+ */
+export interface SiteSettings {
+  site_name: string;
+  support_email: string;
+  contact_phone: string;
+  counselling_hours: string;
+  default_timezone: string;
+  number_formatting: string;
+  updated_at: string;
+}
+
+/**
+ * The writable subset of {@link SiteSettings}. Every field is optional because
+ * the route is a partial update (`exclude_unset`): the panel sends only the
+ * fields that changed, so saving one field cannot blank the others.
+ */
+export type SiteSettingsUpdate = Partial<
+  Pick<
+    SiteSettings,
+    | "site_name"
+    | "support_email"
+    | "contact_phone"
+    | "counselling_hours"
+    | "default_timezone"
+    | "number_formatting"
+  >
+>;
+
 export const adminApi = {
   /**
    * Filtering and paging happen on the server. The console can only ever hold one
@@ -1747,6 +1842,26 @@ export const adminApi = {
   },
 
   roles: () => apiFetch<AdminRole[]>("/roles"),
+
+  /**
+   * Live platform analytics for the console. One aggregation endpoint backs the
+   * whole Analytics panel; there is deliberately no visitor/traffic data (this
+   * codebase tracks no page-view events), so the panel says exactly what the
+   * response contains.
+   */
+  analytics: () => apiFetch<AdminAnalytics>("/admin/analytics/overview"),
+
+  /** `GET /settings` — admin-only. See {@link SiteSettings}. */
+  settings: () => apiFetch<SiteSettings>("/settings"),
+
+  /**
+   * `PUT /settings`. Send only the fields that changed; the server's
+   * `exclude_unset` leaves every field it does not receive untouched, so a
+   * one-field save is a one-field save. `adminApi.settings` reads the merged
+   * result back.
+   */
+  updateSettings: (payload: SiteSettingsUpdate) =>
+    apiFetch<SiteSettings>("/settings", { method: "PUT", body: JSON.stringify(payload) }),
 
   updateUser: (id: number, payload: AdminUpdateUserPayload) =>
     apiFetch<AdminUser>(`/users/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
@@ -1802,6 +1917,48 @@ export const adminApi = {
       method: "PATCH",
       body: JSON.stringify({ status }),
     }),
+
+  updateLeadDetails: (
+    enquiryId: number,
+    payload: {
+      name?: string;
+      mobile?: string;
+      email?: string;
+      city?: string;
+      qualification?: string;
+      message?: string;
+    },
+  ) =>
+    apiFetch<AdminLeadDetail>(`/leads/${enquiryId}/details`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+
+  createLead: (payload: {
+    name: string;
+    mobile: string;
+    email?: string | null;
+    course_id?: number | null;
+    college_id?: number | null;
+    state_id?: number | null;
+    city?: string | null;
+    qualification?: string | null;
+    message?: string | null;
+    source?: string | null;
+    age_band: "18_plus" | "under_18";
+    guardian_contact?: string | null;
+  }) =>
+    apiFetch<{ id: number; name: string; status: string }>("/enquiries", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  deleteLead: (enquiryId: number) =>
+    apiFetch<void>(`/leads/${enquiryId}`, {
+      method: "DELETE",
+    }),
+
+  revalidate: (resources: string[]) => revalidatePublic(resources),
 
   /**
    * Admin-only roster for the assign dropdown; 403s for a counsellor.

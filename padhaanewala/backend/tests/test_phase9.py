@@ -1,4 +1,5 @@
 import uuid
+from datetime import UTC
 
 from fastapi.testclient import TestClient
 
@@ -362,16 +363,16 @@ def test_audit_payload_never_carries_a_non_json_value():
     `json.dumps`. Anything else raises at *flush* time — which is the caller's
     `db.commit()`, so no `try/except` around the audit call can contain it.
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
     from decimal import Decimal
 
     from app.utils.audit import redact
 
     payload = {
-        "due_at": datetime(2026, 12, 31, tzinfo=timezone.utc),
+        "due_at": datetime(2026, 12, 31, tzinfo=UTC),
         "fee": Decimal("125000.50"),
-        "nested": {"expires_at": datetime(2027, 1, 1, tzinfo=timezone.utc)},
-        "listed": [datetime(2027, 1, 2, tzinfo=timezone.utc)],
+        "nested": {"expires_at": datetime(2027, 1, 1, tzinfo=UTC)},
+        "listed": [datetime(2027, 1, 2, tzinfo=UTC)],
         "email": "student@example.com",
         "count": 3,
         "flag": True,

@@ -69,8 +69,8 @@ import redis
 import redis.asyncio as aioredis
 
 from app.config import settings
-from app.middleware import ratelimit
 from app.main import app
+from app.middleware import ratelimit
 from app.services import redis_client
 
 # The genuine accessor, bound during collection — before conftest's session

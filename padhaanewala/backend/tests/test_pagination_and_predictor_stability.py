@@ -11,14 +11,13 @@ P0-4  `predictor` derived a confidence nudge from `hash(str(college_id))`.
       secondary sort key the result ordering moved too.
 """
 
-import uuid
 
 from fastapi.testclient import TestClient
 from sqlalchemy import event, select
 
 from app.database import SessionLocal, engine
 from app.main import app
-from app.models import NIRFRanking, OtherRanking, College, Cutoff
+from app.models import College, Cutoff, NIRFRanking, OtherRanking
 from app.routers.predictor import _stable_jitter
 
 client = TestClient(app)

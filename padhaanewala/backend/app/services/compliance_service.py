@@ -33,7 +33,7 @@ grievance and deletion workflows that Phase 9 exists to make possible.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -63,7 +63,7 @@ GUARDIAN_CONSENT_TEXT = (
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _as_utc(value: datetime) -> datetime:
@@ -74,7 +74,7 @@ def _as_utc(value: datetime) -> datetime:
     the two raises `TypeError`, and this comparison decides whether a child may
     be processed — so it must not be the thing that 500s.
     """
-    return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 
 def apply_age_band(user: User, age_band: str) -> None:

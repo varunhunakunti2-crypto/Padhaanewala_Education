@@ -16,6 +16,7 @@ router = APIRouter(prefix="/api/v1/faqs", tags=["faqs"])
 
 from app.roles import CONTENT_ROLES
 
+
 @router.get("", response_model=list[FAQResponse])
 def list_faqs(
     entity_type: str | None = Query(None, max_length=50),

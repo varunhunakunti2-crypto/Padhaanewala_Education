@@ -11,10 +11,18 @@ import type { NotificationItem } from "@/lib/types";
 export const DEFAULT_NOTIFICATIONS: NotificationItem[] = [];
 
 /**
- * Prompt suggestions. Empty because they used to advertise courses and features
- * that have no data behind them.
+ * Prompt suggestions for education guidance, college admissions, exams, and scholarships.
  */
-export const AI_SUGGESTED_QUESTIONS: string[] = [];
+export const AI_SUGGESTED_QUESTIONS: string[] = [
+  "What are the top engineering colleges in India?",
+  "Which entrance exams are needed for B.Tech?",
+  "What is the admission process for MBBS after 12th?",
+  "How do I choose between CSE and IT branches?",
+  "What scholarships are available for college students?",
+  "What is the difference between IIT, NIT, and IIIT?",
+  "How does JoSAA counselling work?",
+  "Which entrance exams should I take for MBA?",
+];
 
 /**
  * There is no language model wired up to this route.

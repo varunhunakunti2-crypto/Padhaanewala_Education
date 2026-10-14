@@ -11,6 +11,7 @@ router = APIRouter(prefix="/api/v1/audit-logs", tags=["audit"])
 
 from app.roles import AUDIT_ROLES
 
+
 def _to_response(log: AuditLog) -> AuditLogResponse:
     # `log.user` is eager-loaded by the list query, and so is that user's
     # student profile. This used to be `db.get(User, log.user_id)` per row, so a

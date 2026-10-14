@@ -19,8 +19,8 @@ flag entirely.
 
 import uuid
 
-from fastapi.testclient import TestClient
 import pytest
+from fastapi.testclient import TestClient
 
 from app.database import SessionLocal
 from app.main import app

@@ -38,9 +38,10 @@ from __future__ import annotations
 import csv
 import difflib
 import re
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Iterable, Literal, Sequence
+from typing import Any, Literal
 
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import func, select

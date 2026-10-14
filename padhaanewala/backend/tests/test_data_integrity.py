@@ -22,7 +22,6 @@ from app.main import app
 from app.models import (
     AuditLog,
     Blog,
-    BlogCategory,
     College,
     CollegeCourse,
     Cutoff,
@@ -758,14 +757,12 @@ def test_delete_college_refuses_to_detach_onto_a_duplicate_orphan(admin):
         "category": "General",
     }
 
-    orphan_id: int | None = None
     with SessionLocal() as db:
         # An unattributed row that a detach would collide with.
         orphan = Cutoff(college_id=None, **identity)
         owned = Cutoff(college_id=college_id, **identity)
         db.add_all([orphan, owned])
         db.commit()
-        orphan_id = orphan.id
 
     try:
         response = client.delete(

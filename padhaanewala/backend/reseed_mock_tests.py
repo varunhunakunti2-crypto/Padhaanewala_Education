@@ -7,7 +7,6 @@ no text decoding anywhere in the path, and verifies the result before seeding.
 """
 import base64
 import hashlib
-import json
 import pathlib
 import subprocess
 import sys
@@ -50,9 +49,9 @@ print(f"  U+221A present: {chr(0x221A) in text}   U+2014 present: {chr(0x2014) i
 # the only attempts in this stack are smoke-test ones.
 print("\n-- purging previously seeded paper --")
 subprocess.run(["docker", "exec", CONTAINER, "python", "-c",
-                "from app.database import SessionLocal; from app.models import MockTest; "
-                "db=SessionLocal(); n=db.query(MockTest).delete(synchronize_session=False); db.commit(); "
-                "print('deleted', n)"], check=True, cwd=None)
+                ("from app.database import SessionLocal; from app.models import MockTest; "
+                 "db=SessionLocal(); n=db.query(MockTest).delete(synchronize_session=False); db.commit(); "
+                 "print('deleted', n)")], check=True, cwd=None)
 
 print("\n-- seeding --")
 r = subprocess.run(["docker", "exec", "-w", "/app", CONTAINER, "python",
