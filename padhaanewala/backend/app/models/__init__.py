@@ -4,6 +4,7 @@ from app.models.banner import Banner
 from app.models.blog import Blog, BlogCategory
 from app.models.college import College
 from app.models.college_course import CollegeCourse
+from app.models.college_submission import CollegeSubmission
 from app.models.consent import ConsentRecord
 from app.models.course import Course
 from app.models.cutoff import Cutoff
@@ -49,6 +50,7 @@ __all__ = [
     "City",
     "College",
     "CollegeCourse",
+    "CollegeSubmission",
     "ConsentRecord",
     "Counsellor",
     "Course",

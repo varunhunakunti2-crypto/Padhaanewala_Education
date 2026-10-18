@@ -881,6 +881,65 @@ export async function submitEnquiry(payload: EnquiryPayload): Promise<EnquiryRes
   });
 }
 
+/* ------------------------------------------------------------------ *
+ * Suggestions a signed-in student makes about the catalogue.
+ *
+ * These sit outside `adminApi` because the caller is a student, not staff: the
+ * submit path is gated on processing consent, and the owner paths are scoped to
+ * `submitted_by == the caller`. They are deliberately *not* in
+ * `lib/api-server.ts`, whose every quoted path is contract-tested to answer a
+ * public GET — a submission is private and only readable with a token.
+ * ------------------------------------------------------------------ */
+
+/**
+ * `POST /college-submissions` — propose a college for the catalogue.
+ *
+ * The response's `status` is always `pending`: a submission can never become
+ * published on its own, which is the whole point of the workflow. A name that
+ * already exists answers **409**, the same as `PUT` but unlike the college
+ * router's duplicate **400**.
+ */
+export async function submitCollegeSuggestion(
+  payload: CollegeSubmissionPayload,
+): Promise<CollegeSubmission> {
+  return apiFetch<CollegeSubmission>("/college-submissions", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+/** The signed-in user's own submissions, newest first. */
+export async function fetchMyCollegeSubmissions(): Promise<CollegeSubmission[]> {
+  return apiFetch<CollegeSubmission[]>("/college-submissions/my");
+}
+
+/** One submission the caller owns, or any row for a content-role holder. */
+export async function fetchCollegeSubmission(id: number): Promise<CollegeSubmission> {
+  return apiFetch<CollegeSubmission>(`/college-submissions/${id}`);
+}
+
+/**
+ * Owner edit while the row is `pending` or `changes_requested`.
+ *
+ * Editing re-queues the row as `pending`, so an edit after a change request
+ * returns to the queue rather than staying addressed. `PUT` is the method, and
+ * the payload is a partial: only the keys present are applied.
+ */
+export async function updateCollegeSuggestion(
+  id: number,
+  payload: Partial<CollegeSubmissionPayload>,
+): Promise<CollegeSubmission> {
+  return apiFetch<CollegeSubmission>(`/college-submissions/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+/** Owner withdraw of a revisable row. 204 on success. */
+export async function withdrawCollegeSuggestion(id: number): Promise<void> {
+  return apiFetch<void>(`/college-submissions/${id}`, { method: "DELETE" });
+}
+
 type CourseLookupRow = { id: number; name: string; degree: string | null };
 
 let coursesCache: CourseLookupRow[] | null = null;
@@ -1115,6 +1174,100 @@ export interface AdminReview {
   status: string;
   created_at: string;
   student_name: string | null;
+}
+
+/* ------------------------------------------------------------------ *
+ * College submissions — the public "suggest a college" workflow
+ * ------------------------------------------------------------------ */
+
+/**
+ * A submission's lifecycle.
+ *
+ * `approved` and `rejected` are terminal; `pending` and `changes_requested` are
+ * the two states the owner may still edit and a reviewer may still act on. The
+ * union is spelled out rather than left as `string` because the queue filter and
+ * the row badge both branch on it, and a typo in either would render an empty
+ * panel with no error.
+ */
+export type CollegeSubmissionStatus =
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "changes_requested";
+
+/**
+ * The public proposal payload — `CollegeSubmissionCreate` on the backend.
+ *
+ * Mirrors the schema key for key, including the `proposed_` prefix, because the
+ * schema sets `extra="forbid"`: an unknown key is a **422**, not a silently
+ * dropped field. `lib/college-submission-form.ts` therefore builds this from the
+ * form rather than spreading the form's own state onto the wire.
+ *
+ * `proposed_name` is the only required field. `proposed_state_id` is a nullable
+ * FK; `proposed_state_name` is the free text a submitter typed, kept alongside
+ * it so an unmatched state is not lost.
+ */
+export interface CollegeSubmissionPayload {
+  proposed_name: string;
+  proposed_official_name?: string | null;
+  proposed_college_type?: string | null;
+  proposed_ownership?: string | null;
+  proposed_university_name?: string | null;
+  proposed_state_id?: number | null;
+  proposed_state_name?: string | null;
+  proposed_city?: string | null;
+  proposed_address?: string | null;
+  proposed_website?: string | null;
+  proposed_email?: string | null;
+  proposed_phone?: string | null;
+  proposed_overview?: string | null;
+  submitter_notes?: string | null;
+}
+
+/**
+ * `CollegeSubmissionResponse` — a queue row plus the resolved names the console
+ * renders without an N+1 lookup.
+ *
+ * `college_id` is null until approval, and `college_slug` links the reviewer to
+ * the published record afterwards. `possible_duplicate_college_id` is the
+ * advisory near-match the submit path stored; it is a hint, never a decision.
+ */
+export interface CollegeSubmission {
+  id: number;
+  submitted_by: number | null;
+  submitter_name: string | null;
+  proposed_name: string;
+  proposed_official_name: string | null;
+  proposed_college_type: string | null;
+  proposed_ownership: string | null;
+  proposed_university_name: string | null;
+  proposed_state_id: number | null;
+  proposed_state_name: string | null;
+  proposed_city: string | null;
+  proposed_address: string | null;
+  proposed_website: string | null;
+  proposed_email: string | null;
+  proposed_phone: string | null;
+  proposed_overview: string | null;
+  submitter_notes: string | null;
+  status: CollegeSubmissionStatus;
+  reviewer_id: number | null;
+  reviewer_name: string | null;
+  reviewer_notes: string | null;
+  reviewed_at: string | null;
+  college_id: number | null;
+  college_name: string | null;
+  college_slug: string | null;
+  /**
+   * Whether the linked college is live in the catalogue. Null when there is no
+   * link yet. The public `/colleges/{slug}` route filters on `is_active`, so an
+   * archived link would 404 — read this before rendering an anchor.
+   */
+  college_is_active: boolean | null;
+  possible_duplicate_college_id: number | null;
+  possible_duplicate_college_name: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface AdminEnquiry {
@@ -2435,6 +2588,63 @@ export const adminApi = {
 
   deleteExam: (ref: string | number) =>
     adminWrite<void>(`/exams/${ref}`, { method: "DELETE" }, ["exams"]),
+
+  /* ---------------------------------------------------------------- *
+   * College submission review queue
+   * ---------------------------------------------------------------- */
+
+  /**
+   * The review queue for one status.
+   *
+   * `GET /college-submissions` returns a bare array for a single `status` and
+   * caps `limit` at 100, so this walks the offsets the way every other admin
+   * list does — a pending queue that has grown past one page would otherwise be
+   * silently truncated and read as "that is everything waiting".
+   *
+   * Reading is `CONTENT_ROLES`; the review actions below are `ADMIN_ROLES`.
+   */
+  collegeSubmissions: (status: CollegeSubmissionStatus = "pending") =>
+    fetchAllPages<CollegeSubmission>(`/college-submissions?status=${status}`),
+
+  /** `GET /college-submissions/{id}` — the same read the owner uses. */
+  collegeSubmission: (id: number) => fetchCollegeSubmission(id),
+
+  /**
+   * Approve — the only action that writes to `colleges`.
+   *
+   * `ADMIN_ROLES` only. The server creates a college (active, `unverified`) or
+   * links an exact-name match that appeared since submission, and refuses a
+   * second reviewer with a **409** rather than creating a duplicate. Because a
+   * new college can become publicly visible here, the `colleges` cache tag is
+   * revalidated through `adminWrite`.
+   */
+  approveCollegeSubmission: (id: number, reviewerNotes?: string | null) =>
+    adminWrite<CollegeSubmission>(
+      `/college-submissions/${id}/approve`,
+      { method: "POST", body: JSON.stringify({ reviewer_notes: reviewerNotes ?? null }) },
+      ["colleges"],
+    ),
+
+  /** Reject. Terminal for the row; nothing in the public catalogue changes. */
+  rejectCollegeSubmission: (id: number, reviewerNotes?: string | null) =>
+    apiFetch<CollegeSubmission>(`/college-submissions/${id}/reject`, {
+      method: "POST",
+      body: JSON.stringify({ reviewer_notes: reviewerNotes ?? null }),
+    }),
+
+  /**
+   * Ask the submitter to change something. The row stays revisable, so this
+   * touches nothing public.
+   */
+  requestChangesCollegeSubmission: (id: number, reviewerNotes?: string | null) =>
+    apiFetch<CollegeSubmission>(`/college-submissions/${id}/request-changes`, {
+      method: "POST",
+      body: JSON.stringify({ reviewer_notes: reviewerNotes ?? null }),
+    }),
+
+  /** Admin removal of any row. 204 on success. Nothing public changes. */
+  deleteCollegeSubmission: (id: number) =>
+    apiFetch<void>(`/college-submissions/${id}`, { method: "DELETE" }),
 };
 
 /** True when an error is simply "you don't have the role for this". */

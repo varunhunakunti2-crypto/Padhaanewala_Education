@@ -1,6 +1,7 @@
 export { DashboardSection } from "@/components/admin/sections/DashboardSection";
 export { AnalyticsSection } from "@/components/admin/sections/AnalyticsSection";
 export { CollegesSection } from "@/components/admin/sections/CollegesSection";
+export { CollegeSubmissionsSection } from "@/components/admin/sections/CollegeSubmissionsSection";
 export { CoursesSection } from "@/components/admin/sections/CoursesSection";
 export { ScholarshipsSection } from "@/components/admin/sections/ScholarshipsSection";
 export { ExamsSection } from "@/components/admin/sections/ExamsSection";

@@ -17,6 +17,7 @@ import {
   BannersSection,
   BlogsSection,
   CollegesSection,
+  CollegeSubmissionsSection,
   CounsellorsSection,
   CoursesSection,
   DashboardSection,
@@ -145,6 +146,7 @@ export function AdminDashboard() {
           {section === "dashboard" && <DashboardSection go={setSection} />}
           {section === "analytics" && <AnalyticsSection />}
           {section === "colleges" && <CollegesSection />}
+          {section === "collegesubmissions" && <CollegeSubmissionsSection />}
           {section === "courses" && <CoursesSection />}
           {section === "scholarships" && <ScholarshipsSection />}
           {section === "exams" && <ExamsSection />}

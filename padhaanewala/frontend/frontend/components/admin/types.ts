@@ -3,6 +3,7 @@
 export type SectionKey =
   | "dashboard"
   | "colleges"
+  | "collegesubmissions"
   | "courses"
   | "scholarships"
   | "exams"

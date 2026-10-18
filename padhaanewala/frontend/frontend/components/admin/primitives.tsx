@@ -114,11 +114,18 @@ export function RowActions({ item, noun }: { item: string; noun: string }) {
 }
 
 
-export function FilterChips<T extends string>({ options, value, onChange, counts }: {
+export function FilterChips<T extends string>({ options, value, onChange, counts, includeAll = true }: {
   options: readonly T[];
   value: T | "all";
   onChange: (v: T | "all") => void;
   counts?: Partial<Record<T | "all", number>>;
+  /**
+   * Render the leading "All" chip. Some queues are filtered *server-side* by a
+   * required parameter with no "every value" mode — the college submission
+   * queue is one — and an "All" chip there would either 422 or silently show a
+   * single status under a misleading label.
+   */
+  includeAll?: boolean;
 }) {
   const render = (label: T | "all") => {
     const active = value === label;
@@ -144,7 +151,12 @@ export function FilterChips<T extends string>({ options, value, onChange, counts
       </button>
     );
   };
-  return <div className="flex flex-wrap gap-2">{render("all")}{options.map(render)}</div>;
+  return (
+    <div className="flex flex-wrap gap-2">
+      {includeAll && render("all")}
+      {options.map(render)}
+    </div>
+  );
 }
 
 export function ProgressBar({ label, value, suffix }: { label: string; value: number; suffix?: string }) {

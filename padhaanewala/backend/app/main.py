@@ -22,6 +22,7 @@ from app.routers import (
     auth,
     banners,
     blogs,
+    college_submissions,
     colleges,
     compliance,
     consent,
@@ -121,6 +122,7 @@ app.include_router(roles.router)
 app.include_router(locations.router)
 app.include_router(universities.router)
 app.include_router(colleges.router)
+app.include_router(college_submissions.router)
 app.include_router(compliance.router)
 app.include_router(courses.router)
 app.include_router(consent.router)
