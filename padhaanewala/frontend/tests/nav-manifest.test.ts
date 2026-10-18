@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  ACCOUNT_NAV,
   BETA_HIDDEN_ROUTES,
   BOTTOM_NAV,
   DASHBOARD_NAV,
@@ -59,13 +60,37 @@ describe("page manifest", () => {
   });
 
   it("DASHBOARD_NAV is derived from the header arrays, so it cannot drift", () => {
-    // The only entry allowed to be its own thing is the tab's own "Overview".
+    // The entries allowed to be their own thing are the tab's own "Overview"
+    // and the account-only links in `ACCOUNT_NAV` — signed-in tools that must
+    // not appear in the public header.
     const self = DASHBOARD_NAV.filter((i) => i.href === "/dashboard");
     expect(self).toHaveLength(1);
     for (const item of DASHBOARD_NAV) {
       if (item.href === "/dashboard") continue;
+      const accountOnly = ACCOUNT_NAV.some((a) => a.href === item.href);
+      if (accountOnly) continue;
       const inHeader = [...PRIMARY_NAV, ...MORE_NAV].some((h) => h.href === item.href);
       expect(inHeader, `${item.href} is in the sidebar but not in the header`).toBe(true);
+    }
+  });
+
+  it("ACCOUNT_NAV is reachable from the sidebar but never from the header or mobile bar", () => {
+    // These are signed-in tools, not sections of the site. The footer keeps one
+    // owner-facing link ("Add Your College") because that is where a college
+    // owner who has never signed in meets the feature; the header and the
+    // mobile bottom bar show every visitor the same thing on every page, and
+    // that is where an account-only tool must not leak.
+    expect(ACCOUNT_NAV.length).toBeGreaterThan(0);
+    const advertisedEverywhere = [
+      ...PRIMARY_NAV.map((i) => i.href),
+      ...MORE_NAV.map((i) => i.href),
+      ...BOTTOM_NAV.map((i) => i.href),
+    ];
+    for (const item of ACCOUNT_NAV) {
+      expect(advertisedEverywhere, item.href).not.toContain(item.href);
+      expect(isBetaHidden(item.href), item.href).toBe(false);
+      const inSidebar = DASHBOARD_NAV.some((n) => n.href === item.href);
+      expect(inSidebar, `${item.href} is account-only but missing from the sidebar`).toBe(true);
     }
   });
 });

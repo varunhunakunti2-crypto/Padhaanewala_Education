@@ -39,6 +39,7 @@ import {
   PenLine,
   Phone,
   Scale,
+  SquarePlus,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -148,6 +149,7 @@ export const FOOTER_COLS: readonly FooterColumn[] = [
       { label: "Exams", href: "/exams" },
       { label: "Reviews", href: "/reviews" },
       { label: "Get Admission Help", href: "/admission" },
+      { label: "Add Your College", href: "/add-college" },
     ],
   },
   {
@@ -171,18 +173,36 @@ export const BOTTOM_NAV: readonly NavItem[] = [
 ];
 
 /**
+ * Links that exist only inside a signed-in account.
+ *
+ * These are not header links and deliberately so: "Add Your College" is a tool
+ * for college owners, not a section of the site, and advertising it in the
+ * public header would invite students who do not represent a college to file
+ * submissions. The entry point is the account area itself — signed out, the
+ * route sends the visitor through `/login` and back. The one public link is the
+ * footer's owner-facing "Add Your College", which existed before this array
+ * (as "Suggest a College") and is how an owner who has never signed in finds
+ * the feature.
+ */
+export const ACCOUNT_NAV: readonly NavItem[] = [
+  { label: "Add Your College", href: "/add-college", icon: SquarePlus },
+];
+
+/**
  * Dashboard sidebar.
  *
  * Derived from the header arrays rather than restated. The sidebar used to hold
  * its own list with a `/mock-tests` entry the header no longer had, and a
  * `Settings`-icon link labelled "Reviews" — the kind of drift that a duplicated
  * array guarantees. `/compare` is pulled out of `MORE_NAV` rather than retyped
- * so that removing it from the "More" menu removes it here too.
+ * so that removing it from the "More" menu removes it here too. `ACCOUNT_NAV`
+ * is the one account-only addition, and the manifest test treats it as such.
  */
 export const DASHBOARD_NAV: readonly NavItem[] = [
   { label: "Overview", href: "/dashboard", icon: LayoutDashboard },
   ...PRIMARY_NAV,
   ...MORE_NAV.filter((item) => item.href === "/compare"),
+  ...ACCOUNT_NAV,
 ];
 
 /* ------------------------------------------------------------------ *
