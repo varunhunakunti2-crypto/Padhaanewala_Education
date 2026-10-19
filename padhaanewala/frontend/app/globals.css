@@ -509,6 +509,11 @@ select:focus-visible {
   to { opacity: 1; }
 }
 
+@keyframes fade-in-right {
+  from { opacity: 0; transform: translateX(25px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
 @keyframes pop-in {
   0% { opacity: 0; transform: scale(0.4); }
   60% { transform: scale(1.15); }
@@ -551,6 +556,7 @@ select:focus-visible {
 .animate-float-y { animation: float-y 6s ease-in-out infinite; }
 .animate-fade-up { animation: fade-up 0.5s ease-out both; }
 .animate-fade-in { animation: fade-in 0.4s ease-out both; }
+.animate-fade-in-right { animation: fade-in-right 0.6s ease-out both; }
 .animate-pop-in { animation: pop-in 0.32s cubic-bezier(0.2, 0.9, 0.3, 1.3) both; }
 .animate-toast-in { animation: toast-in 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.2) both; }
 .animate-pulse-ring { animation: pulse-ring 1.8s ease-out infinite; }
@@ -569,10 +575,11 @@ html.dark .skeleton {
   background-size: 800px 100%;
 }
 
-/* Reveal on scroll (JS helper sets .is-visible) */
+/* Reveal on scroll (`components/ui/Reveal.tsx` adds `.is-visible`). The
+   distance is a variable so callers can keep overriding it per instance. */
 .reveal {
   opacity: 0;
-  transform: translateY(18px);
+  transform: translateY(var(--reveal-y, 18px));
 }
 .reveal.is-visible {
   opacity: 1;

@@ -1,7 +1,8 @@
 "use client";
 
-import { motion, useReducedMotion } from "motion/react";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
+import { useInView } from "@/components/ui/useInView";
+import { cn } from "@/lib/utils";
 
 interface RevealProps {
   children: ReactNode;
@@ -10,17 +11,24 @@ interface RevealProps {
   className?: string;
 }
 
+/**
+ * Fade-and-rise on scroll.
+ *
+ * This was a `motion.div` with `whileInView`, which put the whole
+ * `motion/react` runtime in the client bundle for one opacity/transform
+ * transition. The styles live in `globals.css` (`.reveal` / `.reveal.is-visible`,
+ * including the reduced-motion override that neutralises them) and `useInView`
+ * supplies the trigger.
+ */
 export function Reveal({ children, delay = 0, y = 24, className }: RevealProps) {
-  const reduce = useReducedMotion();
+  const [ref, inView] = useInView<HTMLDivElement>("-60px");
   return (
-    <motion.div
-      initial={{ opacity: 0, y: reduce ? 0 : y }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: "-60px" }}
-      transition={{ duration: 0.55, delay, ease: [0.22, 1, 0.36, 1] }}
-      className={className}
+    <div
+      ref={ref}
+      className={cn("reveal", inView && "is-visible", className)}
+      style={{ "--reveal-y": `${y}px`, transitionDelay: `${delay}s` } as CSSProperties}
     >
       {children}
-    </motion.div>
+    </div>
   );
 }

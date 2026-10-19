@@ -1,6 +1,5 @@
 "use client";
 
-import { motion } from "motion/react";
 import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
@@ -66,16 +65,15 @@ export function HeroVisualPanel() {
       {/* Handwriting doodle top right */}
       <Handwriting />
 
-      {/* 3 Floating Glassmorphic Cards on the right */}
+      {/* 3 Floating Glassmorphic Cards on the right. They slide in from the
+          right; `animate-fade-in-right` is the CSS replacement for the motion
+          transition they used. */}
       <div className="absolute right-0 top-0 h-full w-72 pointer-events-none">
         {FLOATING_CARDS.map((card) => (
-          <motion.div
+          <div
             key={card.title}
-            initial={{ opacity: 0, x: 25 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.6, delay: card.delay, ease: [0.22, 1, 0.36, 1] }}
-            style={{ top: card.top, right: card.right }}
-            className="pointer-events-auto absolute w-[240px]"
+            className="animate-fade-in-right pointer-events-auto absolute w-[240px]"
+            style={{ top: card.top, right: card.right, animationDelay: `${card.delay}s` }}
           >
             <Link
               href={card.href}
@@ -100,7 +98,7 @@ export function HeroVisualPanel() {
                 </p>
               </div>
             </Link>
-          </motion.div>
+          </div>
         ))}
 
       </div>

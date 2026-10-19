@@ -1,11 +1,17 @@
 "use client";
 
-import { motion, useReducedMotion } from "motion/react";
 import { Flame, MessagesSquare } from "lucide-react";
 import Link from "next/link";
 import { HeroSearch } from "@/components/home/hero/HeroSearch";
 import { HeroStats } from "@/components/home/hero/HeroStats";
 
+/**
+ * Entrance animations are plain CSS (`animate-fade-up`, from `globals.css`)
+ * staggered with an inline `animation-delay`, replacing equivalent
+ * `motion/react` transitions so the runtime is not shipped for four fades.
+ * `prefers-reduced-motion` is handled globally in `globals.css`, which collapses
+ * the animation duration to ~0ms.
+ */
 export function HeroContent({
   collegeCount = 0,
   courseCount = 0,
@@ -13,28 +19,23 @@ export function HeroContent({
   collegeCount?: number;
   courseCount?: number;
 }) {
-  const reduce = useReducedMotion();
-
-  const fade = (delay: number) => ({
-    initial: { opacity: 0, y: reduce ? 0 : 18 },
-    animate: { opacity: 1, y: 0 },
-    transition: { duration: 0.6, delay, ease: [0.22, 1, 0.36, 1] as const },
-  });
-
   return (
     <div className="relative z-10">
       {/* eyebrow */}
-      <motion.div {...fade(0.08)} className="flex items-center gap-3">
+      <div
+        className="animate-fade-up flex items-center gap-3"
+        style={{ animationDelay: "0.08s" }}
+      >
         <p className="text-[11px] font-bold uppercase tracking-[0.25em] text-white/70">
           More than a college search
         </p>
         <span aria-hidden className="h-[2px] w-12 bg-purple-400/60 rounded-full" />
-      </motion.div>
+      </div>
 
       {/* headline */}
-      <motion.h1
-        {...fade(0.18)}
-        className="hero-headline mt-4 font-display font-extrabold text-white text-4xl sm:text-5xl lg:text-[3.6rem] tracking-[-0.035em] leading-[1.08] drop-shadow-[0_8px_28px_rgba(2,8,28,0.45)]"
+      <h1
+        className="animate-fade-up hero-headline mt-4 font-display font-extrabold text-white text-4xl sm:text-5xl lg:text-[3.6rem] tracking-[-0.035em] leading-[1.08] drop-shadow-[0_8px_28px_rgba(2,8,28,0.45)]"
+        style={{ animationDelay: "0.18s" }}
       >
         <span className="block">Find the Right College</span>
         <span className="block">
@@ -43,23 +44,21 @@ export function HeroContent({
             Your Future.
           </span>
         </span>
-      </motion.h1>
+      </h1>
 
       {/* description */}
-      <motion.p
-        {...fade(0.3)}
-        className="mt-5 max-w-[680px] text-[16px] leading-relaxed text-white/75 sm:text-[18px]"
+      <p
+        className="animate-fade-up mt-5 max-w-[680px] text-[16px] leading-relaxed text-white/75 sm:text-[18px]"
+        style={{ animationDelay: "0.3s" }}
       >
         Explore colleges, compare courses, understand fees, and discover
         opportunities that match your goals.
-      </motion.p>
+      </p>
 
       {/* search */}
-      <motion.div
-        initial={{ opacity: 0, y: reduce ? 0 : 24, scale: reduce ? 1 : 0.98 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ duration: 0.65, delay: 0.42, ease: [0.22, 1, 0.36, 1] }}
-        className="relative z-30 mt-7 max-w-2xl"
+      <div
+        className="animate-fade-up relative z-30 mt-7 max-w-2xl"
+        style={{ animationDelay: "0.42s" }}
       >
         <HeroSearch />
         {/* Secondary CTA. The floating 3D assistant already links here from
@@ -92,7 +91,7 @@ export function HeroContent({
             </Link>
           ))}
         </div>
-      </motion.div>
+      </div>
 
       {/* stats */}
       <HeroStats colleges={collegeCount} courses={courseCount} />
