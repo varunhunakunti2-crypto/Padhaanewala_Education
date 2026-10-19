@@ -13,6 +13,7 @@ a number in the hundreds is the bug returning.
 """
 
 import uuid
+from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
@@ -311,6 +312,258 @@ def test_audit_log_list_does_not_query_per_row(counting_db):
     finally:
         with SessionLocal() as db:
             db.query(AuditLog).filter(AuditLog.action.like(f"{actor_tag}%")).delete(
+                synchronize_session=False
+            )
+            db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Reviews and blogs
+#
+# Both serialisers used to resolve their parent rows with one `db.get` per row:
+# three for a review (college, course, student) and two for a blog (author,
+# category). Neither had a query that scaled — the count grew with the page —
+# which is the same defect the cutoff, seat-matrix and audit cases above were
+# written for. These tests pin the non-scaling property directly.
+# ---------------------------------------------------------------------------
+
+
+def _seed_reviews_for_one_college(college_id: int, count: int, tag: str) -> list[int]:
+    """`count` approved reviews on one college, each written by a distinct user.
+
+    Distinct students is the detail that makes a per-row `db.get(User, ...)`
+    visible: a single author lets the session identity map answer every lookup
+    after the first, so the unfixed code would pass. `User.display_name` also
+    reads `student_profile`, so the actor's profile is set to keep that second
+    hop honest too.
+    """
+    from app.models import Review, StudentProfile
+
+    with SessionLocal() as db:
+        users = []
+        for i in range(count):
+            user = User(
+                email=f"reviewer.{tag}.{i}@example.com",
+                mobile=f"9{uuid.uuid4().int % 1_000_000_000:09d}",
+                password_hash="x",
+                age_band="18_plus",
+            )
+            db.add(user)
+            db.flush()
+            db.add(
+                StudentProfile(user_id=user.id, name=f"Reviewer {tag} {i}")
+            )
+            users.append(user)
+        db.flush()
+        review_ids = []
+        for user in users:
+            review = Review(
+                college_id=college_id,
+                student_id=user.id,
+                rating=4.0,
+                review_text=f"review {tag}",
+                status="approved",
+            )
+            db.add(review)
+            db.flush()
+            review_ids.append(review.id)
+        db.commit()
+    return review_ids
+
+
+def _cleanup_reviews(review_ids: list[int]) -> None:
+    from app.models import Review, StudentProfile
+
+    with SessionLocal() as db:
+        reviews = db.query(Review).filter(Review.id.in_(review_ids)).all()
+        student_ids = [r.student_id for r in reviews]
+        for review in reviews:
+            db.delete(review)
+        db.commit()
+        if student_ids:
+            db.query(StudentProfile).filter(
+                StudentProfile.user_id.in_(student_ids)
+            ).delete(synchronize_session=False)
+            db.query(User).filter(User.id.in_(student_ids)).delete(
+                synchronize_session=False
+            )
+            db.commit()
+
+
+def test_review_list_does_not_query_per_row(college_with_enrichment, counting_db):
+    """A page of reviews must not cost three queries per review.
+
+    The endpoint is unauthenticated and public, so this is the read path every
+    visitor's college page takes; the per-row cost scaled with the whole table
+    because the query was not even paged.
+    """
+    college_id = college_with_enrichment
+    tag = uuid.uuid4().hex[:6]
+    seeded = _seed_reviews_for_one_college(college_id, 12, tag)
+    try:
+        counting_db.clear()
+        response = client.get(f"/api/v1/reviews/college/{college_id}")
+        assert response.status_code == 200, response.text
+        body = response.json()
+        # Non-vacuity, and enough rows that a per-row lookup would be obvious.
+        assert len(body) >= 12, response.text
+        assert counting_db, "no statements were observed; the counter is not working"
+
+        # 1 for the college, 1 for the reviews, then one batch each for the
+        # college, course and student eager loads (plus the profiles). Strictly
+        # bounded and independent of the number of rows.
+        assert _count_selects(counting_db) <= 10, (
+            f"review list issued {_count_selects(counting_db)} SELECTs for "
+            f"{len(body)} rows; the per-row parent lookup is back"
+        )
+
+        # The eager load must not have changed the payload.
+        assert all(row["college_name"] for row in body), (
+            "every review names its college, so college_name must resolve"
+        )
+        assert all(row["student_name"] for row in body), (
+            "every seeded review has a student with a profile, so "
+            "student_name must resolve"
+        )
+    finally:
+        _cleanup_reviews(seeded)
+
+
+def test_review_list_query_count_does_not_scale(counting_db):
+    """Twice the rows must not mean twice the statements.
+
+    The two measurements have to be taken against *different* row counts. An
+    earlier version seeded both sets up front and then compared a page against
+    itself, so it held for the unfixed code as well — the assertion could not
+    fail no matter how the serialiser looked up its parents. The small page is
+    measured first, the extra rows are added only afterwards, and only then is
+    the large page measured.
+    """
+    from app.models import College
+
+    with SessionLocal() as db:
+        # `Query.scalar()` calls `one()`, so a seeded catalogue raises
+        # `MultipleResultsFound` here. One college is all this test needs.
+        first = db.query(College.id).order_by(College.id).first()
+    assert first is not None, "the catalogue must be seeded for this test"
+    college_id = first[0]
+
+    def selects() -> int:
+        counting_db.clear()
+        response = client.get(f"/api/v1/reviews/college/{college_id}")
+        assert response.status_code == 200, response.text
+        assert counting_db, "no statements were observed"
+        return _count_selects(counting_db)
+
+    small = _seed_reviews_for_one_college(college_id, 5, uuid.uuid4().hex[:6])
+    try:
+        few = selects()
+        large = _seed_reviews_for_one_college(college_id, 30, uuid.uuid4().hex[:6])
+        try:
+            # Same page shape, six times the rows. The count is a function of
+            # the query shape, not of how many rows come back; allow one
+            # statement of slack for a differently-sized batch.
+            assert selects() <= few + 1, (
+                "the review list query count scaled with the number of rows; the "
+                "per-row parent lookup is back"
+            )
+        finally:
+            _cleanup_reviews(large)
+    finally:
+        _cleanup_reviews(small)
+
+
+def test_blog_list_does_not_query_per_row(counting_db):
+    """A page of blogs must not cost two queries per blog.
+
+    Every seeded blog gets its own author and its own category. The earlier
+    version shared one of each across all twelve rows, so a per-row `db.get`
+    answered every lookup from the session identity map after the first and the
+    query count stayed flat — 5 SELECTs for 50 rows with the eager loads
+    removed. It was green against the unfixed code and measured nothing.
+    Distinct parents are what make the defect visible, the same detail the audit
+    case above depends on.
+    """
+    from app.models import Blog, BlogCategory, StudentProfile
+
+    tag = uuid.uuid4().hex[:8]
+    blog_ids: list[int] = []
+    author_ids: list[int] = []
+    category_ids: list[int] = []
+    with SessionLocal() as db:
+        for i in range(12):
+            author = User(
+                email=f"blogger.{tag}.{i}@example.com",
+                mobile=f"9{uuid.uuid4().int % 1_000_000_000:09d}",
+                password_hash="x",
+                age_band="18_plus",
+            )
+            db.add(author)
+            db.flush()
+            db.add(StudentProfile(user_id=author.id, name=f"Blogger {tag} {i}"))
+            category = BlogCategory(name=f"Cat {tag} {i}", slug=f"cat-{tag}-{i}")
+            db.add(category)
+            db.flush()
+            # `published_at` is set because `list_blogs` orders by
+            # `published_at desc nulls last` and every other published row
+            # already has one; without it these seeds sorted behind all of them
+            # and off the 50-row page entirely.
+            blog = Blog(
+                title=f"Blog {tag} {i}",
+                slug=f"blog-{tag}-{i}",
+                content="body",
+                category_id=category.id,
+                author_id=author.id,
+                status="published",
+                published_at=datetime.now(UTC),
+            )
+            db.add(blog)
+            db.flush()
+            blog_ids.append(blog.id)
+            author_ids.append(author.id)
+            category_ids.append(category.id)
+        db.commit()
+
+    try:
+        counting_db.clear()
+        response = client.get("/api/v1/blogs", params={"limit": 50})
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert counting_db, "no statements were observed; the counter is not working"
+
+        # The page is shared with whatever else is published, and the seeded
+        # catalogue's blogs carry `author_id = NULL` — for those `author_name:
+        # None` is correct, not a regression. Assert on the rows this test wrote,
+        # and require all twelve of them to be on the page so the query-count
+        # bound below cannot pass by measuring other tests' rows.
+        seeded = [row for row in body if row["slug"] and tag in row["slug"]]
+        assert len(seeded) == 12, (
+            f"only {len(seeded)} of the 12 seeded blogs were on the page; the "
+            "query-count assertion below would not be measuring them"
+        )
+
+        assert _count_selects(counting_db) <= 8, (
+            f"blog list issued {_count_selects(counting_db)} SELECTs for "
+            f"{len(seeded)} rows; the per-row author/category lookup is back"
+        )
+        assert all(row["author_name"] for row in seeded), (
+            "every seeded blog has an author, so author_name must resolve"
+        )
+        assert all(row["category_name"] for row in seeded), (
+            "every seeded blog has a category, so category_name must resolve"
+        )
+    finally:
+        with SessionLocal() as db:
+            db.query(Blog).filter(Blog.id.in_(blog_ids)).delete(
+                synchronize_session=False
+            )
+            db.query(BlogCategory).filter(
+                BlogCategory.id.in_(category_ids)
+            ).delete(synchronize_session=False)
+            db.query(StudentProfile).filter(
+                StudentProfile.user_id.in_(author_ids)
+            ).delete(synchronize_session=False)
+            db.query(User).filter(User.id.in_(author_ids)).delete(
                 synchronize_session=False
             )
             db.commit()
