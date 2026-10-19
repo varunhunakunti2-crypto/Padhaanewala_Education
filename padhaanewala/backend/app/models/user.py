@@ -96,6 +96,12 @@ class User(Base):
         # one makes a row a child of *this* user.
         foreign_keys="DataRequest.user_id",
     )
+    #: Colleges this user proposed through the public "suggest a college" form.
+    #: Scoped to `submitted_by` because `college_submissions` also points at
+    #: `users.id` via `reviewer_id`, and the reviewer is not the submitter.
+    college_submissions: Mapped[list["CollegeSubmission"]] = relationship(
+        back_populates="submitter", foreign_keys="CollegeSubmission.submitted_by"
+    )
 
     @property
     def display_name(self) -> str:

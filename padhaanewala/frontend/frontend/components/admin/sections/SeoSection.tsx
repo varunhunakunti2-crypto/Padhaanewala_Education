@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import {
   AlertCircle,
   AlertTriangle,
-  ArrowUpRight,
   Bot,
   Check,
   CheckCircle2,
@@ -13,12 +12,8 @@ import {
   Eye,
   FileCheck2,
   Globe,
-  Layers,
-  RefreshCw,
   Search,
   Share2,
-  ShieldCheck,
-  Smartphone,
   Sparkles,
   Zap,
 } from "lucide-react";

@@ -157,7 +157,7 @@ def list_colleges(
     # colleges anonymously.
     include_inactive: bool = False,
     limit: int = Query(50, ge=1, le=100),
-    offset: int = 0,
+    offset: int = Query(0, ge=0),
     user: User | None = Depends(get_optional_current_user),
     db: Session = Depends(get_db),
 ):
@@ -177,14 +177,24 @@ def list_colleges(
     if featured:
         query = query.where(College.is_featured)
     if course_id:
-        query = query.join(CollegeCourse, CollegeCourse.college_id == College.id).distinct()
+        # A semi-join, not `join(...).distinct()`. The join form forced a
+        # `SELECT DISTINCT` over the whole College row, which PostgreSQL cannot
+        # evaluate because `facilities` and `hostel_facilities` are `JSON` and
+        # JSON has no equality operator -- so every `?course_id=` request (a
+        # public, anonymous filter behind the course pages) answered 500. An
+        # `IN` subquery asks the same question ("colleges with a matching link")
+        # without ever selecting the JSON columns twice, and dedupes the same way
+        # when a college carries the course more than once.
+        link_query = select(CollegeCourse.college_id).where(
+            CollegeCourse.course_id == course_id
+        )
         # The join row has its own `is_active`. Leaving it filtered while the
         # college's own flag is lifted would show an admin a college that appears
         # to offer no courses whenever the *link* was deactivated rather than the
         # college -- so both lift together.
         if not include_inactive:
-            query = query.where(CollegeCourse.is_active)
-        query = query.where(CollegeCourse.course_id == course_id)
+            link_query = link_query.where(CollegeCourse.is_active)
+        query = query.where(College.id.in_(link_query))
 
     colleges = (
         db.scalars(query.order_by(College.name).limit(limit).offset(offset)).all()

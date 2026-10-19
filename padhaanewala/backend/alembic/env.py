@@ -11,6 +11,7 @@ from app.models import audit_log as audit_log_models  # noqa: F401
 from app.models import banner as banner_models  # noqa: F401
 from app.models import blog as blog_models  # noqa: F401
 from app.models import college as college_models  # noqa: F401
+from app.models import college_submission as college_submission_models  # noqa: F401
 from app.models import consent as consent_models  # noqa: F401
 from app.models import course as course_models  # noqa: F401
 from app.models import cutoff as cutoff_models  # noqa: F401

@@ -181,7 +181,11 @@ def _clean_users():
     `test_answers` and `test_attempts` are truncated rather than deleted only
     because they are the two tables whose ids *are* asserted on, and both must
     be named in one statement -- PostgreSQL refuses to truncate
-    `test_attempts` alone while `test_answers` references it.
+    `test_attempts` alone while `test_answers` references it. The proctoring
+    tables (added in `c4d8e1a7f203`) join the same statement for the same
+    reason: `proctoring_sessions` references `test_attempts`, and
+    `proctoring_events` references `proctoring_sessions`, so all four must be
+    truncated together or the statement is refused.
 
     `question_import_jobs` goes first so its drafts are left describing nothing.
     That FK is `ON DELETE SET NULL`, so the questions stay; they stay `pending`,
@@ -191,7 +195,10 @@ def _clean_users():
     with engine.begin() as conn:
         conn.execute(text("DELETE FROM question_import_jobs"))
         conn.execute(
-            text("TRUNCATE TABLE test_answers, test_attempts RESTART IDENTITY")
+            text(
+                "TRUNCATE TABLE proctoring_events, proctoring_sessions, "
+                "test_answers, test_attempts RESTART IDENTITY"
+            )
         )
         conn.execute(text("DELETE FROM users"))
     yield

@@ -312,16 +312,6 @@ def test_an_admin_can_see_both_active_and_inactive_rows_together(admin_headers):
         _delete(Course, hidden.id)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Pre-existing, unrelated to include_inactive: `list_colleges` applies "
-    "`.distinct()` on the `course_id` branch, and PostgreSQL cannot DISTINCT over "
-    "`College.facilities` / `hostel_facilities`, which are `JSON` rather than "
-    "`JSONB` and have no equality operator. So GET /colleges?course_id=N answers "
-    "500 for everyone -- anonymous included, with no `include_inactive` -- and "
-    "this branch cannot be observed until that is fixed. Verified against the "
-    "running dev server. strict=True so the marker must be removed once it is.",
-)
 def test_a_deactivated_college_course_link_is_visible_to_an_admin(admin_headers):
     """`CollegeCourse` has its own `is_active`, filtered inside the `course_id`
     branch of `list_colleges`.

@@ -654,19 +654,25 @@ template did not document.
   only by accident. A value that is correct for an accidental reason is one edit
   away from silently not working, so the reasoning is now recorded in the file.
 
-- **`--forwarded-allow-ips "*"` in the backend Dockerfile is a coupling, not a
-  free choice.** It is safe *only* because the backend publishes no port, so the
-  only callers are containers on the private network. Two independent
-  implementations of "what is the client IP" are live in that process: uvicorn's
-  `ProxyHeadersMiddleware` rewrites `request.client` from the header before any
-  application code runs, and `client_ip()` reads the header again. Verified: with
-  `TRUSTED_PROXY_HOPS=0` — which should ignore the header entirely — the
-  forwarded address is still what gets recorded, because uvicorn has already
-  rewritten `request.client`. `app/routers/consent.py:49` reads
-  `request.client.host` directly rather than going through `client_ip()`, so it
-  depends on the uvicorn half. Recorded in the Dockerfile: do not narrow the `*`
-  to a subnet without also moving `consent.py` to `client_ip()`. **Not changed
-  here** — it touches Phase 4's consent audit trail, and is a Phase 1/4 item.
+- **`--forwarded-allow-ips "*"` was a header-trust coupling — now removed.**
+  It was safe *only* because the backend published no port, so the only callers
+  were containers on the private network. Two independent implementations of
+  "what is the client IP" were live in that process: uvicorn's
+  `ProxyHeadersMiddleware` rewrote `request.client` from the header before any
+  application code ran, and `client_ip()` read the header again. Verified at the
+  time: with `TRUSTED_PROXY_HOPS=0` — which should ignore the header entirely —
+  the forwarded address was still what got recorded, because uvicorn had already
+  rewritten `request.client`. On Render the "publishes no port" premise is false,
+  so any caller could forge their address, and every rate-limit bucket and audit
+  row with it. **Fixed:** the Dockerfile passes `--no-proxy-headers` — explicit,
+  because uvicorn 0.52 defaults `proxy_headers` to True and `forwarded_allow_ips`
+  to `$FORWARDED_ALLOW_IPS` or `127.0.0.1`, so merely omitting the old flags
+  would still let it rewrite `request.client` for loopback peers. With rewriting
+  off, `request.client` is the real socket peer and `client_ip()` is the single
+  authority; `app/routers/consent.py` — the one caller that read
+  `request.client.host` directly — now calls `client_ip()` too. The README's dev
+  command carries the same flag. Commentary updated in backend/Dockerfile,
+  docker-compose.prod.yml, render.yaml and `.env.deploy`.
 
 - **`tls` is a site-level Caddy directive, not a global one.** The discarded
   `Caddyfile.localtest` put it in the global block, and every container
@@ -1148,13 +1154,13 @@ What actually remains inline, and why `'unsafe-inline'` therefore stays:
       `MAX_ACTIVE_REFRESH_TOKENS`, `SMS_OTP_*`, `EMAIL_*_TOKEN_TTL_MINUTES`,
       `RATE_LIMIT_ENABLED`, `CSP_IMAGE_HOSTS`, `OPENAI_*` and the two
       `NEXT_PUBLIC_GRIEVANCE_OFFICER_*` values.
-      **New finding left in the tracker for Phase 8.2:** `.env.prod.example`
-      lists `REFRESH_TOKEN_IN_COOKIE`, `REFRESH_COOKIE_SAMESITE` and
-      `REQUIRE_ORIGIN_CHECK_ON_COOKIE_AUTH` and claims production refuses to
-      boot without them. **No such settings exist in `app/config.py`** — the
-      refresh cookie is unconditional, `SameSite=strict` is a constant, and the
-      Origin check is always on. That file's claim is false and is noted in the
-      pruned `.env.example`.
+      **Resolved:** a `.env.prod.example` used to list `REFRESH_TOKEN_IN_COOKIE`,
+      `REFRESH_COOKIE_SAMESITE` and `REQUIRE_ORIGIN_CHECK_ON_COOKIE_AUTH` and
+      claim production refused to boot without them. **No such settings ever
+      existed in `app/config.py`** — the refresh cookie is unconditional,
+      `SameSite=strict` is a constant, and the Origin check is always on. The
+      file is gone and the three names must not be re-added; `.env.example` now
+      records them as non-existent so a future prune does not "restore" them.
 
 ## Session note
 
@@ -2692,7 +2698,7 @@ waits on a product answer rather than on code.
 | Dashboard has no dark mode; duplicate navigation | Medium | Phase 6 |
 | Fabricated public metrics | Medium | Phase 6 |
 | Dormant DB tables render as broken pages | Medium | Phase 6 |
-| ~~56 of 60 documented env vars are unread~~ | ~~Low~~ | **FIXED** — Phase 5.5. 45 removed, each traced to the code that reads it. `.env.prod.example` still lists three phantom guards (see Phase 8.2) |
+| ~~56 of 60 documented env vars are unread~~ | ~~Low~~ | **FIXED** — Phase 5.5. 45 removed, each traced to the code that reads it. The three "phantom guards" (`.env.prod.example`'s `REFRESH_TOKEN_IN_COOKIE` et al.) never existed; that file is gone and `.env.example` records them as non-existent |
 | ~~BUG-05: a 422 became an empty page with a 200~~ | ~~High~~ | **FIXED** — per-endpoint page sizes, non-silent failures, and `page-size-contract.test.ts` reads the Python `le=` bounds so the two cannot drift again |
 | ~~BUG-06: failing test + four untracked migrations~~ | ~~High~~ | **FIXED** — all four tracked, single linear head, and a clean schema migrates to head and passes the suite |
 | ~~BUG-07: Redis down, so the limiter was not cluster-wide~~ | ~~Medium~~ | **FIXED** — Redis running, and `test_ratelimit_redis_live.py` (11 tests) exercises atomicity, cross-process sharing and real-connection failure; CI fails the job if those tests skip |

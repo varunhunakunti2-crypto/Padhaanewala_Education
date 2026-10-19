@@ -180,6 +180,7 @@ def moderate_review(
     review = db.get(Review, review_id)
     if review is None:
         raise HTTPException(status_code=404, detail="Review not found")
+    
 
     old_status = review.status
     review.status = payload.status

@@ -140,25 +140,31 @@ services:
       # header to the backend but does not append the peer it observed, so the
       # backend receives a single-entry chain, `[client]`, and 1 takes that entry.
       #
-      # Verified rather than reasoned, by submitting an enquiry through the full
-      # stack and reading `enquiries.ip_address` back out of the database:
-      # hops=1 records 172.25.0.1, the address of the real caller on the Docker
-      # bridge — not a container address. Worth doing, because the two plausible
-      # wrong values are *worse than useless* rather than obviously broken: at 2
-      # the index goes negative, `client_ip()` decides the chain is untrustworthy,
-      # and it silently falls through to the socket peer (Phase 1's
-      # `client_ip.py:59`). The recorded value happens to come out right only
-      # because uvicorn has already rewritten `request.client` — see the
-      # `--forwarded-allow-ips` note in backend/Dockerfile. A configuration that
-      # is correct for an accidental reason is one edit away from not working.
+      # `client_ip()` (app/utils/client_ip.py) is now the only reader of this
+      # header: uvicorn no longer rewrites `request.client` (backend/Dockerfile
+      # passes `--no-proxy-headers` and explains why), and `consent.py`
+      # reads `client_ip()` rather than `request.client.host`. So this value is
+      # load-bearing rather than incidentally correct. The two plausible wrong
+      # values are *worse than useless* rather than obviously broken: at 0 the
+      # caller is recorded as the frontend container, and at 2 the index goes
+      # negative, the chain is judged untrustworthy, and it silently falls
+      # through to that same container address. Only 1 records the real caller.
+      #
+      # Verified by submitting an enquiry through the full stack and reading
+      # `enquiries.ip_address` back out of the database: hops=1 records
+      # 172.25.0.1, the address of the real caller on the Docker bridge, not a
+      # container address.
       TRUSTED_PROXY_HOPS: "1"
 
       CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS is required}
 
-      # Production config.py refuses to boot without a real value for each of
-      # these, and refuses REFRESH_TOKEN_IN_COOKIE=false. That is deliberate: the
-      # guard is what makes this file's omission of a placeholder fatal rather
-      # than silently insecure.
+      # Production `config.py` refuses to boot without a real value for each of
+      # these — a placeholder, or a shared pair of signing keys, is a hard
+      # failure rather than a silently insecure service. That is deliberate: it
+      # is what makes this file's omission of a placeholder fatal. (An earlier
+      # revision also claimed it refused `REFRESH_TOKEN_IN_COOKIE=false`; no such
+      # setting exists — the refresh cookie is unconditional, `SameSite=strict`,
+      # and the Origin check is always on.)
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY is required}
       JWT_REFRESH_SECRET_KEY: ${JWT_REFRESH_SECRET_KEY:?JWT_REFRESH_SECRET_KEY is required}

@@ -32,7 +32,7 @@ def list_exams(
     # and an unconditional `is_active` filter made deactivation a one-way door.
     include_inactive: bool = False,
     limit: int = Query(50, ge=1, le=100),
-    offset: int = 0,
+    offset: int = Query(0, ge=0),
     user: User | None = Depends(get_optional_current_user),
     db: Session = Depends(get_db),
 ):

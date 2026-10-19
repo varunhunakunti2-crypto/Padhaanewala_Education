@@ -103,21 +103,15 @@ services:
 
       # Render's edge forwards X-Forwarded-For, so exactly one hop.
       #
-      # This does NOT fully close the header-trust hole, and the distinction
-      # matters. `client_ip()` (app/utils/client_ip.py) trusts the header only
-      # when this matches the topology, but uvicorn's ProxyHeadersMiddleware has
-      # ALREADY rewritten request.client before any application code runs — the
-      # Dockerfile passes `--forwarded-allow-ips "*"` (Dockerfile:164-169).
-      # So on a directly-reachable container, any caller can still forge their
-      # client IP, and with it every rate-limit bucket and audit-log row.
-      #
-      # The Dockerfile comments on exactly this (Dockerfile:147-151) and
-      # concludes it is safe only because "this container publishes no port"
-      # and the sole reachable peer is the frontend over a private Compose
-      # network. On Render that premise is false. Closing it properly means
-      # changing `--forwarded-allow-ips` from `*` to Render's proxy range —
-      # say the word and I will make it env-overridable with `*` still the
-      # default so the Compose prod stack is unaffected.
+      # `client_ip()` (app/utils/client_ip.py) reads the header only when this
+      # matches the real topology, taking the entry that many positions from the
+      # right. It is now the only thing deciding attribution: uvicorn no longer
+      # rewrites `request.client` — the Dockerfile passes `--no-proxy-headers`
+      # (and used to pass `--forwarded-allow-ips "*"`, which on a
+      # directly-reachable container like this one let any caller forge their own
+      # client IP, and with it every rate-limit bucket and audit-log row).
+      # `consent.py` reads `client_ip()` too. So a forged header is ignored and
+      # one hop is correct for Render's edge.
       - key: TRUSTED_PROXY_HOPS
         value: "1"
 

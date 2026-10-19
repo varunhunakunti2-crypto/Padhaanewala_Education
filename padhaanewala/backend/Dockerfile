@@ -137,34 +137,42 @@ ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 # scaling has to go through the orchestrator (more replicas) rather than more
 # workers in one container. See "Scaling" in docs/Pending-phases.md.
 #
-# --forwarded-allow-ips "*" trusts X-Forwarded-For from *any* peer, which on its
-# own is the hole Phase 1.5 closed: the header is client-controlled, and Phase 1
-# introduced `TRUSTED_PROXY_HOPS` precisely so the topology, not the header,
-# decides whether it is believed.
+# The client IP is decided by `app/utils/client_ip.py`, and by nothing else.
+# `--no-proxy-headers` is therefore passed explicitly, so that `request.client`
+# is always the real socket peer.
 #
-# It is safe here, but only because of the topology and not because of the flag.
-# This container publishes no port, so the only thing that can reach it is
-# another container on the private Compose network, and the only one that
-# forwards a request is the frontend. That reasoning is load-bearing: if anyone
-# ever adds a `ports:` mapping for the backend, this flag becomes an
-# internet-reachable header-trust bypass and every rate-limit bucket and audit
-# row can be forged by a caller who sets the header themselves.
+# It has to be explicit. uvicorn 0.52 defaults `proxy_headers` to True and
+# `forwarded_allow_ips` to `$FORWARDED_ALLOW_IPS` or `127.0.0.1`, so merely
+# omitting the old flags would still let uvicorn's ProxyHeadersMiddleware rewrite
+# `request.client` from the client-supplied `X-Forwarded-For` header — for *any*
+# peer under the old `--forwarded-allow-ips "*"`, and for loopback peers under
+# the default. Two independent implementations of "what is the client IP" were
+# live in the process and the header always won, so at `TRUSTED_PROXY_HOPS=0`
+# `client_ip()` still returned the forwarded value.
 #
-# The coupling is worth knowing because it is invisible from either file alone.
-# Verified while running the stack: with `--forwarded-allow-ips *`, `client_ip()`
-# at `TRUSTED_PROXY_HOPS=0` still returns the forwarded client rather than the
-# socket peer, because uvicorn's ProxyHeadersMiddleware has already rewritten
-# `request.client` before any application code runs. Two independent
-# implementations of "what is the client IP" are live in this process, and
-# `app/routers/consent.py:49` reads `request.client.host` directly rather than
-# going through `client_ip()`.
+# `--forwarded-allow-ips "*"` was believed safe only because the backend
+# published no port, so the sole reachable peer was another container on the
+# private Compose network. That premise is simply false on a host like Render,
+# where the container is directly reachable: any caller could forge their own
+# address, and with it every rate-limit bucket and audit-log row.
 #
-# Do not "tidy" the `*` into a subnet without also changing consent.py to use
-# `client_ip()`; doing the first alone silently changes what an audit row records.
+# With rewriting off, `client_ip()` is the single authority. It reads
+# `X-Forwarded-For` only when `TRUSTED_PROXY_HOPS` declares a real proxy
+# topology, taking the entry that many positions from the right; otherwise it
+# uses the socket peer. The Compose stack (one Caddy hop) and Render (one edge
+# hop) both set that variable to 1 and get the real client, while a forged
+# header is ignored. The last consumer that read `request.client` directly,
+# `app/routers/consent.py`, now calls `client_ip()` too. The dev command in the
+# README carries `--no-proxy-headers` for the same reason.
+#
+# One consequence to know: `request.url.scheme` follows the socket, so it is
+# `http` between TLS-terminating proxies. Nothing here branches on the scheme -
+# the refresh cookie's `secure` flag comes from APP_ENV, not the request - so it
+# is inert. If something ever does depend on the scheme, re-add `--proxy-headers`
+# but pin `--forwarded-allow-ips` to the proxy's own range, never "*".
 CMD ["uvicorn", "app.main:app", \
      "--host", "0.0.0.0", \
      "--port", "8000", \
-     "--proxy-headers", \
-     "--forwarded-allow-ips", "*", \
+     "--no-proxy-headers", \
      "--no-server-header", \
      "--workers", "1"]

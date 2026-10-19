@@ -108,7 +108,7 @@ def list_blogs(
     status: str | None = Query(None, pattern="^(draft|published)$"),
     featured: bool | None = None,
     limit: int = Query(20, ge=1, le=50),
-    offset: int = 0,
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     user: User | None = Depends(get_optional_current_user),
 ):

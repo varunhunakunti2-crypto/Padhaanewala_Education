@@ -11,6 +11,7 @@ from app.schemas.engagement import (
     ConsentResponse,
     ConsentUpdate,
 )
+from app.utils.client_ip import client_ip
 
 router = APIRouter(prefix="/api/v1/consent", tags=["consent"])
 
@@ -46,7 +47,14 @@ def record_consent(
         consent_version=payload.consent_version,
         consent_text=payload.consent_text,
         granted=payload.granted,
-        ip_address=request.client.host if request.client else None,
+        # Deliberately `client_ip()` and not `request.client.host`. The two
+        # disagree the moment a proxy is involved: uvicorn can rewrite
+        # `request.client` from a client-supplied `X-Forwarded-For`, so reading
+        # it directly would store an arbitrary, caller-chosen string in a
+        # forensic column. `client_ip()` honours the header only when
+        # `TRUSTED_PROXY_HOPS` describes a real proxy topology, which is the
+        # same rule the audit log and the enquiry table follow.
+        ip_address=client_ip(request),
     )
     db.add(record)
     db.commit()

@@ -114,6 +114,44 @@ def test_consent_record_and_list():
     assert any(c["id"] == body["id"] for c in listing.json())
 
 
+def test_consent_records_the_client_ip_through_the_shared_helper(monkeypatch):
+    """The consent audit row follows `client_ip()`, not `request.client.host`.
+
+    `X-Forwarded-For` is client-controlled, so it is believed only when
+    `TRUSTED_PROXY_HOPS` declares a real proxy in front. At 0 the header is
+    ignored and the socket peer (`testclient` here) is recorded; at 1 the
+    forwarded value is. `consent.py` used to read `request.client.host`
+    directly, which stored whatever the caller sent regardless of that setting —
+    and would have stored the value uvicorn rewrote it to.
+    """
+    from app.config import settings
+
+    acc = _register("student")
+    payload = {
+        "consent_version": "v1",
+        "consent_text": "I agree.",
+        "granted": True,
+    }
+
+    monkeypatch.setattr(settings, "TRUSTED_PROXY_HOPS", 0)
+    spoofed = client.post(
+        "/api/v1/consent",
+        json={"consent_type": "marketing", **payload},
+        headers={"X-Forwarded-For": "198.51.100.7", **acc["headers"]},
+    )
+    assert spoofed.status_code == 201, spoofed.text
+    assert spoofed.json()["ip_address"] != "198.51.100.7"
+
+    monkeypatch.setattr(settings, "TRUSTED_PROXY_HOPS", 1)
+    trusted = client.post(
+        "/api/v1/consent",
+        json={"consent_type": "analytics", **payload},
+        headers={"X-Forwarded-For": "203.0.113.9", **acc["headers"]},
+    )
+    assert trusted.status_code == 201, trusted.text
+    assert trusted.json()["ip_address"] == "203.0.113.9"
+
+
 def test_consent_unknown_type_rejected():
     acc = _register("student")
     res = client.post(

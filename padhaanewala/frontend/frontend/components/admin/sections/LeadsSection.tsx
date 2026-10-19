@@ -3,8 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CalendarClock,
-  CheckCircle,
-  Clock,
   Download,
   Edit3,
   Eye,
@@ -14,10 +12,8 @@ import {
   Phone,
   Plus,
   RefreshCw,
-  Search,
   ShieldAlert,
   Trash2,
-  User,
   UserCheck,
   UserX,
 } from "lucide-react";

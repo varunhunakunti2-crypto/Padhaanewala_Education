@@ -267,6 +267,90 @@ def test_blog_categories_paginate():
         assert len(client.get("/api/v1/blog-categories?limit=2&offset=4").json()) == 0
 
 
+# ---------------------------------------------------------------------------
+# `offset` bounds — the sibling defect Phase 1.6 left behind.
+#
+# Phase 1.6 above bounded `limit` on these handlers but left `offset` declared
+# as a bare `int = 0`. A bare int accepts negatives, and `-1` reaches Postgres
+# as `OFFSET -1`, which psycopg rejects with
+# `errors.InvalidRowCountInResultOffsetClause` — a 500, not a 422. On the public
+# catalogue routes that is an unauthenticated 500 one request away from any
+# crawler, scanner or idle `?page=` link. The bound is read off the signatures
+# rather than hardcoded so it keeps meaning something if a default changes.
+# ---------------------------------------------------------------------------
+
+#: Public list routes: no token needed, so the 500 was reachable by anyone.
+PUBLIC_OFFSET_ROUTES = [
+    "/api/v1/colleges",
+    "/api/v1/courses",
+    "/api/v1/exams",
+    "/api/v1/scholarships",
+    "/api/v1/blogs",
+]
+
+
+@pytest.mark.parametrize("path", PUBLIC_OFFSET_ROUTES)
+def test_negative_offset_is_rejected_not_500(path):
+    response = client.get(f"{path}?limit=10&offset=-1")
+    assert response.status_code == 422, (
+        f"{path} answered {response.status_code} to offset=-1; a bare `int = 0` "
+        "hands the negative straight to Postgres and the OFFSET clause raises"
+    )
+
+
+def _offset_ge(handler) -> int | None:
+    """Read the `ge` bound off a handler's `offset` parameter, if any."""
+
+    import inspect
+
+    param = inspect.signature(handler).parameters.get("offset")
+    assert param is not None, f"{handler.__qualname__} has no offset parameter"
+    bounds = [
+        m.ge for m in getattr(param.default, "metadata", ()) if hasattr(m, "ge")
+    ]
+    return bounds[0] if bounds else None
+
+
+def test_every_list_route_bounds_its_offset():
+    """Every handler that takes an `offset` must declare `ge=0`.
+
+    Signature-level, so it needs no database and cannot be defeated by a handler
+    whose table happens to be empty.
+    """
+
+    from app.routers import (  # noqa: PLC0415
+        audit,
+        blogs,
+        college_submissions,
+        colleges,
+        courses,
+        exams,
+        media,
+        mock_tests,
+        scholarships,
+    )
+
+    handlers = [
+        colleges.list_colleges,
+        courses.list_courses,
+        exams.list_exams,
+        scholarships.list_scholarships,
+        blogs.list_blogs,
+        media.list_media,
+        audit.list_audit_logs,
+        college_submissions.list_submissions,
+        mock_tests.list_mock_tests,
+        mock_tests.admin_list_mock_tests,
+        mock_tests.admin_list_attempts_for_review,
+    ]
+
+    for handler in handlers:
+        assert _offset_ge(handler) == 0, (
+            f"{handler.__module__}.{handler.__qualname__} declares offset without "
+            "`Query(0, ge=0)`; ?offset=-1 would 500 instead of 422"
+        )
+
+
 def test_sql_visibility_predicate_agrees_with_the_python_one():
     """Two implementations of one rule is a defect, so they are held together.
 

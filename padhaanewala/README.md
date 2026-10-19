@@ -125,6 +125,34 @@ Redis backs the rate limiter only. It is not a Celery broker, because there is n
 Celery. If Redis is down the limiter fails **closed** on `/api/v1/auth/*` (503)
 and fails open everywhere else.
 
+> **Troubleshooting: "I can't log in — login returns 503".**
+> This is almost always Redis not running, not a credentials or code bug. The
+> auth limiter fails closed, so every `POST /auth/login` and `/auth/refresh`
+> answers 503 with
+> `{"success": false, "error": {"code": "SERVICE_UNAVAILABLE", "message":
+> "Request throttling is temporarily unavailable, retry shortly"}}` until Redis
+> is up. (A wrong password is `401 Incorrect email or password`, so the two are
+> easy to tell apart.)
+> `/health` shows it directly: `"redis":{"ok":false}` with an overall
+> `"status":"degraded"` and a 503, while the database check still passes.
+> Fix:
+>
+> ```bash
+> docker compose -f docker-compose.dev.yml up -d redis
+> docker exec padhaanewala-redis-1 redis-cli ping   # → PONG
+> ```
+>
+> The container name is `padhaanewala-redis-1` when started from the compose
+> file. If you started Redis some other way (`docker run --name <your-name>`),
+> confirm with `docker ps` and check that it publishes **6379**, which is what
+> `REDIS_URL=redis://localhost:6379/0` in `backend/.env.development` expects.
+>
+> **After Redis comes back, retry once.** The API's pooled socket to the old
+> server is dead, and the first request can still answer 503 before the pool is
+> dropped and reconnected (see `_increment_counter` in
+> `app/middleware/ratelimit.py`). The second request succeeds — there is nothing
+> further to fix, so do not go hunting for a second problem.
+
 > `docker-compose.dev.yml` runs **dependencies only** — the database and Redis.
 > The API and the frontend always run natively: `uvicorn` in step 4, and
 > `npm run dev` for the frontend. There is no containerised backend, so
@@ -137,8 +165,13 @@ cd backend
 python -m venv venv
 .\venv\Scripts\activate        # Windows
 pip install -r requirements.txt
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload --no-proxy-headers
 ```
+
+`--no-proxy-headers` is deliberate: the client IP is resolved by
+`app/utils/client_ip.py` from `TRUSTED_PROXY_HOPS`, and uvicorn otherwise
+defaults to trusting `X-Forwarded-For` from loopback, which would let a local
+caller forge it. The container `CMD` passes the same flag.
 
 Health check: http://localhost:8000/health → `{"status":"ok"}`
 
@@ -163,7 +196,12 @@ rather not track the sequence:
 python scripts/bootstrap_test_db.py
 ```
 
-`purge_demo_data.py` removes seed and test residue from a dev database.
+`purge_demo_data.py` removes seed and test residue from a dev database. It is
+plan-only by default — run it bare to see what it would delete and change
+nothing — and writes only with `--execute`. It refuses to run when `APP_ENV` is
+`staging` or `production`, and deletes the college catalogue only if
+`--include-colleges` is also passed (that delete cannot be rebuilt from the seed
+scripts).
 
 `seed_mock_tests.py` loads the papers and questions from
 `frontend/lib/data/mockTests.json` — the same file the frontend imports, so the

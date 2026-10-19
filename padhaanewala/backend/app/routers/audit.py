@@ -44,7 +44,7 @@ def list_audit_logs(
     entity_id: int | None = None,
     user_id: int | None = None,
     limit: int = Query(50, ge=1, le=200),
-    offset: int = 0,
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     _: User = Depends(require_role(*AUDIT_ROLES)),
 ):
