@@ -25,16 +25,31 @@ class College(Base):
     name: Mapped[str] = mapped_column(String(255), index=True)
     official_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     slug: Mapped[str] = mapped_column(String(255), unique=True, index=True)
-    college_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    ownership: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # `college_type`/`ownership` and the three location FKs are filtered on by
+    # the public list/search/predictor reads, so they carry an index; see
+    # `alembic/versions/2f6cf2af09de_add_colleges_filter_indexes.py`. The FK
+    # indexes also keep `ON DELETE SET NULL` from scanning `colleges` when a
+    # state, district or university row is deleted.
+    college_type: Mapped[str | None] = mapped_column(
+        String(50), nullable=True, index=True
+    )
+    ownership: Mapped[str | None] = mapped_column(
+        String(50), nullable=True, index=True
+    )
     university_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("universities.id", ondelete="SET NULL"), nullable=True
+        Integer,
+        ForeignKey("universities.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     state_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("states.id", ondelete="SET NULL"), nullable=True
+        Integer, ForeignKey("states.id", ondelete="SET NULL"), nullable=True, index=True
     )
     district_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("districts.id", ondelete="SET NULL"), nullable=True
+        Integer,
+        ForeignKey("districts.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     city: Mapped[str | None] = mapped_column(String(100), nullable=True)
     address: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -53,8 +68,11 @@ class College(Base):
     hostel_facilities: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     total_reviews: Mapped[int] = mapped_column(Integer, default=0)
     average_rating: Mapped[Decimal] = mapped_column(Numeric(3, 2), default=0)
-    is_featured: Mapped[bool] = mapped_column(Boolean, default=False)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # `is_active` is applied to nearly every college query and `is_featured` is
+    # the `?featured=true` filter; both are indexed by
+    # `2f6cf2af09de_add_colleges_filter_indexes.py`.
+    is_featured: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     verification_status: Mapped[str] = mapped_column(
         String(20), default="unverified"
     )
