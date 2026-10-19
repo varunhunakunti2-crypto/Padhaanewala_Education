@@ -1,8 +1,8 @@
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy import func, select, update
+from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
 from app.dependencies import (
@@ -10,7 +10,7 @@ from app.dependencies import (
     require_processing_consent,
     require_role,
 )
-from app.models import College, Course, Review, User
+from app.models import College, Review, User
 from app.roles import ADMIN_ROLES, CONTENT_ROLES
 from app.schemas.content import (
     ReviewCreate,
@@ -25,10 +25,39 @@ router = APIRouter(prefix="/api/v1/reviews", tags=["reviews"])
 PUBLIC_MODES = {"approved"}
 
 
-def _to_response(db: Session, review: Review) -> ReviewResponse:
-    college = db.get(College, review.college_id)
-    course = db.get(Course, review.course_id) if review.course_id else None
-    student = db.get(User, review.student_id)
+#: The relationships every review response reads. A list page for N reviews used
+#: to cost 3N+1 queries (a `db.get` each for the college, the course and the
+#: student) and none of the three list endpoints was even paged, so N was the
+#: whole table. Eager-loading them makes the count independent of the page size.
+#: `student` carries a second `selectinload`: `User.display_name` is a property
+#: that reads `self.student_profile`, so loading only the student would just
+#: move the N+1 one level down — the same trap the audit router documents.
+_REVIEW_EAGER = (
+    selectinload(Review.college),
+    selectinload(Review.course),
+    selectinload(Review.student).selectinload(User.student_profile),
+)
+
+
+def _load_one(db: Session, review_id: int) -> Review:
+    """Re-read one review with the same eager loads the list queries use.
+
+    The write paths refresh the row after committing; doing that through
+    `_REVIEW_EAGER` keeps `_to_response` free of lazy loads on every path, so a
+    single-row response costs the same query count as a row in a list.
+    """
+    return db.scalar(
+        select(Review).where(Review.id == review_id).options(*_REVIEW_EAGER)
+    )
+
+
+def _to_response(review: Review) -> ReviewResponse:
+    # Reads the eager-loaded relationships rather than `db.get(...)` per row. See
+    # `_REVIEW_EAGER`; a detached call still works because the attributes are
+    # already populated.
+    college = review.college
+    course = review.course
+    student = review.student
     return ReviewResponse(
         id=review.id,
         college_id=review.college_id,
@@ -50,21 +79,39 @@ def _to_response(db: Session, review: Review) -> ReviewResponse:
 
 
 def _recalc_rating(db: Session, college_id: int) -> None:
-    college = db.get(College, college_id)
-    if college is None:
-        return
+    """Write the denormalised rating columns with one statement.
+
+    This used to `db.get(College, college_id)` and set two scalar fields on the
+    hydrated object. That loads every column of the row — including its JSON
+    blobs — to write two numbers, and it is on the moderation path, which is the
+    one an admin drives in bulk. A targeted UPDATE touches only the two columns
+    and does not hydrate an ORM instance at all.
+
+    A college row that does not exist is not an error here: this runs after a
+    review was moderated or deleted, and `Review.college_id` is `ON DELETE
+    CASCADE`, so the only way to reach a missing parent is a race with a
+    concurrent college delete. In that case there is nothing to denormalise.
+    """
     avg, count = db.execute(
         select(func.avg(Review.rating), func.count(Review.id)).where(
             Review.college_id == college_id, Review.status == "approved"
         )
     ).one()
-    college.average_rating = float(avg) if avg is not None else 0
-    college.total_reviews = count or 0
+    db.execute(
+        update(College)
+        .where(College.id == college_id)
+        .values(
+            average_rating=float(avg) if avg is not None else 0,
+            total_reviews=count or 0,
+        )
+    )
 
 
 @router.get("/college/{college_ref}", response_model=list[ReviewResponse])
 def list_reviews_for_college(
     college_ref: str,
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
 ):
     college = db.scalar(
@@ -79,36 +126,49 @@ def list_reviews_for_college(
     reviews = db.scalars(
         select(Review)
         .where(Review.college_id == college.id, Review.status == "approved")
+        .options(*_REVIEW_EAGER)
         .order_by(Review.created_at.desc())
+        .limit(limit)
+        .offset(offset)
     ).all()
-    return [_to_response(db, r) for r in reviews]
+    return [_to_response(r) for r in reviews]
 
 
 @router.get("/moderation", response_model=list[ReviewResponse])
 def moderation_queue(
     status: str = Query("submitted", pattern="^(submitted|approved|rejected)$"),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     _: User = Depends(require_role(*CONTENT_ROLES)),
 ):
     reviews = db.scalars(
         select(Review)
         .where(Review.status == status)
+        .options(*_REVIEW_EAGER)
         .order_by(Review.created_at.asc())
+        .limit(limit)
+        .offset(offset)
     ).all()
-    return [_to_response(db, r) for r in reviews]
+    return [_to_response(r) for r in reviews]
 
 
 @router.get("/my", response_model=list[ReviewResponse])
 def my_reviews(
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     reviews = db.scalars(
         select(Review)
         .where(Review.student_id == user.id)
+        .options(*_REVIEW_EAGER)
         .order_by(Review.created_at.desc())
+        .limit(limit)
+        .offset(offset)
     ).all()
-    return [_to_response(db, r) for r in reviews]
+    return [_to_response(r) for r in reviews]
 
 
 @router.post("", response_model=ReviewResponse, status_code=201)
@@ -143,8 +203,8 @@ def submit_review(
     )
     db.add(review)
     db.commit()
-    db.refresh(review)
-    return _to_response(db, review)
+    review = _load_one(db, review.id)
+    return _to_response(review)
 
 
 @router.put("/{review_id}", response_model=ReviewResponse)
@@ -165,8 +225,8 @@ def update_my_review(
         setattr(review, field, value)
     review.status = "submitted"
     db.commit()
-    db.refresh(review)
-    return _to_response(db, review)
+    review = _load_one(db, review_id)
+    return _to_response(review)
 
 
 @router.post("/{review_id}/moderate", response_model=ReviewResponse)
@@ -203,8 +263,8 @@ def moderate_review(
     db.commit()
     _recalc_rating(db, review.college_id)
     db.commit()
-    db.refresh(review)
-    return _to_response(db, review)
+    review = _load_one(db, review_id)
+    return _to_response(review)
 
 
 @router.delete("/{review_id}", status_code=204)

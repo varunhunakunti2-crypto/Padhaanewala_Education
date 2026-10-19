@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy import func, select, update
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
 from app.dependencies import (
@@ -31,9 +31,25 @@ def _slugify(text: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", text.strip().lower()).strip("-")
     return slug or "blog"
 
-def _to_blog_response(db: Session, blog: Blog) -> BlogResponse:
-    author = db.get(User, blog.author_id) if blog.author_id else None
-    category = db.get(BlogCategory, blog.category_id) if blog.category_id else None
+#: Relationships every blog response reads. `list_blogs` serialised a page of up
+#: to 50 rows with a `db.get` each for the author and the category, so the count
+#: scaled with the page. `author` carries a second `selectinload` because
+#: `User.display_name` is a property that reads `self.student_profile`.
+_BLOG_EAGER = (
+    selectinload(Blog.category),
+    selectinload(Blog.author).selectinload(User.student_profile),
+)
+
+
+def _load_one_blog(db: Session, cond) -> Blog | None:
+    """Read one blog with the eager loads the list query uses."""
+    return db.scalar(select(Blog).where(cond).options(*_BLOG_EAGER))
+
+def _to_blog_response(blog: Blog) -> BlogResponse:
+    # Reads the eager-loaded relationships rather than `db.get(...)` per row; see
+    # `_BLOG_EAGER`. All four callers pass a row loaded through it.
+    author = blog.author
+    category = blog.category
     return BlogResponse(
         id=blog.id,
         title=blog.title,
@@ -128,8 +144,10 @@ def list_blogs(
         query = query.where(Blog.category_id == cat.id)
     if featured:
         query = query.where(Blog.is_featured)
-    blogs = db.scalars(query.limit(limit).offset(offset)).all()
-    return [_to_blog_response(db, b) for b in blogs]
+    blogs = db.scalars(
+        query.options(*_BLOG_EAGER).limit(limit).offset(offset)
+    ).all()
+    return [_to_blog_response(b) for b in blogs]
 
 @router.get("/blogs/{blog_ref}", response_model=BlogResponse)
 def get_blog(blog_ref: str, db: Session = Depends(get_db)):
@@ -139,10 +157,12 @@ def get_blog(blog_ref: str, db: Session = Depends(get_db)):
     cond = (
         Blog.id == int(blog_ref) if blog_ref.isdigit() else Blog.slug == blog_ref
     )
-    blog = db.scalar(select(Blog).where(cond, Blog.status == "published"))
+    blog = db.scalar(
+        select(Blog).where(cond, Blog.status == "published").options(*_BLOG_EAGER)
+    )
     if blog is None:
         raise HTTPException(status_code=404, detail="Blog not found")
-    return _to_blog_response(db, blog)
+    return _to_blog_response(blog)
 
 
 @router.post("/blogs/{blog_ref}/view", status_code=204)
@@ -213,8 +233,8 @@ def create_blog(
         new_value=payload.model_dump(),
     )
     db.commit()
-    db.refresh(blog)
-    return _to_blog_response(db, blog)
+    blog = _load_one_blog(db, Blog.id == blog.id)
+    return _to_blog_response(blog)
 
 @router.put(
     "/blogs/{blog_ref}",
@@ -255,8 +275,8 @@ def update_blog(
     for field, value in data.items():
         setattr(blog, field, value)
     db.commit()
-    db.refresh(blog)
-    return _to_blog_response(db, blog)
+    blog = _load_one_blog(db, Blog.id == blog.id)
+    return _to_blog_response(blog)
 
 @router.delete(
     "/blogs/{blog_ref}",
