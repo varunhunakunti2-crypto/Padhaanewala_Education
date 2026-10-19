@@ -675,13 +675,29 @@ export interface ApiCollegeBundle {
   faqs: ApiFaq[];
 }
 
-/** Parallel fan-out used by the college detail page. */
+/**
+ * Fan-out used by the college detail page.
+ *
+ * Eight of the nine enrichment requests are keyed by `slug`, so they are issued
+ * in one batch *alongside* the detail fetch. This used to `await`
+ * `getCollegeBySlug` before the `Promise.all` was even constructed, so the whole
+ * fan-out sat behind the first round trip: a cold college page paid ten
+ * sequential round trips instead of two.
+ *
+ * Only the FAQ list genuinely depends on the detail response — FAQs are
+ * addressed by the college's numeric id, which nothing else knows — so it stays
+ * a second, dependent call.
+ *
+ * The trade: an unknown slug now costs the full batch rather than a single
+ * request, because the detail result is not known until the batch resolves. That
+ * is deliberate. A real detail page is the hot path and is prerendered or
+ * revalidated; an unknown slug is cold, its per-endpoint `null`/`[]` answers are
+ * cheap, and the same ISR window caches them.
+ */
 export async function getCollegeBundle(slug: string): Promise<ApiCollegeBundle | null> {
-  const detail = await getCollegeBySlug(slug);
-  if (!detail) return null;
-
-  const [placements, cutoffs, nirf, others, reviews, fees, seats, admissions, faqs] =
+  const [detail, placements, cutoffs, nirf, others, reviews, fees, seats, admissions] =
     await Promise.all([
+      getCollegeBySlug(slug),
       getPlacements(slug),
       getCutoffs(slug),
       getNirfRankings(slug),
@@ -690,8 +706,12 @@ export async function getCollegeBundle(slug: string): Promise<ApiCollegeBundle |
       getFees(slug),
       getSeatMatrix(slug),
       getAdmissions(slug),
-      detail.id ? getFaqs("college", detail.id) : Promise.resolve([]),
     ]);
+  if (!detail) return null;
+
+  // Dependent: the FAQ list is addressed by the college's numeric id, which only
+  // the detail response carries.
+  const faqs = detail.id ? await getFaqs("college", detail.id) : [];
 
   return { detail, placements, cutoffs, nirf, others, reviews, fees, seats, admissions, faqs };
 }

@@ -8,6 +8,7 @@ import {
   getBlogBySlug,
   getBlogCategories,
   getBlogs,
+  getCollegeBundle,
 } from "@/lib/api-server";
 
 /**
@@ -382,5 +383,84 @@ describe("page sizes", () => {
       expect(size, `${path} must be a positive integer`).toBeGreaterThan(0);
       expect(Number.isInteger(size)).toBe(true);
     }
+  });
+});
+
+/* ------------------------------------------------- the detail fan-out */
+
+describe("the college detail fan-out", () => {
+  /**
+   * `getCollegeBundle` used to `await` the detail response *before* its
+   * `Promise.all` was constructed, so all nine enrichment requests waited on the
+   * first round trip. Eight of them are keyed by slug and have no such
+   * dependency; only the FAQ list needs the numeric id the detail response
+   * carries. This test holds the detail response open and asserts the slug-keyed
+   * requests went out anyway. Under the serialized version none of them would
+   * have been requested yet, so it is a real tripwire rather than a restatement
+   * of the current code.
+   */
+  it("issues the slug-keyed enrichment requests before the detail response resolves", async () => {
+    let releaseDetail: () => void = () => {};
+    const detailGate = new Promise<void>((resolve) => {
+      releaseDetail = resolve;
+    });
+    const started: string[] = [];
+
+    fetchMock.mockImplementation(async (url: string) => {
+      const { pathname } = new URL(url);
+      started.push(pathname);
+      if (pathname === "/api/v1/colleges/fan-out-probe") {
+        await detailGate;
+        return json({ id: 4242, slug: "fan-out-probe" });
+      }
+      return json([]);
+    });
+
+    const pending = getCollegeBundle("fan-out-probe");
+    // One macrotask lets the batch settle while the detail response is still
+    // gated, so anything recorded is genuinely concurrent with it.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(started).toContain("/api/v1/colleges/fan-out-probe/placements");
+    expect(started).toContain("/api/v1/colleges/fan-out-probe/fees");
+    expect(started).toContain("/api/v1/reviews/college/fan-out-probe");
+
+    releaseDetail();
+    await expect(pending).resolves.toMatchObject({ detail: { id: 4242 } });
+  });
+
+  it("resolves the FAQ list from the id in the detail response", async () => {
+    const requested: string[] = [];
+    fetchMock.mockImplementation(async (url: string) => {
+      const parsed = new URL(url);
+      requested.push(`${parsed.pathname}${parsed.search}`);
+      if (parsed.pathname === "/api/v1/colleges/faq-probe") {
+        return json({ id: 7, slug: "faq-probe" });
+      }
+      if (parsed.pathname === "/api/v1/faqs") {
+        return json([{ id: 1, question: "Q?", answer: "A." }]);
+      }
+      return json([]);
+    });
+
+    const bundle = await getCollegeBundle("faq-probe");
+
+    expect(bundle?.detail).toMatchObject({ id: 7 });
+    expect(bundle?.faqs).toHaveLength(1);
+    // Addressed by the numeric id that only the detail response carries.
+    expect(requested.some((p) => p.includes("entity_id=7"))).toBe(true);
+  });
+
+  it("returns null, without a dependent FAQ request, for an unknown slug", async () => {
+    const started: string[] = [];
+    fetchMock.mockImplementation(async (url: string) => {
+      started.push(new URL(url).pathname);
+      return json({ detail: "not found" }, 404);
+    });
+
+    await expect(getCollegeBundle("no-such-college-probe")).resolves.toBeNull();
+    // The slug-keyed batch still fires (the documented trade), but the FAQ
+    // request is addressed by an id that never arrived.
+    expect(started).not.toContain("/api/v1/faqs");
   });
 });
