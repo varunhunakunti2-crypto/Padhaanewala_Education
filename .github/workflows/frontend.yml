@@ -83,15 +83,27 @@ jobs:
         run: npm run build
 
       # --- 7.2 -----------------------------------------------------------
-      # `npm audit` gates on *any* advisory, which is stricter than most teams
-      # want and is the right default for a project that has already shipped one
-      # unpatched CVE release. `continue-on-error` is deliberately absent.
+      # `npm audit` gates on *any* shipped advisory, which is stricter than most
+      # teams want and is the right default for a project that has already
+      # shipped one unpatched CVE release. `continue-on-error` is deliberately
+      # absent.
+      #
+      # `--omit=dev` is load-bearing here, not a loosening. On a clean install
+      # the only findings left are one chain under `eslint-config-next`:
+      #   braces -> micromatch -> fast-glob -> @next/eslint-plugin-next
+      # `braces@3.0.3` is the newest release and is still flagged
+      # (GHSA-vfj7-8cjw-p6xm), so there is nothing to upgrade to; npm's only
+      # suggested "fix" is to DOWNGRADE `eslint-config-next` to 14.2.35, which
+      # would break the lint config this job runs. None of those packages ship
+      # in the browser or the server bundle, so auditing the production tree is
+      # auditing what actually deploys. `next`, `sharp` and `source-map-js` —
+      # which do ship — are audited at the same strict level.
       #
       # It runs after the build rather than before so a vulnerability report is
       # delivered alongside a working artifact, and so an audit outage does not
       # hide a type error.
       - name: Dependency audit (npm)
-        run: npm audit --audit-level=moderate
+        run: npm audit --omit=dev --audit-level=moderate
 
       - uses: actions/upload-artifact@v4
         if: failure()
