@@ -6,8 +6,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.proctoring import (
     EVENT_TYPES,
-    SEVERITIES,
     SESSION_STATUSES,
+    SEVERITIES,
 )
 
 
