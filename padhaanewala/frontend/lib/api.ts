@@ -1656,17 +1656,24 @@ const MAX_CATALOG_ROWS = 5000;
  * itself looks like "the catalogue is empty" rather than "the request failed",
  * and an admin who then creates a duplicate is the cost. A throw becomes the
  * panel's error state, which says so.
+ *
+ * `signal` is checked between pages, so aborting a walk stops it at the next
+ * page boundary instead of after the last one.
  */
 export async function fetchAllPages<T>(
   path: string,
   pageSize: number = CATALOG_PAGE_SIZE,
   maxRows: number = MAX_CATALOG_ROWS,
+  signal?: AbortSignal,
 ): Promise<T[]> {
   const rows: T[] = [];
   const separator = path.includes("?") ? "&" : "?";
 
   for (;;) {
-    const page = await apiFetch<T[]>(`${path}${separator}limit=${pageSize}&offset=${rows.length}`);
+    const page = await apiFetch<T[]>(
+      `${path}${separator}limit=${pageSize}&offset=${rows.length}`,
+      { signal },
+    );
     if (!Array.isArray(page) || page.length === 0) break;
     rows.push(...page);
     // A short page means the end of the list.
@@ -1982,8 +1989,12 @@ export const adminApi = {
    * page, so a client-side "Inactive" filter would describe the page and not the
    * account base. The response is a page + total rather than a bare array, so
    * the UI can say "1–50 of 312" instead of implying the page is everything.
+   *
+   * `signal` lets the caller cancel a query it has already replaced: the search
+   * box supersedes the previous request on every debounce, and without this the
+   * abandoned ones run to completion against the database.
    */
-  users: (query: AdminUserQuery = {}) => {
+  users: (query: AdminUserQuery = {}, signal?: AbortSignal) => {
     const params = new URLSearchParams();
     if (query.search) params.set("search", query.search);
     if (query.role) params.set("role", query.role);
@@ -1991,7 +2002,7 @@ export const adminApi = {
     if (query.limit !== undefined) params.set("limit", String(query.limit));
     if (query.offset !== undefined) params.set("offset", String(query.offset));
     const qs = params.toString();
-    return apiFetch<AdminUserPage>(`/users${qs ? `?${qs}` : ""}`);
+    return apiFetch<AdminUserPage>(`/users${qs ? `?${qs}` : ""}`, { signal });
   },
 
   roles: () => apiFetch<AdminRole[]>("/roles"),
@@ -2602,9 +2613,16 @@ export const adminApi = {
    * silently truncated and read as "that is everything waiting".
    *
    * Reading is `CONTENT_ROLES`; the review actions below are `ADMIN_ROLES`.
+   *
+   * `signal` cancels the walk when the status chip changes mid-walk.
    */
-  collegeSubmissions: (status: CollegeSubmissionStatus = "pending") =>
-    fetchAllPages<CollegeSubmission>(`/college-submissions?status=${status}`),
+  collegeSubmissions: (status: CollegeSubmissionStatus = "pending", signal?: AbortSignal) =>
+    fetchAllPages<CollegeSubmission>(
+      `/college-submissions?status=${status}`,
+      CATALOG_PAGE_SIZE,
+      MAX_CATALOG_ROWS,
+      signal,
+    ),
 
   /** `GET /college-submissions/{id}` — the same read the owner uses. */
   collegeSubmission: (id: number) => fetchCollegeSubmission(id),

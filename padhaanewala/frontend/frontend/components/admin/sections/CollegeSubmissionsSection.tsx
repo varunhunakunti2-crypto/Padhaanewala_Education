@@ -55,7 +55,7 @@ export function CollegeSubmissionsSection() {
   // not on the loader identity) and the table keeps showing the previous
   // status's rows under the newly selected chip.
   const { data, error, loading, reload } = useAdminResource<CollegeSubmission[]>(
-    () => adminApi.collegeSubmissions(status),
+    (signal) => adminApi.collegeSubmissions(status, signal),
     {
       forbiddenMessage: "You do not have permission to view college requests.",
       unreachableMessage: "Could not reach the submission queue.",

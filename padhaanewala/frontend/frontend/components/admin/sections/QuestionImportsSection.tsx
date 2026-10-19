@@ -230,6 +230,11 @@ export function QuestionImportsSection({
     if (pollingJobId === null) return;
     const jobId = pollingJobId;
     const timer = setInterval(() => {
+      // A hidden tab does not need live progress, and the attempt budget is
+      // finite: ticks (and requests) spent while nobody is looking are how a
+      // long import gives up before the user ever returns to the tab. The poll
+      // resumes on the first tick after the tab becomes visible again.
+      if (document.hidden) return;
       if (pollsLeft.current <= 0) {
         setGaveUpPolling(true);
         return;

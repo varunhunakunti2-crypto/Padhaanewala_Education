@@ -41,7 +41,18 @@ import type { SectionKey } from "@/components/admin/types";
  * endpoints answered. A source that failed is named instead of being folded into a
  * silent zero.
  */
-export function DashboardSection({ go }: { go: (s: SectionKey) => void }) {
+export function DashboardSection({
+  go,
+  leads,
+}: {
+  go: (s: SectionKey) => void;
+  /**
+   * The console shell's `GET /leads`, passed down instead of fetched again.
+   * The shell has to fetch it anyway for the nav badge count, and this section
+   * was issuing a second identical request for the same rows on mount.
+   */
+  leads: AdminLead[] | null;
+}) {
   const { enquiries, testHistory } = useApp();
   const stats = useCatalogStats();
   const health = useBackendHealth();
@@ -54,7 +65,6 @@ export function DashboardSection({ go }: { go: (s: SectionKey) => void }) {
     adminApi.scholarships(),
   );
   const { data: colleges } = useAdminResource<ApiCollegeListItem[]>(() => adminApi.colleges());
-  const { data: realLeads } = useAdminResource<AdminLead[]>(() => adminApi.leads());
 
   // "Now" is captured once at mount: reading the clock during render makes the
   // deadline list depend on when React happened to re-render.
@@ -134,7 +144,7 @@ export function DashboardSection({ go }: { go: (s: SectionKey) => void }) {
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="Scholarships" value={String(stats.scholarships)} />
         <StatCard label="Blog posts" value={String(stats.blogs)} />
-        <StatCard label="Admission leads" value={String(realLeads ? realLeads.length : enquiries.length)} />
+        <StatCard label="Admission leads" value={String(leads ? leads.length : enquiries.length)} />
         <StatCard label="Mock tests you took" value={String(testHistory.length)} />
       </div>
 
@@ -165,9 +175,9 @@ export function DashboardSection({ go }: { go: (s: SectionKey) => void }) {
             </Button>
           }
         >
-          {realLeads && realLeads.length > 0 ? (
+          {leads && leads.length > 0 ? (
             <div className="space-y-3">
-              {realLeads.slice(0, 5).map((l) => (
+              {leads.slice(0, 5).map((l) => (
                 <div
                   key={l.id}
                   onClick={() => go("leads")}

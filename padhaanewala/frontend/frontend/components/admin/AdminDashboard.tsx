@@ -61,6 +61,10 @@ export function AdminDashboard() {
     }
   }
 
+  // Fetched once, here, rather than per section: the nav badge on the "leads"
+  // entry needs the count on *every* section, so the shell is the only place
+  // that can own it. `DashboardSection` used to hit the same endpoint a second
+  // time for the same rows and now takes them as a prop.
   const { data: realLeads } = useAdminResource<AdminLead[]>(() => adminApi.leads());
 
   const isSuperAdmin = roles.includes("super_admin");
@@ -143,7 +147,7 @@ export function AdminDashboard() {
         </aside>
 
         <main className="min-w-0 flex-1">
-          {section === "dashboard" && <DashboardSection go={setSection} />}
+          {section === "dashboard" && <DashboardSection go={setSection} leads={realLeads} />}
           {section === "analytics" && <AnalyticsSection />}
           {section === "colleges" && <CollegesSection />}
           {section === "collegesubmissions" && <CollegeSubmissionsSection />}

@@ -97,7 +97,7 @@ export function StudentsSection() {
 
   const reloadKey = `${search}|${status}|${role}|${page}`;
   const { data, error, loading, reload } = useAdminResource(
-    () => adminApi.users(query),
+    (signal) => adminApi.users(query, signal),
     {
       forbiddenMessage: "You do not have permission to list users.",
       unreachableMessage: "Could not reach the users API.",

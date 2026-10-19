@@ -26,9 +26,18 @@ interface ResourceState<T> {
  * `reloadKey` re-runs the fetch when it changes, for panels whose query is
  * server-side (search / filters / paging). It is a single string rather than a
  * dependency array so it cannot be a fresh array identity on every render.
+ *
+ * The loader is handed an `AbortSignal` and should pass it through to
+ * `apiFetch`. A panel whose query changes per keystroke — `StudentsSection`'s
+ * search, the submission queue's status chips — then *cancels* the request it
+ * superseded instead of leaving it to run to completion for nobody. `ignore`
+ * only discards the result; the request itself still occupies the network and
+ * the server. A loader that does not declare the parameter is unaffected (a
+ * function with fewer parameters is assignable to this type), so adoption is
+ * per-call-site rather than a flag day.
  */
 export function useAdminResource<T>(
-  loader: () => Promise<T>,
+  loader: (signal: AbortSignal) => Promise<T>,
   opts: {
     forbiddenMessage?: string;
     unreachableMessage?: string;
@@ -62,9 +71,12 @@ export function useAdminResource<T>(
 
   useEffect(() => {
     let ignore = false;
+    // Aborting is what stops a superseded request from still occupying the
+    // network and the server. Created here so each effect run owns exactly one.
+    const controller = new AbortController();
 
     loaderRef
-      .current()
+      .current(controller.signal)
       .then((rows) => {
         if (ignore) return;
         setData(rows);
@@ -80,7 +92,13 @@ export function useAdminResource<T>(
       });
 
     return () => {
+      // Both statements run synchronously here, so `ignore` is already true by
+      // the time the abort's rejection is handled as a microtask. That is what
+      // stops a cancelled re-query from surfacing "Could not reach the API." on
+      // the panel that cancelled it — dropping either half fails
+      // `tests/admin-resource-abort.test.tsx`.
       ignore = true;
+      controller.abort();
     };
   }, [nonce, forbiddenMessage, unreachableMessage, reloadKey]);
 
