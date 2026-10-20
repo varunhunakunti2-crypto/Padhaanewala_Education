@@ -356,7 +356,7 @@ def test_the_page_ceiling_is_reported():
 # --- the provider call -------------------------------------------------------
 
 
-def test_the_key_travels_as_a_header_and_never_in_the_url():
+def test_the_key_travels_as_a_header_and_never_in_the_url(monkeypatch):
     """The documented form, and the reason it matters: a key in a query string
     lands in every proxy log and error page between here and the provider.
 
@@ -364,7 +364,15 @@ def test_the_key_travels_as_a_header_and_never_in_the_url():
     header is set on the client it constructs. Calling `_call_gemini` directly
     with a hand-built client would have asserted nothing about how the key is
     actually attached.
+
+    The credential is set explicitly because `generate_drafts` gates on
+    `generation_is_configured()` before it looks at the injected client. What
+    is asserted below is where that credential is *sent*; whether one happens
+    to be lying around in the environment is a different question, and a test
+    that only passes when it is must not be one.
     """
+    monkeypatch.setattr(qg.settings, "GEMINI_API_KEY", "AQ.test")
+
     seen: dict = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
