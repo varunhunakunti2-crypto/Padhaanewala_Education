@@ -7,6 +7,7 @@ import {
   rowRefFor,
   type FormResult,
 } from "@/lib/form-parts";
+import { checkImageUrl } from "@/lib/image-field";
 
 /**
  * The scholarship admin form.
@@ -64,6 +65,7 @@ export interface ScholarshipFormValues {
   official_website: string;
   last_verified_date: string;
   next_verification_date: string;
+  image_url: string;
 }
 
 /** `ScholarshipCreate` defaults, prefilled so a create does not store "". */
@@ -86,6 +88,7 @@ export const EMPTY_SCHOLARSHIP_FORM: ScholarshipFormValues = {
   official_website: "",
   last_verified_date: "",
   next_verification_date: "",
+  image_url: "",
 };
 
 /** Suggestions only. The column has no enum; see the file note. */
@@ -115,6 +118,7 @@ export interface ScholarshipDetail {
   official_website: string | null;
   last_verified_date: string | null;
   next_verification_date: string | null;
+  image_url: string | null;
 }
 
 export function scholarshipFormFromDetail(detail: ScholarshipDetail): ScholarshipFormValues {
@@ -134,6 +138,7 @@ export function scholarshipFormFromDetail(detail: ScholarshipDetail): Scholarshi
     official_website: detail.official_website ?? "",
     last_verified_date: dateOnly(detail.last_verified_date),
     next_verification_date: dateOnly(detail.next_verification_date),
+    image_url: detail.image_url ?? "",
   };
 }
 
@@ -196,6 +201,9 @@ export function buildScholarshipPayload(
   const nextVerification = optionalDate(values.next_verification_date, "The next verification date");
   if (!nextVerification.ok) return nextVerification;
 
+  const image = checkImageUrl(values.image_url);
+  if (!image.ok) return { ok: false, error: image.error };
+
   // A scheme verified *after* it is due to be re-verified is either a typo or a
   // scheme that was never checked. Either way it is worth a sentence, and the
   // two columns are far apart on the form.
@@ -228,6 +236,7 @@ export function buildScholarshipPayload(
       official_website: website.value,
       last_verified_date: lastVerified.value,
       next_verification_date: nextVerification.value,
+      image_url: image.value,
       // `documents_required` and `is_active` omitted on purpose — see the file note.
     },
   };

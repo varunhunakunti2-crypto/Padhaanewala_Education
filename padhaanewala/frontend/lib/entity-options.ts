@@ -1,4 +1,4 @@
-import { adminApi, type AdminBlog, type AdminCourse, type AdminUniversity } from "@/lib/api";
+import { adminApi, type AdminBlog, type AdminCourse, type AdminExam, type AdminScholarship, type AdminUniversity } from "@/lib/api";
 import type { ApiCollegeListItem } from "@/lib/api-server";
 import { MEDIA_ENTITY_TYPES, type MediaEntityOption } from "@/lib/media-form";
 
@@ -20,10 +20,15 @@ import { MEDIA_ENTITY_TYPES, type MediaEntityOption } from "@/lib/media-form";
  * would be free to drift into a free-text id box, and the failure is silent: the
  * write succeeds, returns 201, and the row is then invisible in every listing.
  *
- * ## Why these four types
+ * ## Why these six types
  *
  * Each is backed by an admin list endpoint that returns real rows. `college`
  * comes first because that is what both panels are mostly used for.
+ *
+ * `scholarship` and `exam` joined the list when those two entities gained an
+ * `image_url` column: the same upload panel now offers them as targets, so a
+ * file uploaded while editing a scholarship can be attached to the scholarship
+ * rather than left unattached.
  *
  * `blog` is the one that cannot be paged past 50 — `GET /blogs` caps `limit` at
  * 50 — so its picker shows as many as the route allows. That is stated rather
@@ -44,6 +49,9 @@ export const ENTITY_LOADERS: Partial<
 > = {
   college: async () => (await adminApi.colleges()).map((c: ApiCollegeListItem) => ({ id: c.id, label: c.name })),
   course: async () => (await adminApi.courses()).map((c: AdminCourse) => ({ id: c.id, label: c.name })),
+  scholarship: async () =>
+    (await adminApi.scholarships()).map((s: AdminScholarship) => ({ id: s.id, label: s.name })),
+  exam: async () => (await adminApi.exams()).map((e: AdminExam) => ({ id: e.id, label: e.name })),
   university: async () => (await adminApi.universities()).map((u: AdminUniversity) => ({ id: u.id, label: u.name })),
   blog: async () => (await adminApi.blogs()).map((b: AdminBlog) => ({ id: b.id, label: b.title })),
 };

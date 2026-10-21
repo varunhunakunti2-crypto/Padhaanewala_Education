@@ -83,6 +83,8 @@ export const MEDIA_SVG_REASON =
 export const MEDIA_ENTITY_TYPES = [
   { value: "college", label: "College" },
   { value: "course", label: "Course" },
+  { value: "scholarship", label: "Scholarship" },
+  { value: "exam", label: "Exam" },
   { value: "university", label: "University" },
   { value: "blog", label: "Blog post" },
 ] as const;

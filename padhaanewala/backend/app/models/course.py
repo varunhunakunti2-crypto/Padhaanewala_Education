@@ -18,6 +18,9 @@ class Course(Base):
     overview: Mapped[str | None] = mapped_column(Text, nullable=True)
     eligibility: Mapped[str | None] = mapped_column(Text, nullable=True)
     career_information: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Admin-uploaded cover image. See `College.image_url` for the accepted
+    #: shapes and the nullable/gradient-fallback contract.
+    image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.now

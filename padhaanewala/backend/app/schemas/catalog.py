@@ -2,10 +2,51 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.models.mock_test import SELECTED_ANSWER_MAX_LENGTH
 from app.question_types import QuestionType
+
+#: `String(500)` on every `image_url` column. Pinned here so the request schemas
+#: and the migration cannot disagree about the ceiling.
+IMAGE_URL_MAX = 500
+
+
+def validate_image_url(value: str | None) -> str | None:
+    """Accept an internal path or an absolute `http(s)` URL, nothing else.
+
+    Identical in intent to `schemas.content._validate_banner_link`, and separate
+    from it rather than imported because the two describe different columns: a
+    banner link is rendered into an `<a href>`, while this is rendered into an
+    `<img src>`. Both are stored-XSS vectors if `javascript:` or `data:` gets
+    through, and `//evil.example` is refused here for the same protocol-relative
+    reason. `None` and `""` both mean "no image", stored as NULL, so the frontend
+    gradient fallback applies.
+    """
+    if value is None:
+        return None
+    value = value.strip()
+    if not value:
+        return None
+    lowered = value.lower()
+    if lowered.startswith(("javascript:", "data:", "vbscript:", "file:")):
+        raise ValueError("image_url must be an internal path or an http(s) URL")
+    if value.startswith("//"):
+        raise ValueError("protocol-relative image URLs are not allowed")
+    if value.startswith("/"):
+        return value
+    if lowered.startswith(("http://", "https://")):
+        return value
+    raise ValueError("image_url must start with '/' or 'http(s)://'")
+
+
+def _image_url_field() -> Any:
+    """The declaration every `*Create`/`*Update` `image_url` uses.
+
+    A factory rather than a shared constant because Pydantic `FieldInfo`
+    objects are mutable and are not meant to be reused across models.
+    """
+    return Field(default=None, max_length=IMAGE_URL_MAX)
 
 
 class StateResponse(BaseModel):
@@ -81,6 +122,11 @@ class CollegeListItemResponse(BaseModel):
     college_id: str
     name: str
     slug: str
+    #: Admin-uploaded banner/logo, or `None`. The list projection carries it
+    #: because college **cards** are driven by this endpoint, not by the detail
+    #: one — leaving it detail-only would mean an uploaded image never appeared
+    #: where the gradient it replaces is actually drawn.
+    image_url: str | None = None
     college_type: str | None
     ownership: str | None
     city: str | None
@@ -135,6 +181,7 @@ class CourseResponse(BaseModel):
     degree: str | None
     duration: str | None
     category: str | None
+    image_url: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -147,7 +194,13 @@ class CourseCreate(BaseModel):
     overview: str | None = None
     eligibility: str | None = None
     career_information: str | None = None
+    image_url: str | None = Field(default=None, max_length=IMAGE_URL_MAX)
     is_active: bool = True
+
+    @field_validator("image_url")
+    @classmethod
+    def _check_image(cls, value: str | None) -> str | None:
+        return validate_image_url(value)
 
 
 class CourseUpdate(BaseModel):
@@ -158,7 +211,13 @@ class CourseUpdate(BaseModel):
     overview: str | None = None
     eligibility: str | None = None
     career_information: str | None = None
+    image_url: str | None = Field(default=None, max_length=IMAGE_URL_MAX)
     is_active: bool | None = None
+
+    @field_validator("image_url")
+    @classmethod
+    def _check_image(cls, value: str | None) -> str | None:
+        return validate_image_url(value)
 
 
 class SearchResult(BaseModel):
@@ -200,7 +259,13 @@ class CollegeCreate(BaseModel):
     overview: str | None = None
     facilities: dict[str, Any] | None = None
     has_hostel: bool | None = None
+    image_url: str | None = Field(default=None, max_length=IMAGE_URL_MAX)
     courses: list[CollegeCourseCreate] = []
+
+    @field_validator("image_url")
+    @classmethod
+    def _check_image(cls, value: str | None) -> str | None:
+        return validate_image_url(value)
 
 
 class CollegeUpdate(BaseModel):
@@ -227,6 +292,15 @@ class CollegeUpdate(BaseModel):
     has_hostel: bool | None = None
     is_active: bool | None = None
     is_featured: bool | None = None
+    image_url: str | None = Field(default=None, max_length=IMAGE_URL_MAX)
+
+    @field_validator("image_url")
+    @classmethod
+    def _check_image(cls, value: str | None) -> str | None:
+        # `None` means "the console sent an explicit null", i.e. clear the image
+        # — a legal edit that re-enables the gradient fallback. Absent fields are
+        # kept out of the diff by `exclude_unset` in the router.
+        return validate_image_url(value)
 
 
 class ScholarshipResponse(BaseModel):
@@ -246,6 +320,7 @@ class ScholarshipResponse(BaseModel):
     documents_required: list | None
     application_procedure: str | None
     official_website: str | None
+    image_url: str | None = None
     verification_status: str
     last_verified_date: date | None
     next_verification_date: date | None
@@ -270,6 +345,7 @@ class ExamResponse(BaseModel):
     official_notification: str | None
     syllabus: dict | None
     faqs: list | None
+    image_url: str | None = None
     is_active: bool
 
     model_config = {"from_attributes": True}
@@ -653,7 +729,13 @@ class ExamCreate(BaseModel):
     official_notification: str | None = None
     syllabus: dict | None = None
     faqs: list | None = None
+    image_url: str | None = Field(default=None, max_length=IMAGE_URL_MAX)
     is_active: bool = True
+
+    @field_validator("image_url")
+    @classmethod
+    def _check_image(cls, value: str | None) -> str | None:
+        return validate_image_url(value)
 
 
 class ExamUpdate(BaseModel):
@@ -670,7 +752,13 @@ class ExamUpdate(BaseModel):
     official_notification: str | None = None
     syllabus: dict | None = None
     faqs: list | None = None
+    image_url: str | None = Field(default=None, max_length=IMAGE_URL_MAX)
     is_active: bool | None = None
+
+    @field_validator("image_url")
+    @classmethod
+    def _check_image(cls, value: str | None) -> str | None:
+        return validate_image_url(value)
 
 
 class UniversityCreate(BaseModel):
@@ -707,10 +795,16 @@ class ScholarshipCreate(BaseModel):
     documents_required: list | None = None
     application_procedure: str | None = None
     official_website: str | None = None
+    image_url: str | None = Field(default=None, max_length=IMAGE_URL_MAX)
     verification_status: str = Field(default="unverified", max_length=20)
     last_verified_date: date | None = None
     next_verification_date: date | None = None
     is_active: bool = True
+
+    @field_validator("image_url")
+    @classmethod
+    def _check_image(cls, value: str | None) -> str | None:
+        return validate_image_url(value)
 
 
 class ScholarshipUpdate(BaseModel):
@@ -727,10 +821,16 @@ class ScholarshipUpdate(BaseModel):
     documents_required: list | None = None
     application_procedure: str | None = None
     official_website: str | None = None
+    image_url: str | None = Field(default=None, max_length=IMAGE_URL_MAX)
     verification_status: str | None = Field(default=None, max_length=20)
     last_verified_date: date | None = None
     next_verification_date: date | None = None
     is_active: bool | None = None
+
+    @field_validator("image_url")
+    @classmethod
+    def _check_image(cls, value: str | None) -> str | None:
+        return validate_image_url(value)
 
 
 class MockTestCreate(BaseModel):

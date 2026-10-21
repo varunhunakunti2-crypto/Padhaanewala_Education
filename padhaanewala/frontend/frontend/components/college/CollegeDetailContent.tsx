@@ -132,6 +132,7 @@ function HeroInfo({ college }: { college: College }) {
       <CampusArt
         gradientId={college.gradientId}
         initials={college.initials}
+        imageUrl={college.imageUrl}
         className="h-44 w-full sm:h-60 lg:h-72"
         ariaLabel={`${college.shortName} campus`}
       />
@@ -142,6 +143,7 @@ function HeroInfo({ college }: { college: College }) {
               <CollegeLogo
                 initials={college.initials}
                 gradientId={college.gradientId}
+                imageUrl={college.imageUrl}
                 size="lg"
                 className="-mt-10 ring-4 ring-white dark:ring-slate-900 md:-mt-14 md:h-20 md:w-20 md:text-xl shrink-0 shadow-md"
               />

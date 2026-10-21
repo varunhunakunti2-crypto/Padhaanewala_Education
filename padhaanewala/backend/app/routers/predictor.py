@@ -278,6 +278,7 @@ def predict_colleges(
             college_id=college.college_id,
             name=college.name,
             slug=college.slug,
+            image_url=college.image_url,
             college_type=college.college_type,
             ownership=college.ownership,
             city=college.city,

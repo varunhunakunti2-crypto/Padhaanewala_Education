@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { COLLEGE_FIELD_MAX, COLLEGE_NAME_MAX } from "@/lib/college-form";
+import { IMAGE_URL_MAX } from "@/lib/image-field";
 
 /**
  * The college form's length caps, held against the Pydantic schemas that
@@ -98,14 +99,34 @@ describe("nothing with a width is left off the map", () => {
     // Read from *every* `str` field, not from `declaredCaps`: a field that was
     // never given a `Field(...)` is precisely the case that must be caught, and
     // it does not appear in `declaredCaps` at all.
+    //
+    // `image_url` is capped — but by `IMAGE_URL_MAX` in `lib/image-field.ts`,
+    // not by `COLLEGE_FIELD_MAX`, because it is one shared field rendered by
+    // `ImageField` across four entity forms rather than a college-only input.
+    // It is asserted against its own constant just below, so it is verified
+    // here rather than excused.
+    const sharedCaps: Record<string, number> = { image_url: IMAGE_URL_MAX };
     const noCapNeeded = new Set(["address", "overview", "ownership"]);
     const uncapped = (className: string) =>
       strFields(className).filter(
         (field) =>
-          !(field in COLLEGE_FIELD_MAX) && !noCapNeeded.has(field) && field !== "name",
+          !(field in COLLEGE_FIELD_MAX) &&
+          !(field in sharedCaps) &&
+          !noCapNeeded.has(field) &&
+          field !== "name",
       );
     expect(uncapped("CollegeCreate")).toEqual([]);
     expect(uncapped("CollegeUpdate")).toEqual([]);
+  });
+
+  it("caps image_url identically on the shared field and both schemas", () => {
+    // The point of this file: the cap the admin types against must be the cap
+    // the server enforces. `ImageField` renders `IMAGE_URL_MAX`, and the schema
+    // declares `max_length=IMAGE_URL_MAX` — the same *name*, so the numbers can
+    // still drift. Read the Python constant and hold the two together.
+    const pythonCap = source.match(/^IMAGE_URL_MAX = (\d+)/m);
+    expect(pythonCap, "IMAGE_URL_MAX is missing from catalog.py").not.toBeNull();
+    expect(Number(pythonCap?.[1])).toBe(IMAGE_URL_MAX);
   });
 });
 

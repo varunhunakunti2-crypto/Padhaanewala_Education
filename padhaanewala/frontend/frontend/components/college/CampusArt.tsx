@@ -3,6 +3,8 @@ import { cn, BANNER_GRADIENTS } from "@/lib/utils";
 interface CampusArtProps {
   gradientId: string;
   initials: string;
+  /** Admin-uploaded campus image; falls back to the gradient when absent. */
+  imageUrl?: string;
   className?: string;
   ariaLabel?: string;
 }
@@ -10,9 +12,47 @@ interface CampusArtProps {
 /**
  * Deterministic, network-free "campus image" built from brand gradient + subtle art.
  * Used as the college banner image on cards and detail pages.
+ *
+ * When an admin has uploaded an image for this college it is drawn instead of
+ * the gradient — that is the whole point of the `image_url` column. The
+ * skyline, radial highlights and initials are the *fallback*, not a permanent
+ * overlay: an upload is a real photograph of a real campus, and stamping the
+ * college's initials across it would be worse than the gradient it replaced.
  */
-export function CampusArt({ gradientId, initials, className, ariaLabel }: CampusArtProps) {
+export function CampusArt({
+  gradientId,
+  initials,
+  imageUrl,
+  className,
+  ariaLabel,
+}: CampusArtProps) {
   const gradient = BANNER_GRADIENTS[gradientId] ?? BANNER_GRADIENTS.g0;
+  const url = typeof imageUrl === "string" && imageUrl.trim() ? imageUrl.trim() : undefined;
+
+  if (url) {
+    return (
+      <div
+        role="img"
+        aria-label={ariaLabel ?? `${initials} campus`}
+        className={cn("relative isolate overflow-hidden bg-slate-100", className)}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element -- the URL is
+            either same-origin (`/media/files/…`) or an admin-supplied host that
+            cannot be in `images.remotePatterns` at build time. */}
+        <img
+          src={url}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+        {/* A light scrim so white overlay text (e.g. a badge) stays legible on
+            an arbitrary upload. */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/25 to-transparent" />
+      </div>
+    );
+  }
+
   return (
     <div
       role="img"
@@ -50,6 +90,8 @@ export function CampusArt({ gradientId, initials, className, ariaLabel }: Campus
 interface CollegeLogoProps {
   initials: string;
   gradientId: string;
+  /** Admin-uploaded logo; falls back to the gradient-initials mark. */
+  imageUrl?: string;
   size?: "sm" | "md" | "lg";
   className?: string;
 }
@@ -60,8 +102,38 @@ const sizes = {
   lg: "h-16 w-16 text-lg rounded-2xl",
 };
 
-export function CollegeLogo({ initials, gradientId, size = "md", className }: CollegeLogoProps) {
+export function CollegeLogo({
+  initials,
+  gradientId,
+  imageUrl,
+  size = "md",
+  className,
+}: CollegeLogoProps) {
   const gradient = BANNER_GRADIENTS[gradientId] ?? BANNER_GRADIENTS.g0;
+  const url = typeof imageUrl === "string" && imageUrl.trim() ? imageUrl.trim() : undefined;
+
+  if (url) {
+    return (
+      <span
+        className={cn(
+          "inline-grid shrink-0 place-items-center overflow-hidden bg-white shadow-md ring-2 ring-white",
+          sizes[size],
+          className,
+        )}
+      >
+        {/* Decorative: the college name is always adjacent in these layouts. */}
+        {/* eslint-disable-next-line @next/next/no-img-element -- see CampusArt. */}
+        <img
+          src={url}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          className="h-full w-full object-cover"
+        />
+      </span>
+    );
+  }
+
   return (
     <span
       className={cn(

@@ -16,6 +16,7 @@ import {
   resolveColleges,
   resolveCourses,
   resolveExams,
+  resolveHeroCards,
   resolveScholarships,
 } from "@/lib/content";
 import { pageMetadata } from "@/lib/seo";
@@ -38,15 +39,18 @@ export const metadata = pageMetadata({
 });
 
 export default async function HomePage() {
-  // These five requests are independent, so they are issued concurrently. Each
+  // These six requests are independent, so they are issued concurrently. Each
   // resolver returns only what the backend actually holds — an empty list when
   // the table is empty, and the sections below render their own empty states.
-  const [colleges, courses, exams, scholarships, posts] = await Promise.all([
+  // `resolveHeroCards` is the one that falls back to the shipped defaults,
+  // because an unreachable backend would otherwise leave the hero bare.
+  const [colleges, courses, exams, scholarships, posts, heroCards] = await Promise.all([
     resolveColleges(),
     resolveCourses(),
     resolveExams(),
     resolveScholarships(),
     resolveBlogPosts(),
+    resolveHeroCards(),
   ]);
 
   return (
@@ -54,6 +58,7 @@ export default async function HomePage() {
       <HeroSection
         collegeCount={colleges.data.length}
         courseCount={courses.data.length}
+        cards={heroCards.data}
       />
       <QuickActions />
       <PopularCourses />

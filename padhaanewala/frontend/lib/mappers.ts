@@ -61,6 +61,18 @@ const num = (v: string | number | null | undefined): number => {
 const text = (v: string | null | undefined, fallback = ""): string =>
   v && v.trim() ? v.trim() : fallback;
 
+/**
+ * An admin-uploaded image URL, or `undefined` when there is none.
+ *
+ * Separate from `text` because the two "empty" outcomes are not
+ * interchangeable here: `text` yields `""`, and `""` is a truthy-ish value that
+ * would make every component treat "no image" as "an image whose `src` is
+ * empty", which the browser resolves back to the current page. `undefined` is
+ * what the render layer checks to decide between an `<img>` and the gradient.
+ */
+const image = (v: string | null | undefined): string | undefined =>
+  v && v.trim() ? v.trim() : undefined;
+
 const list = <T,>(v: T[] | null | undefined): T[] => (Array.isArray(v) ? v : []);
 
 const toNumberId = (v: number | string | null | undefined, fallback: string): string =>
@@ -456,6 +468,7 @@ export function mapCollege(bundle: ApiCollegeBundle): College {
       .map((w) => w.charAt(0).toUpperCase())
       .join(""),
     gradientId: `g${(num(detail.id) % 8).toString()}`,
+    imageUrl: image(detail.image_url),
     tagline: text(detail.official_name) || name,
     overview: text(detail.overview),
     founded: num(detail.established_year),
@@ -620,6 +633,7 @@ export function mapExam(api: ApiExam): Exam {
     website: text(api.official_website),
     coursesAccepted: [],
     collegesAccepting: [],
+    imageUrl: image(api.image_url),
     faqs: list(api.faqs).map((f) => ({ q: f.question, a: f.answer })),
   };
 }
@@ -662,6 +676,7 @@ export function mapScholarship(api: ApiScholarship, index = 0): Scholarship {
     renewable: false,
     tags,
     color: SCHOLARSHIP_COLORS[index % SCHOLARSHIP_COLORS.length],
+    imageUrl: image(api.image_url),
     documents: list(api.documents_required),
     applicationProcess: procedure,
     website: text(api.official_website) || undefined,

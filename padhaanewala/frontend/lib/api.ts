@@ -1430,6 +1430,11 @@ export interface AdminNotificationBroadcast {
 export interface AdminBanner {
   id: number;
   title: string;
+  /**
+   * CTA line under the title ("Find opportunities"). Only the `hero_card`
+   * position renders it, so `home_top` strip banners leave it null.
+   */
+  subtitle?: string | null;
   image_url: string | null;
   link_url: string | null;
   position: string;
@@ -1691,6 +1696,8 @@ export interface AdminCourse {
   degree: string | null;
   duration: string | null;
   category: string | null;
+  /** Admin-uploaded cover image, or null. */
+  image_url: string | null;
 }
 
 /** `CourseDetailResponse` — the list row plus the three long-text columns. */
@@ -1724,6 +1731,8 @@ export interface AdminExam {
    */
   syllabus: unknown;
   faqs: unknown;
+  /** Admin-uploaded hero image, or null. */
+  image_url: string | null;
   is_active: boolean;
 }
 
@@ -1749,6 +1758,8 @@ export interface AdminScholarship {
   verification_status: string;
   last_verified_date: string | null;
   next_verification_date: string | null;
+  /** Admin-uploaded image, or null. */
+  image_url: string | null;
   is_active: boolean;
 }
 

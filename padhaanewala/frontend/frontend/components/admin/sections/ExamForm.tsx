@@ -2,6 +2,7 @@
 
 import { Input } from "@/components/ui/FormField";
 import { Field, FieldSet, Textarea } from "@/components/admin/fields";
+import { ImageField } from "@/components/admin/ImageField";
 import { EXAM_TYPE_MAX, type ExamFormValues } from "@/lib/exam-form";
 
 /**
@@ -104,6 +105,15 @@ export function ExamFormFields({
             placeholder="Passed or appearing for Class 12 with the required subject combination."
           />
         </div>
+        <ImageField
+          id="exam-image"
+          label="Hero image"
+          entityType="exam"
+          value={values.image_url}
+          onChange={(v) => set("image_url", v)}
+          disabled={disabled}
+          hint="Upload a file or paste an image URL. Leave blank to keep the purple gradient hero."
+        />
       </FieldSet>
 
       <FieldSet

@@ -270,6 +270,8 @@ export interface ApiCourse {
   degree: string | null;
   duration: string | null;
   category: string | null;
+  /** Admin-uploaded cover image, or null. */
+  image_url: string | null;
   overview: string | null;
   eligibility: string | null;
   career_information: string | null;
@@ -281,6 +283,8 @@ export interface ApiCollegeListItem {
   college_id: string;
   name: string;
   slug: string;
+  /** Admin-uploaded banner/logo, or null to fall back to the gradient. */
+  image_url: string | null;
   college_type: string | null;
   ownership: string | null;
   city: string | null;
@@ -486,6 +490,8 @@ export interface ApiExam {
   official_notification: string | null;
   syllabus: string[] | null;
   faqs: { question: string; answer: string }[] | null;
+  /** Admin-uploaded hero image, or null to fall back to the gradient. */
+  image_url: string | null;
   is_active: boolean;
 }
 
@@ -507,6 +513,8 @@ export interface ApiScholarship {
   application_procedure: string | null;
   official_website: string | null;
   verification_status: string | null;
+  /** Admin-uploaded image, or null to fall back to the gradient. */
+  image_url: string | null;
   is_active: boolean;
 }
 
@@ -566,6 +574,8 @@ export interface ApiMockTest {
 export interface ApiBanner {
   id: number;
   title: string;
+  /** CTA line under the title; only the `hero_card` layout renders it. */
+  subtitle: string | null;
   image_url: string | null;
   link_url: string | null;
   position: string;
@@ -661,6 +671,41 @@ export const getMockTestBySlug = (slug: string) =>
   serverGet<ApiMockTest>(`/mock-tests/${encodeURIComponent(slug)}`, REVALIDATE.catalogDetail);
 
 export const getBanners = () => serverGetAll<ApiBanner>("/banners?limit=50", REVALIDATE.content);
+
+/**
+ * The hero section's floating cards, served from `banners` at
+ * `position='hero_card'`.
+ *
+ * A dedicated fetcher rather than a `position` argument on `getBanners`,
+ * because the two callers want different things: the homepage wants exactly
+ * the hero slot (pinned to the 3 the hero can lay out), while the admin
+ * console's `adminApi.banners` wants every row including inactive ones. A
+ * shared function with a flag would push that distinction into each call site,
+ * where it can be forgotten — and `?include_inactive=true` is the flag that
+ * used to leak drafts to anonymous callers on this very route.
+ *
+ * **Returns `null`, not `[]`, when the backend does not answer.** Every other
+ * fetcher here collapses "no rows" and "no answer" into an empty array, which
+ * is fine for a catalogue resolver whose fallback is a local dataset. The hero
+ * needs the two kept apart: an empty `hero_card` slot is an admin's decision
+ * and must render no cards, while an unreachable backend must keep the shipped
+ * defaults. `serverGetAll` cannot express that, so this calls `serverGet` —
+ * the only place in this module that checks for `null`.
+ *
+ * The query string is what puts this on the `content:banners` tag
+ * (`tagsFor` reads the first path segment), so an admin save followed by
+ * `revalidate(["banners"])` expires these rows along with the rest.
+ */
+export const getHeroCards = async (): Promise<ApiBanner[] | null> => {
+  const data = await serverGet<ApiBanner[]>(
+    "/banners?position=hero_card&limit=3",
+    REVALIDATE.content,
+  );
+  // A 200 carrying something other than a list is a backend contract break,
+  // which is an outage as far as the hero is concerned — `null`, not `[]`.
+  if (data === null) return null;
+  return Array.isArray(data) ? data : null;
+};
 
 export interface ApiCollegeBundle {
   detail: ApiCollegeDetail;

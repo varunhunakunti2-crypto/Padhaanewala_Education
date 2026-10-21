@@ -522,3 +522,105 @@ def test_banner_crud(admin_token):
 
     deleted = client.delete(f"/api/v1/banners/{banner['id']}", headers=headers)
     assert deleted.status_code == 204
+
+
+def test_banner_subtitle_round_trips(admin_token):
+    """`subtitle` is the hero card's CTA line and must survive a write/read."""
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    created = client.post(
+        "/api/v1/banners",
+        json={
+            "title": "JEE Advanced 2027",
+            "subtitle": "Register now",
+            "image_url": "https://example.com/jee.png",
+            "link_url": "/exams/jee-advanced",
+            "position": "hero_card",
+            "display_order": 1,
+        },
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    banner = created.json()
+    assert banner["subtitle"] == "Register now"
+    assert banner["position"] == "hero_card"
+
+    fetched = client.get(
+        "/api/v1/banners",
+        params={"position": "hero_card"},
+    )
+    assert fetched.status_code == 200
+    match = next(b for b in fetched.json() if b["id"] == banner["id"])
+    assert match["subtitle"] == "Register now"
+
+    client.delete(f"/api/v1/banners/{banner['id']}", headers=headers)
+
+
+def test_banner_position_filter_separates_hero_cards(admin_token):
+    """`?position=` is what lets the homepage fetch only the hero slot.
+
+    The migration seeds three `hero_card` rows, so the assertion is about
+    *membership* rather than an exact list: the new card must appear, and the
+    `home_top` strip created alongside it must not.
+    """
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    strip = client.post(
+        "/api/v1/banners",
+        json={"title": "Strip", "image_url": "https://example.com/s.png"},
+        headers=headers,
+    ).json()
+    hero = client.post(
+        "/api/v1/banners",
+        json={
+            "title": "Hero",
+            "subtitle": "Go",
+            "image_url": "https://example.com/h.png",
+            "position": "hero_card",
+        },
+        headers=headers,
+    ).json()
+
+    heroes = client.get("/api/v1/banners", params={"position": "hero_card"}).json()
+    hero_ids = {b["id"] for b in heroes}
+    assert hero["id"] in hero_ids
+    assert strip["id"] not in hero_ids
+    assert all(b["position"] == "hero_card" for b in heroes)
+
+    client.delete(f"/api/v1/banners/{strip['id']}", headers=headers)
+    client.delete(f"/api/v1/banners/{hero['id']}", headers=headers)
+
+
+def test_banner_link_must_be_path_or_http(admin_token):
+    """A banner link lands in an `<a href>`, so `javascript:` is stored XSS.
+
+    This is the same rule `app/schemas/content.py` enforces; asserted here
+    because a content manager — not only a super admin — can write this field.
+    """
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    for bad in ("javascript:alert(1)", "data:text/html,<script>", "//evil.example"):
+        response = client.post(
+            "/api/v1/banners",
+            json={"title": "X", "image_url": "https://example.com/x.png", "link_url": bad},
+            headers=headers,
+        )
+        assert response.status_code == 422, f"{bad} should be rejected"
+
+    for good in ("/colleges", "https://example.com/x", None):
+        response = client.post(
+            "/api/v1/banners",
+            json={"title": "X", "image_url": "https://example.com/x.png", "link_url": good},
+            headers=headers,
+        )
+        assert response.status_code == 201, f"{good} should be accepted"
+        client.delete(f"/api/v1/banners/{response.json()['id']}", headers=headers)
+
+
+def test_banner_create_requires_a_title(admin_token):
+    """`title` is capped at 255 and may not be blank — the card renders it."""
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    for title in ("", " "):
+        response = client.post(
+            "/api/v1/banners",
+            json={"title": title, "image_url": "https://example.com/x.png"},
+            headers=headers,
+        )
+        assert response.status_code == 422

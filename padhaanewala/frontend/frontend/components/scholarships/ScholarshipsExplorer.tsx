@@ -167,7 +167,25 @@ export default function ScholarshipsExplorer({
               key={s.id}
               className="relative flex flex-col overflow-hidden rounded-2xl bg-white ring-1 ring-orange-100/70 card-shadow transition-all hover:-translate-y-1 hover:shadow-lg"
             >
-              <div className={`h-1.5 w-full bg-gradient-to-r ${s.color}`} />
+              {/* An admin-uploaded image replaces the 1.5px colour strip with a
+                  real banner. The strip is the fallback, not a permanent
+                  ornament, so it is only drawn when there is no image. */}
+              {s.imageUrl ? (
+                <div className="relative h-28 w-full overflow-hidden bg-slate-100">
+                  {/* eslint-disable-next-line @next/next/no-img-element -- the
+                      URL is same-origin media or an admin-supplied host. */}
+                  <img
+                    src={s.imageUrl}
+                    alt=""
+                    loading="lazy"
+                    decoding="async"
+                    className="h-full w-full object-cover"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/25 to-transparent" />
+                </div>
+              ) : (
+                <div className={`h-1.5 w-full bg-gradient-to-r ${s.color}`} />
+              )}
               <div className="flex flex-1 flex-col p-5">
                 <div className="flex items-start justify-between gap-3">
                   <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br text-white shadow-sm ${s.color}`}>
