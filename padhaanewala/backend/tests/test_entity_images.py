@@ -124,10 +124,9 @@ def test_college_image_round_trips_through_list_and_detail():
     the list one would look correct in an API test and be invisible on the
     page the admin was actually editing.
 
-    The name is chosen to sort before the seeded catalog and the request asks
-    for the smallest page, because `/colleges` is ordered by name and capped at
-    100 rows — a randomly-named college can fall off the first page, which would
-    make this test assert the wrong thing (paging) rather than the projection.
+    The name is chosen to sort before the seeded catalog, and we search by the
+    created slug rather than relying on a tiny page because leftover rows from
+    earlier runs can accumulate in the shared test schema.
     """
     headers = {"Authorization": f"Bearer {_make_admin_token()}"}
     name = f"AAA Imaged College {uuid.uuid4().hex[:6]}"
@@ -142,7 +141,7 @@ def test_college_image_round_trips_through_list_and_detail():
     assert body["image_url"] == "/media/files/7"
     slug = body["slug"]
 
-    listed = client.get("/api/v1/colleges", params={"limit": 5}).json()
+    listed = client.get("/api/v1/colleges", params={"limit": 100}).json()
     row = next((c for c in listed if c["slug"] == slug), None)
     assert row is not None, "created college missing from the list projection"
     assert row["image_url"] == "/media/files/7"
@@ -161,15 +160,14 @@ def test_every_college_list_row_carries_the_image_key():
     """The projection must include the column, not merely sometimes carry a value.
 
     A client reading `row.image_url` cannot tell a missing key from a null one
-    in JavaScript, so this asserts the key is present and null for rows that
-    have no image — which is every seeded college, since the migration adds the
-    column with no backfill.
+    in JavaScript, so this asserts the key is present. Seeded colleges have no
+    image because the migration adds the column with no backfill; a row created
+    earlier in this session might carry a value, so we check presence, not null.
     """
-    rows = client.get("/api/v1/colleges", params={"limit": 20}).json()
+    rows = client.get("/api/v1/colleges", params={"limit": 100}).json()
     assert rows, "no colleges returned"
     for row in rows:
         assert "image_url" in row, f"{row['slug']} has no image_url key"
-        assert row["image_url"] is None
 
 
 # ------------------------------------------------------------ scholarships
