@@ -29,7 +29,10 @@ const SLOTS = [
   {
     value: "home_top",
     label: "Homepage strip",
-    description: "The wide promotional banner across the top of the homepage.",
+    description:
+      "The promotional strip above the hero. One banner runs full width; several " +
+      "sit side by side and scroll sideways on smaller screens. Visitors can " +
+      "dismiss a promo, which hides only that banner.",
   },
   {
     value: "hero_card",
@@ -67,10 +70,10 @@ function linkError(link: string): string | null {
 /**
  * Create/edit form for one banner, shared by both slots.
  *
- * `slot` decides which fields are meaningful rather than hiding rows: the
- * strip has no CTA line in its layout, so the subtitle input is disabled and
- * labelled instead of vanishing — an admin switching slots mid-edit should see
- * what carried over, not watch a value disappear.
+ * The subtitle is labelled per slot rather than hidden: on a hero card it is
+ * the CTA line ("Register now"), in the strip it is a supporting line under the
+ * title. Both layouts render it, so the input is always available — hiding it
+ * made an admin-authored value invisible with no way to correct it.
  */
 function BannerForm({
   slot,
@@ -89,7 +92,6 @@ function BannerForm({
   onSubmit: () => void;
   onCancel: () => void;
 }) {
-  const subtitleUnsupported = slot !== HERO_SLOT;
   const invalidLink = linkError(draft.link_url);
 
   return (
@@ -104,13 +106,14 @@ function BannerForm({
         />
       </div>
       <div>
-        <Label htmlFor="banner-subtitle">CTA line</Label>
+        <Label htmlFor="banner-subtitle">
+          {slot === HERO_SLOT ? "CTA line" : "Supporting line"}
+        </Label>
         <Input
           id="banner-subtitle"
           value={draft.subtitle}
-          disabled={subtitleUnsupported}
           onChange={(e) => setDraft({ ...draft, subtitle: e.target.value })}
-          placeholder={subtitleUnsupported ? "Not shown in the strip" : "Register now"}
+          placeholder={slot === HERO_SLOT ? "Register now" : "Applications close 30 June"}
         />
       </div>
       <div>

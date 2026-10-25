@@ -46,6 +46,7 @@ import {
   getMockTestBySlug,
   getScholarshipBySlug,
   getScholarships,
+  getStripBanners,
 } from "@/lib/api-server";
 import {
   mapBlogPost,
@@ -351,6 +352,53 @@ export async function resolveHeroCards(): Promise<Resolved<HeroCard[]>> {
   // render. Showing the shipped defaults here would resurrect content the
   // admin deliberately removed.
   return { data: [], source: "empty" };
+}
+
+/* ------------------------------ home strip ---------------------------- */
+
+/**
+ * One promotional banner in the homepage strip (`position='home_top'`).
+ *
+ * Unlike `HeroCard`, the link is optional: the admin schema allows a banner
+ * with no `link_url`, and a promo can be informational ("Admissions close on
+ * 30 June") without sending the visitor anywhere. A row whose authored link is
+ * not renderable keeps the banner and drops the link rather than disappearing —
+ * the same reading `resolveHeroCards` gives a bad row, except that the strip has
+ * a non-link state to fall back to.
+ */
+export interface StripBanner {
+  id: number;
+  title: string;
+  /** Supporting line under the title, or null when the row has none. */
+  subtitle: string | null;
+  /** A renderable path or absolute URL, or null when there is nowhere to go. */
+  href: string | null;
+  /** Background image URL, or null when the row has no image. */
+  image: string | null;
+}
+
+/**
+ * The homepage strip, in `display_order`, unbounded.
+ *
+ * No shipped fallback, deliberately. A hero without its three shipped cards is
+ * a bare headline, but a strip without banners is simply a site with no
+ * promotion running — and inventing one would put words in the operator's
+ * mouth. So an unreachable backend and an emptied slot both resolve to
+ * `empty`, and `PromoStrip` renders nothing for either.
+ */
+export async function resolveHomeStrip(): Promise<Resolved<StripBanner[]>> {
+  const rows = await getStripBanners();
+  if (rows === null) return { data: [], source: "empty" };
+
+  const mapped: StripBanner[] = rows.map((r) => ({
+    id: r.id,
+    title: r.title,
+    subtitle: r.subtitle?.trim() || null,
+    href: isRenderableHref(r.link_url) ? r.link_url : null,
+    image: r.image_url?.trim() || null,
+  }));
+
+  return { data: mapped, source: mapped.length ? "api" : "empty" };
 }
 
 /* ------------------------------- slugs -------------------------------- */

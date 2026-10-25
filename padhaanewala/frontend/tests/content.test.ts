@@ -318,6 +318,107 @@ describe("resolveHeroCards", () => {
   });
 });
 
+/**
+ * The homepage strip. The one thing worth pinning beyond the mapping is that
+ * there is **no** shipped fallback here: an empty or unreachable `home_top`
+ * slot must render nothing, because a promo is an operator's message and the
+ * site cannot invent one.
+ */
+describe("resolveHomeStrip", () => {
+  const stripRow = {
+    id: 3,
+    title: "Admissions close 30 June",
+    subtitle: "  Apply before the deadline  ",
+    image_url: "https://example.com/admissions.jpg",
+    link_url: "/admission",
+    position: "home_top",
+    display_order: 1,
+    is_active: true,
+  };
+
+  it("maps title, supporting line, link and image", async () => {
+    stubFetch(() => json([stripRow]));
+    const { resolveHomeStrip } = await freshContent();
+
+    const result = await resolveHomeStrip();
+
+    expect(result.source).toBe("api");
+    expect(result.data).toEqual([
+      {
+        id: 3,
+        title: "Admissions close 30 June",
+        subtitle: "Apply before the deadline",
+        href: "/admission",
+        image: "https://example.com/admissions.jpg",
+      },
+    ]);
+  });
+
+  it("keeps a banner whose link is unsafe, dropping only the link", async () => {
+    // A non-renderable href must not take the whole promo down: the strip has a
+    // legitimate non-link state, so the message still shows.
+    stubFetch(() => json([{ ...stripRow, link_url: "javascript:alert(1)" }]));
+    const { resolveHomeStrip } = await freshContent();
+
+    const [banner] = (await resolveHomeStrip()).data;
+    expect(banner.title).toBe("Admissions close 30 June");
+    expect(banner.href).toBeNull();
+  });
+
+  it("treats a blank supporting line and image as null", async () => {
+    stubFetch(() => json([{ ...stripRow, subtitle: "   ", image_url: null }]));
+    const { resolveHomeStrip } = await freshContent();
+
+    const [banner] = (await resolveHomeStrip()).data;
+    expect(banner.subtitle).toBeNull();
+    expect(banner.image).toBeNull();
+  });
+
+  it("keeps every banner — the strip is unbounded", async () => {
+    stubFetch(() =>
+      json(
+        [1, 2, 3, 4, 5, 6].map((n) => ({
+          ...stripRow,
+          id: n,
+          title: `Promo ${n}`,
+          display_order: n,
+        })),
+      ),
+    );
+    const { resolveHomeStrip } = await freshContent();
+
+    expect((await resolveHomeStrip()).data.map((b) => b.title)).toEqual([
+      "Promo 1",
+      "Promo 2",
+      "Promo 3",
+      "Promo 4",
+      "Promo 5",
+      "Promo 6",
+    ]);
+  });
+
+  it("reports `empty` and shows nothing when the slot is empty", async () => {
+    stubFetch(() => json([]));
+    const { resolveHomeStrip } = await freshContent();
+
+    const result = await resolveHomeStrip();
+    expect(result.source).toBe("empty");
+    expect(result.data).toEqual([]);
+  });
+
+  it("still reports `empty` when the backend cannot be reached", async () => {
+    // Deliberately not `local`: there is no shipped promo to fall back to.
+    stubFetch(() => {
+      throw new Error("connect ECONNREFUSED 127.0.0.1:8000");
+    });
+    const { resolveHomeStrip } = await freshContent();
+
+    const result = await resolveHomeStrip();
+    expect(result.source).toBe("empty");
+    expect(result.data).toEqual([]);
+  });
+});
+
 describe("isRenderableHref", () => {
   it("accepts an internal path and an absolute http(s) URL", async () => {
     const { isRenderableHref } = await freshContent();

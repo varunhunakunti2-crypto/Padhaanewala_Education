@@ -670,59 +670,68 @@ export const getMockTests = (query = "") =>
 export const getMockTestBySlug = (slug: string) =>
   serverGet<ApiMockTest>(`/mock-tests/${encodeURIComponent(slug)}`, REVALIDATE.catalogDetail);
 
-export const getBanners = () => serverGetAll<ApiBanner>("/banners?limit=50", REVALIDATE.content);
+/** Rows per request. `GET /banners` caps `limit` at 100. */
+const BANNER_PAGE_SIZE = 100;
 
 /**
- * The hero section's floating cards, served from `banners` at
- * `position='hero_card'`.
+ * A guard against a backend that ignores `offset`. At 5,000 rows this is a bug
+ * in the caller, not a real hero or strip.
+ */
+const BANNER_MAX_PAGES = 50;
+
+/**
+ * Every visible row at one `position`, walking pages.
  *
- * A dedicated fetcher rather than a `position` argument on `getBanners`,
- * because the two callers want different things: the homepage wants the hero
+ * A dedicated fetcher rather than a `position` argument on the admin path,
+ * because the two callers want different things: the public pages want their
  * slot in full, while the admin console's `adminApi.banners` wants every row
  * including inactive ones. A shared function with a flag would push that
  * distinction into each call site, where it can be forgotten — and
  * `?include_inactive=true` is the flag that used to leak drafts to anonymous
  * callers on this very route.
  *
- * **Returns `null`, not `[]`, when the backend does not answer.** Every other
- * fetcher here collapses "no rows" and "no answer" into an empty array, which
- * is fine for a catalogue resolver whose fallback is a local dataset. The hero
- * needs the two kept apart: an empty `hero_card` slot is an admin's decision
- * and must render no cards, while an unreachable backend must keep the shipped
- * defaults. `serverGetAll` cannot express that, so this calls `serverGet` —
- * the only place in this module that checks for `null`.
+ * **Returns `null`, not `[]`, when the backend does not answer on the first
+ * page.** Every other fetcher here collapses "no rows" and "no answer" into an
+ * empty array, which is fine for a catalogue resolver whose fallback is a local
+ * dataset. The hero needs the two kept apart: an empty `hero_card` slot is an
+ * admin's decision and must render no cards, while an unreachable backend must
+ * keep the shipped defaults. `serverGetAll` cannot express that, so this calls
+ * `serverGet` — the only place in this module that checks for `null`. A failure
+ * after page one returns what is already known instead of throwing away rows
+ * the backend did answer with.
  *
  * The query string is what puts this on the `content:banners` tag
  * (`tagsFor` reads the first path segment), so an admin save followed by
  * `revalidate(["banners"])` expires these rows along with the rest.
  *
- * The hero list is unbounded, but the backend caps a page at 100 rows, so this
- * walks pages. A single request would silently truncate the 101st card an
- * admin adds — which reads as "my banner disappeared" rather than as a limit.
- * The 50-page guard is a stop against a backend that ignores `offset`; at 5,000
- * cards it is a bug in the caller, not a real hero.
+ * The public lists are unbounded, but the backend caps a page at 100 rows, so
+ * this walks pages. A single request would silently truncate the 101st banner
+ * an admin adds — which reads as "my banner disappeared" rather than as a
+ * limit.
  */
-export const getHeroCards = async (): Promise<ApiBanner[] | null> => {
-  const PAGE_SIZE = 100;
-  const MAX_PAGES = 50;
+async function getBannersAt(position: string): Promise<ApiBanner[] | null> {
   const cards: ApiBanner[] = [];
 
-  for (let page = 0; page < MAX_PAGES; page += 1) {
+  for (let page = 0; page < BANNER_MAX_PAGES; page += 1) {
     const rows = await serverGet<ApiBanner[]>(
-      `/banners?position=hero_card&limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`,
+      `/banners?position=${encodeURIComponent(position)}&limit=${BANNER_PAGE_SIZE}&offset=${page * BANNER_PAGE_SIZE}`,
       REVALIDATE.content,
     );
     // A 200 carrying something other than a list is a backend contract break,
-    // which is an outage as far as the hero is concerned - `null`, not `[]`.
-    // A failure after page one returns what is already known instead of
-    // throwing away cards the backend did answer with.
+    // which is an outage as far as the public site is concerned - `null`, not [].
     if (rows === null || !Array.isArray(rows)) return page === 0 ? null : cards;
     cards.push(...rows);
-    if (rows.length < PAGE_SIZE) return cards;
+    if (rows.length < BANNER_PAGE_SIZE) return cards;
   }
 
   return cards;
-};
+}
+
+/** The hero section's floating cards, served at `position='hero_card'`. */
+export const getHeroCards = () => getBannersAt("hero_card");
+
+/** The homepage strip above the hero, served at `position='home_top'`. */
+export const getStripBanners = () => getBannersAt("home_top");
 
 export interface ApiCollegeBundle {
   detail: ApiCollegeDetail;

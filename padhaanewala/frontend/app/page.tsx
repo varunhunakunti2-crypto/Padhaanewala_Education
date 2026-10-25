@@ -1,4 +1,5 @@
 import { HeroSection } from "@/components/home/hero/HeroSection";
+import { PromoStrip } from "@/components/home/PromoStrip";
 import { QuickActions } from "@/components/home/QuickActions";
 import { PopularCourses } from "@/components/home/PopularCourses";
 import { FeaturedColleges } from "@/components/home/FeaturedColleges";
@@ -17,6 +18,7 @@ import {
   resolveCourses,
   resolveExams,
   resolveHeroCards,
+  resolveHomeStrip,
   resolveScholarships,
 } from "@/lib/content";
 import { pageMetadata } from "@/lib/seo";
@@ -39,22 +41,27 @@ export const metadata = pageMetadata({
 });
 
 export default async function HomePage() {
-  // These six requests are independent, so they are issued concurrently. Each
+  // These seven requests are independent, so they are issued concurrently. Each
   // resolver returns only what the backend actually holds — an empty list when
   // the table is empty, and the sections below render their own empty states.
   // `resolveHeroCards` is the one that falls back to the shipped defaults,
   // because an unreachable backend would otherwise leave the hero bare.
-  const [colleges, courses, exams, scholarships, posts, heroCards] = await Promise.all([
+  const [colleges, courses, exams, scholarships, posts, heroCards, strip] = await Promise.all([
     resolveColleges(),
     resolveCourses(),
     resolveExams(),
     resolveScholarships(),
     resolveBlogPosts(),
     resolveHeroCards(),
+    resolveHomeStrip(),
   ]);
 
   return (
     <>
+      {/* Renders nothing when the `home_top` slot is empty — the section owns
+          its own top padding, so it collapses cleanly instead of leaving a
+          gap above the hero. */}
+      <PromoStrip banners={strip.data} />
       <HeroSection
         collegeCount={colleges.data.length}
         courseCount={courses.data.length}
