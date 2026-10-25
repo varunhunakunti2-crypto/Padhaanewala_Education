@@ -31,6 +31,7 @@ from app.media_store import (
     sniff_image_type,
 )
 from app.models import College, Media, Role, User
+from app.routers.media import LIBRARY_ENTITY_ID, LIBRARY_ENTITY_TYPE
 
 client = TestClient(app)
 BASE = "/api/v1"
@@ -295,6 +296,53 @@ class TestUploadRefusals:
 
 
 class TestUploadRoundTrip:
+    def test_upload_without_an_entity_stays_in_the_library(self, content_admin):
+        """The Media library is the only upload point.
+
+        An image is uploaded before the banner, post or college it decorates
+        exists, so an upload with no entity must be accepted. Both columns are
+        NOT NULL, so the unattached state is the explicit sentinel pair rather
+        than a null.
+        """
+        response = client.post(
+            f"{BASE}/media/upload",
+            files={"file": ("library.png", PNG, "image/png")},
+            headers=content_admin,
+        )
+        assert response.status_code == 201, response.text
+        body = response.json()
+        try:
+            assert body["entity_type"] == LIBRARY_ENTITY_TYPE
+            assert body["entity_id"] == LIBRARY_ENTITY_ID
+            # It is a real asset, not a row without bytes behind it.
+            assert client.get(body["url"]).content == PNG
+        finally:
+            _purge([body["id"]])
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {"entity_type": "college"},
+            {"entity_id": "1"},
+            {"entity_type": "  ", "entity_id": "1"},
+        ],
+    )
+    def test_half_an_entity_pair_is_refused(self, content_admin, payload):
+        """A type without an id, or an id without a type, is not guessed.
+
+        Guessing would write a soft reference that no listing can find again —
+        the exact failure `upload_media`'s docstring warns about. Omitting both
+        means "library"; supplying one means the caller lost half the value.
+        """
+        response = client.post(
+            f"{BASE}/media/upload",
+            files={"file": ("half.png", PNG, "image/png")},
+            data=payload,
+            headers=content_admin,
+        )
+        assert response.status_code == 422, response.text
+        assert "both entity_type and entity_id" in response.json()["detail"]
+
     def test_upload_registers_and_serves_the_same_bytes(self, content_admin, college_id):
         response = _upload(
             content_admin,

@@ -108,11 +108,10 @@ export function ExamFormFields({
         <ImageField
           id="exam-image"
           label="Hero image"
-          entityType="exam"
           value={values.image_url}
           onChange={(v) => set("image_url", v)}
           disabled={disabled}
-          hint="Upload a file or paste an image URL. Leave blank to keep the purple gradient hero."
+          hint="Pick a file from the Media library. Leave blank to keep the purple gradient hero."
         />
       </FieldSet>
 

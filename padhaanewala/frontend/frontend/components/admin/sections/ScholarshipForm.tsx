@@ -159,11 +159,10 @@ export function ScholarshipFormFields({
         <ImageField
           id="scholarship-image"
           label="Image"
-          entityType="scholarship"
           value={values.image_url}
           onChange={(v) => set("image_url", v)}
           disabled={disabled}
-          hint="Upload a file or paste an image URL. Leave blank to keep the coloured card band."
+          hint="Pick a file from the Media library. Leave blank to keep the coloured card band."
         />
       </FieldSet>
 

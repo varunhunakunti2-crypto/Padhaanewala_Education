@@ -21,15 +21,25 @@ import { ApiError } from "@/lib/api";
  *    so the constant below mirrors the default and exists to fail fast. The 413
  *    from `media_store.save` is what actually refuses an oversized file.
  *
- * ## The entity pair is the whole point of this screen
+ * ## The entity pair is a soft reference
  *
- * `media.entity_type` / `media.entity_id` is a **soft reference** — there is no
- * foreign key to `college`, `blog` or anything else — so a typo writes a row
- * that no listing will ever find again. `upload_media`'s docstring says so
- * outright and deliberately leaves the check to this side of the wire, because
- * validating it properly would need an entity-type registry the schema does not
- * have. So the *only* safeguard is that the admin picks both halves out of a
- * real list, which is why `buildMediaUpload` refuses to accept a typed id.
+ * `media.entity_type` / `media.entity_id` has no foreign key to `college`,
+ * `blog` or anything else, so a typo writes a row that no listing will ever
+ * find again. `upload_media`'s docstring says so outright and deliberately
+ * leaves the check to this side of the wire, because validating it properly
+ * would need an entity-type registry the schema does not have. The safeguard is
+ * that the admin picks both halves out of a real list, which is why
+ * `buildMediaUpload` refuses to accept a typed id.
+ *
+ * ## The library is a first-class destination
+ *
+ * The Media library is the only place an image can be uploaded, and an image is
+ * often uploaded *before* the record it will decorate exists — a new banner, a
+ * draft post, a logo on a college that has not been created yet. Both columns
+ * are `NOT NULL`, so "no record" is stored as the explicit sentinel pair
+ * `library` / `0` rather than as null. Nothing joins on it; the pair only says
+ * which record the asset was uploaded for, and the picker in each form is what
+ * actually links an image to a record.
  */
 
 /* ------------------------------------------------------------------ *
@@ -90,6 +100,17 @@ export const MEDIA_ENTITY_TYPES = [
 ] as const;
 
 /**
+ * The stored value for an image that is not attached to a record yet.
+ *
+ * `media.entity_type` and `media.entity_id` are `NOT NULL`, so there is no null
+ * to write. A sentinel keeps the schema honest: it is clearly not a real entity
+ * type, it cannot collide with one of {@link MEDIA_ENTITY_TYPES}, and the
+ * library grid can recognise it instead of printing a meaningless `#0`.
+ */
+export const MEDIA_LIBRARY_ENTITY_TYPE = "library";
+export const MEDIA_LIBRARY_ENTITY_ID = 0;
+
+/**
  * A label for an `entity_type`, falling back to the stored value.
  *
  * The fallback is load-bearing for the library grid, not a nicety: rows written
@@ -101,6 +122,7 @@ export const MEDIA_ENTITY_TYPES = [
 export function mediaEntityLabel(entityType: string | null | undefined): string {
   const value = (entityType ?? "").trim();
   if (value === "") return "Unattached";
+  if (value === MEDIA_LIBRARY_ENTITY_TYPE) return "Library";
   return MEDIA_ENTITY_TYPES.find((t) => t.value === value)?.label ?? value;
 }
 
@@ -222,11 +244,12 @@ export interface MediaFormValues {
 }
 
 /**
- * Defaults to `college`, because that is the case this panel was built for: a
- * college record with no logo.
+ * Defaults to the library, because an upload no longer happens from an entity's
+ * own form: the admin uploads here first and picks the image later. Attaching
+ * the file to a record is still offered, but it is optional metadata.
  */
 export const EMPTY_MEDIA_FORM: MediaFormValues = {
-  entity_type: "college",
+  entity_type: MEDIA_LIBRARY_ENTITY_TYPE,
   entity_id: "",
   image_type: "",
   alt_text: "",
@@ -245,9 +268,9 @@ function buildFail(error: string): MediaUploadBuild {
  * Build the multipart body for `POST /media/upload`.
  *
  * The part names must match the `Form(...)` parameters on the route exactly —
- * `file`, `entity_type`, `entity_id`, `image_type`, `alt_text`, `display_order`
- * — and the first two are required. Every part here is a string or a `File`,
- * because that is all `FormData` carries and FastAPI does the rest.
+ * `file`, `entity_type`, `entity_id`, `image_type`, `alt_text`, `display_order`.
+ * Every part here is a string or a `File`, because that is all `FormData` carries
+ * and FastAPI does the rest.
  */
 export function buildMediaUpload(values: MediaFormValues, file: File | null): MediaUploadBuild {
   const checked = validateMediaFile(file);
@@ -260,13 +283,20 @@ export function buildMediaUpload(values: MediaFormValues, file: File | null): Me
     return buildFail(`An entity type cannot be longer than ${MEDIA_ENTITY_TYPE_MAX} characters.`);
   }
   const label = mediaEntityLabel(entityType).toLowerCase();
+  const inLibrary = entityType === MEDIA_LIBRARY_ENTITY_TYPE;
 
-  const entityId = values.entity_id.trim();
-  if (entityId === "") return buildFail(`Choose which ${label} this image belongs to.`);
-  // Not a type check on the option list: a select can only produce what it was
-  // given, and this guards the value that actually reaches the column.
-  if (!/^\d+$/.test(entityId) || Number(entityId) < 1) {
-    return buildFail(`The ${label} id must be a positive whole number.`);
+  let entityId = values.entity_id.trim();
+  if (inLibrary) {
+    // The picker hides the record select in this case, so a value left over from
+    // a previously chosen type must not be sent alongside the sentinel.
+    entityId = String(MEDIA_LIBRARY_ENTITY_ID);
+  } else {
+    if (entityId === "") return buildFail(`Choose which ${label} this image belongs to.`);
+    // Not a type check on the option list: a select can only produce what it was
+    // given, and this guards the value that actually reaches the column.
+    if (!/^\d+$/.test(entityId) || Number(entityId) < 1) {
+      return buildFail(`The ${label} id must be a positive whole number.`);
+    }
   }
 
   const imageType = values.image_type.trim();
