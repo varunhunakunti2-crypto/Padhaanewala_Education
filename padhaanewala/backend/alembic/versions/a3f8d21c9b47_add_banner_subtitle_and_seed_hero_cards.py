@@ -1,8 +1,15 @@
 """Admin-editable hero cards: add `banners.subtitle` and seed the hero slot.
 
     Revision ID: a3f8d21c9b47
-    Revises: e6b2f4a90c31
+    Revises: 2f6cf2af09de
     Create Date: 2026-10-21 00:00:00.000000
+
+Re-parented onto `2f6cf2af09de` when this migration met the
+`add_colleges_filter_indexes` head on `feature/add-college`. It was authored
+against `e6b2f4a90c31` on `main`, which left two heads once the branches
+merged; the chain here is kept strictly linear (no merge revisions), so the
+newer revision is the parent. Nothing in this migration depends on the order
+of the two, it only touches `banners`.
 
 The hero section's three floating cards ("Top Engineering Colleges",
 "Scholarships", "Compare Colleges") were hardcoded in
@@ -37,7 +44,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "a3f8d21c9b47"
-down_revision: str | Sequence[str] | None = "e6b2f4a90c31"
+down_revision: str | Sequence[str] | None = "2f6cf2af09de"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
