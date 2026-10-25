@@ -27,6 +27,7 @@ from app.schemas.auth import (
 from app.schemas.common import StandardResponse, TokenResponse
 from app.services import email_service, otp_service, session_service, sms_service
 from app.services.compliance_service import GUARDIAN_CONSENT_VERSION
+from app.utils import audit
 from app.utils.client_ip import client_ip
 from app.utils.security import (
     decode_token,
@@ -307,6 +308,21 @@ def login(
 
     user.last_login_at = datetime.now(UTC)
     body = _issue_session(db, user, request, response)
+    # A sign-in is a privileged event on the account and, until this existed,
+    # the one thing a student's audit history never contained: the audit trail
+    # only covered catalogue/admin mutations, so "when did this person last log
+    # in?" had no answer beyond the single `users.last_login_at` timestamp. The
+    # response never exposes the password, and `new_value` records only the
+    # method — never the credential.
+    audit.record(
+        db,
+        request=request,
+        action="login",
+        entity_type="user",
+        entity_id=user.id,
+        actor=user,
+        new_value={"method": "password"},
+    )
     db.commit()
 
     return body
@@ -631,6 +647,22 @@ def verify_login_otp(
     # checked the flag at all.
     if settings.EMAIL_VERIFICATION_REQUIRED and not user.is_email_verified:
         raise _email_not_verified(user)
+
+    # Recorded after the gate, unlike the password path where the gate runs
+    # before the session is issued. Reaching this line is a sign-in that
+    # returned tokens; a 403 for an unverified address is not, and an audit row
+    # for it would show a login that never happened. The row is committed
+    # separately because the session above already was.
+    audit.record(
+        db,
+        request=request,
+        action="login",
+        entity_type="user",
+        entity_id=user.id,
+        actor=user,
+        new_value={"method": "otp"},
+    )
+    db.commit()
 
     return body
 

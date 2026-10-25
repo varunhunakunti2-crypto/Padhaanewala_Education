@@ -496,6 +496,66 @@ def test_audit_logs_requires_admin(student):
     assert response.status_code == 403
 
 
+def test_audit_logs_search_by_the_actors_name(admin_token):
+    """The search that turns this screen into a person's history.
+
+    The console used to filter the fifty rows it had loaded, which is not a
+    search of the audit trail — a login history is exactly the list that
+    outgrows one page, and the entry being looked for is usually the older one.
+    `q` therefore runs in SQL, against the actor's name (and the email that
+    `display_name` falls back to), the action, the entity type and the IP.
+    """
+    name = f"Riya Sharma {uuid.uuid4().hex[:8]}"
+    email = _unique("riya")
+    registered = client.post(
+        "/api/v1/auth/register",
+        json={
+            "name": name,
+            "email": email,
+            "mobile": _unique_mobile(),
+            "password": "SecurePass123!",
+            "age_band": "18_plus",
+        },
+    )
+    assert registered.status_code == 201, registered.text
+    login = client.post(
+        "/api/v1/auth/login", json={"email": email, "password": "SecurePass123!"}
+    )
+    assert login.status_code == 200, login.text
+
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    response = client.get("/api/v1/audit-logs", params={"q": name}, headers=headers)
+    assert response.status_code == 200, response.text
+    rows = response.json()
+    assert rows, "a search by the actor's name returned nothing"
+    assert all(row["username"] == name for row in rows), rows
+    assert any(
+        row["action"] == "login" and row["new_value"]["method"] == "password"
+        for row in rows
+    ), "the sign-in did not appear in the person's audit history"
+
+    # Lower case still matches (the column comparison is ILIKE), and `action`
+    # narrows the same search to sign-ins — the "Logins only" control.
+    logins = client.get(
+        "/api/v1/audit-logs",
+        params={"q": name.lower(), "action": "login"},
+        headers=headers,
+    )
+    assert logins.status_code == 200
+    assert logins.json()
+    assert all(row["action"] == "login" for row in logins.json())
+    assert all(row["username"] == name for row in logins.json())
+
+    # A miss is empty, not "the filter was ignored and here is everything".
+    miss = client.get(
+        "/api/v1/audit-logs",
+        params={"q": f"no-such-person-{uuid.uuid4().hex}"},
+        headers=headers,
+    )
+    assert miss.status_code == 200
+    assert miss.json() == []
+
+
 # ---------- Banners ----------
 
 
