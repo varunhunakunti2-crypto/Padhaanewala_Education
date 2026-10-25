@@ -677,12 +677,12 @@ export const getBanners = () => serverGetAll<ApiBanner>("/banners?limit=50", REV
  * `position='hero_card'`.
  *
  * A dedicated fetcher rather than a `position` argument on `getBanners`,
- * because the two callers want different things: the homepage wants exactly
- * the hero slot (pinned to the 3 the hero can lay out), while the admin
- * console's `adminApi.banners` wants every row including inactive ones. A
- * shared function with a flag would push that distinction into each call site,
- * where it can be forgotten — and `?include_inactive=true` is the flag that
- * used to leak drafts to anonymous callers on this very route.
+ * because the two callers want different things: the homepage wants the hero
+ * slot in full, while the admin console's `adminApi.banners` wants every row
+ * including inactive ones. A shared function with a flag would push that
+ * distinction into each call site, where it can be forgotten — and
+ * `?include_inactive=true` is the flag that used to leak drafts to anonymous
+ * callers on this very route.
  *
  * **Returns `null`, not `[]`, when the backend does not answer.** Every other
  * fetcher here collapses "no rows" and "no answer" into an empty array, which
@@ -695,16 +695,33 @@ export const getBanners = () => serverGetAll<ApiBanner>("/banners?limit=50", REV
  * The query string is what puts this on the `content:banners` tag
  * (`tagsFor` reads the first path segment), so an admin save followed by
  * `revalidate(["banners"])` expires these rows along with the rest.
+ *
+ * The hero list is unbounded, but the backend caps a page at 100 rows, so this
+ * walks pages. A single request would silently truncate the 101st card an
+ * admin adds — which reads as "my banner disappeared" rather than as a limit.
+ * The 50-page guard is a stop against a backend that ignores `offset`; at 5,000
+ * cards it is a bug in the caller, not a real hero.
  */
 export const getHeroCards = async (): Promise<ApiBanner[] | null> => {
-  const data = await serverGet<ApiBanner[]>(
-    "/banners?position=hero_card&limit=3",
-    REVALIDATE.content,
-  );
-  // A 200 carrying something other than a list is a backend contract break,
-  // which is an outage as far as the hero is concerned — `null`, not `[]`.
-  if (data === null) return null;
-  return Array.isArray(data) ? data : null;
+  const PAGE_SIZE = 100;
+  const MAX_PAGES = 50;
+  const cards: ApiBanner[] = [];
+
+  for (let page = 0; page < MAX_PAGES; page += 1) {
+    const rows = await serverGet<ApiBanner[]>(
+      `/banners?position=hero_card&limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`,
+      REVALIDATE.content,
+    );
+    // A 200 carrying something other than a list is a backend contract break,
+    // which is an outage as far as the hero is concerned - `null`, not `[]`.
+    // A failure after page one returns what is already known instead of
+    // throwing away cards the backend did answer with.
+    if (rows === null || !Array.isArray(rows)) return page === 0 ? null : cards;
+    cards.push(...rows);
+    if (rows.length < PAGE_SIZE) return cards;
+  }
+
+  return cards;
 };
 
 export interface ApiCollegeBundle {

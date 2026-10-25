@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -35,17 +35,15 @@ const SLOTS = [
     value: "hero_card",
     label: "Hero cards",
     description:
-      "The floating cards beside the hero search. Up to 3 show, in display order. " +
-      "Use a CTA line and a short link — this is where a new exam or feature gets surfaced.",
+      "The floating cards beside the hero search. They stack in display order and " +
+      "scroll inside the hero, so add as many as you need. Use a CTA line and a " +
+      "short link — this is where a new exam or feature gets surfaced.",
   },
 ] as const;
 
 type SlotValue = (typeof SLOTS)[number]["value"];
 
 const HERO_SLOT: SlotValue = "hero_card";
-
-/** The hero lays out at most 3 cards; the panel slices anything beyond. */
-const HERO_SLOT_CAPACITY = 3;
 
 interface BannerDraft {
   title: string;
@@ -123,6 +121,12 @@ function BannerForm({
           onChange={(e) => setDraft({ ...draft, image_url: e.target.value })}
           placeholder="https://…"
         />
+        <p className="mt-1 text-[11px] leading-snug text-slate-500">
+          Best: upload the file in the Media library and paste its
+          {" "}<code>/api/v1/media/files/…</code> path here. A third-party URL works
+          only if that host is allowlisted in the site CSP; otherwise the card
+          shows its initial instead.
+        </p>
       </div>
       <div className="sm:col-span-2">
         <Label htmlFor="banner-link">Link URL</Label>
@@ -200,6 +204,21 @@ export function BannersSection() {
   const [creating, setCreating] = useState(false);
   const [draft, setDraft] = useState<BannerDraft>(EMPTY_DRAFT);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const formRef = useRef<HTMLDivElement | null>(null);
+
+  /**
+   * Bring the editor into view when it opens.
+   *
+   * The form renders above the card grid, so on a list taller than the screen
+   * clicking "Edit" on a lower card looked like nothing happened — the form was
+   * there, just off-screen. `scrollIntoView` is optional-called because jsdom
+   * (the test environment) does not implement it.
+   */
+  useEffect(() => {
+    if (creating || editingId !== null) {
+      formRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+    }
+  }, [creating, editingId]);
 
   const slotMeta = SLOTS.find((s) => s.value === slot) ?? SLOTS[0];
 
@@ -209,8 +228,14 @@ export function BannersSection() {
     return banners.filter((b) => b.position === slot);
   }, [banners, slot]);
 
-  const heroCount = visible?.length ?? 0;
-  const atHeroCapacity = slot === HERO_SLOT && heroCount >= HERO_SLOT_CAPACITY;
+  /** Append new cards after the existing ones. The backend defaults to 0,
+   *  which would put every new card ahead of the three seeded rows and make the
+   *  list reorder itself on each save. `visible` includes paused rows, so a
+   *  paused card's slot keeps its place in the scroll order when reactivated. */
+  const nextDisplayOrder = () => {
+    if (!visible || visible.length === 0) return 0;
+    return Math.max(...visible.map((b) => b.display_order)) + 1;
+  };
 
   const startCreate = () => {
     setEditingId(null);
@@ -235,19 +260,31 @@ export function BannersSection() {
     setDraft(EMPTY_DRAFT);
   };
 
-  /** Both create and edit end here, so the ISR purge runs for either. */
-  const afterWrite = async (verb: string, title: string) => {
-    reload();
-    // The public pages read banners through the `content:banners` tag. Without
-    // this the homepage keeps serving the pre-write cards until the ISR window
-    // expires, so an admin who saves and clicks through sees nothing change.
-    // Best-effort: a failed purge only delays the update, so it must not turn
-    // a successful save into an error toast.
+  /**
+   * Expire the public pages that read banners.
+   *
+   * Every mutation has to call this — not just create/edit/delete. A pause or
+   * resume changes the set of cards the homepage renders just as much as a
+   * delete does, and leaving it out meant the hero kept showing the old set
+   * until the ISR window expired. That is how "I added 2 cards but only 1 is
+   * visible" happens: the second card was paused when the page snapshot was
+   * taken and resumed afterwards, with nothing telling the page to rebuild.
+   *
+   * Best-effort: a failed purge only delays the update, so it must not turn a
+   * successful write into an error toast.
+   */
+  const purgePublic = async () => {
     try {
       await adminApi.revalidate(["banners"]);
     } catch {
       /* the ISR window will pick it up */
     }
+  };
+
+  /** Both create and edit end here, so the ISR purge runs for either. */
+  const afterWrite = async (verb: string, title: string) => {
+    reload();
+    await purgePublic();
     showToast({ title: `${verb} ${title}`, description: "Changes are live on the homepage.", variant: "success" });
   };
 
@@ -261,6 +298,7 @@ export function BannersSection() {
         image_url: draft.image_url.trim() || null,
         link_url: draft.link_url.trim() || null,
         position: slot,
+        display_order: nextDisplayOrder(),
         is_active: true,
       });
       cancelForm();
@@ -304,6 +342,7 @@ export function BannersSection() {
     try {
       const updated = await adminApi.updateBanner(banner.id, { is_active: !banner.is_active });
       reload();
+      await purgePublic();
       showToast({
         title: `${updated.is_active ? "Enabled" : "Paused"} ${banner.title}`,
         // Not "visibility updated": enabling a banner whose schedule has expired
@@ -346,7 +385,7 @@ export function BannersSection() {
         description="Promote exams, features and offers on the public site"
         count={visible?.length}
         action={
-          <Button type="button" size="sm" variant="accent" onClick={startCreate} disabled={atHeroCapacity}>
+          <Button type="button" size="sm" variant="accent" onClick={startCreate}>
             <Plus className="h-4 w-4" /> Add banner
           </Button>
         }
@@ -381,35 +420,37 @@ export function BannersSection() {
         </p>
       )}
 
-      {atHeroCapacity && (
-        <p className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200">
-          The hero shows the 3 cards with the lowest display order. Delete or pause one to add another.
-        </p>
-      )}
+      <div ref={formRef} className="scroll-mt-24">
+        {(creating || editingId !== null) && (
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-purple-700">
+            {creating ? "New banner" : `Editing “${draft.title.trim() || "banner"}”`}
+          </p>
+        )}
 
-      {creating && (
-        <BannerForm
-          slot={slot}
-          draft={draft}
-          setDraft={setDraft}
-          busy={busyId === -1}
-          submitLabel={busyId === -1 ? "Creating…" : "Create banner"}
-          onSubmit={create}
-          onCancel={cancelForm}
-        />
-      )}
+        {creating && (
+          <BannerForm
+            slot={slot}
+            draft={draft}
+            setDraft={setDraft}
+            busy={busyId === -1}
+            submitLabel={busyId === -1 ? "Creating…" : "Create banner"}
+            onSubmit={create}
+            onCancel={cancelForm}
+          />
+        )}
 
-      {editingId !== null && (
-        <BannerForm
-          slot={slot}
-          draft={draft}
-          setDraft={setDraft}
-          busy={busyId === editingId}
-          submitLabel={busyId === editingId ? "Saving…" : "Save changes"}
-          onSubmit={saveEdit}
-          onCancel={cancelForm}
-        />
-      )}
+        {editingId !== null && (
+          <BannerForm
+            slot={slot}
+            draft={draft}
+            setDraft={setDraft}
+            busy={busyId === editingId}
+            submitLabel={busyId === editingId ? "Saving…" : "Save changes"}
+            onSubmit={saveEdit}
+            onCancel={cancelForm}
+          />
+        )}
+      </div>
 
       {loading ? (
         <p className="rounded-2xl border border-dashed border-slate-200 py-12 text-center text-sm text-slate-400">
@@ -424,7 +465,15 @@ export function BannersSection() {
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           {(visible ?? []).map((b, i) => (
-            <div key={b.id} className="rounded-2xl border border-slate-200 p-4">
+            <div
+              key={b.id}
+              className={cn(
+                "rounded-2xl border p-4 transition-colors",
+                editingId === b.id
+                  ? "border-purple-400 ring-2 ring-purple-100"
+                  : "border-slate-200",
+              )}
+            >
               <div
                 className={cn(
                   "grid h-28 place-items-center rounded-xl text-white",
@@ -433,7 +482,12 @@ export function BannersSection() {
               >
                 {b.image_url ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={b.image_url} alt="" className="h-full w-full rounded-xl object-cover" />
+                  <img
+                    src={b.image_url}
+                    alt=""
+                    referrerPolicy="no-referrer"
+                    className="h-full w-full rounded-xl object-cover"
+                  />
                 ) : (
                   <span className="px-3 text-center text-sm font-bold">{b.title}</span>
                 )}
@@ -471,6 +525,7 @@ export function BannersSection() {
                     aria-label={`Edit ${b.title}`}
                   >
                     <Pencil className="h-3.5 w-3.5" />
+                    Edit
                   </Button>
                   <Button
                     type="button"

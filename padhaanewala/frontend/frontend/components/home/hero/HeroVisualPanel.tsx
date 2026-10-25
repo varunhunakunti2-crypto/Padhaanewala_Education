@@ -1,7 +1,7 @@
 "use client";
 
+import { useState } from "react";
 import { motion } from "motion/react";
-import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import type { HeroCard } from "@/lib/content";
@@ -68,18 +68,56 @@ const FALLBACK_CARDS: HeroCard[] = [
   },
 ];
 
-/** Cards are dropped when the hero has no room to place them. */
-const MAX_CARDS = 3;
-
 /**
- * Vertical offset per slot. The panel is a fixed-height absolute canvas, so
- * the positions are authored rather than flowed — which is why the count is
- * capped above: a fourth card would run past the canvas edge.
+ * The 44px thumbnail on a card: the admin's image, or the title's initial.
  *
- * The gap between slots (95px) is the card height (80px) plus breathing room,
- * and the first slot starts at 140px so the cards clear the handwriting doodle.
+ * ## Why a plain `<img>` and not `next/image`
+ *
+ * `card.thumb` is whatever the admin typed into the banner form. `next/image`
+ * routes it through `/_next/image`, which rejects every host that is not in
+ * `images.remotePatterns` — a build-time list that cannot know what an operator
+ * will paste — and the rejection throws during render, taking the whole
+ * homepage to the error boundary. `EntityImage` reached the same conclusion for
+ * catalogue images; this is the hero's version of that rule. The same-origin
+ * media path an upload produces is covered by `img-src 'self'`, and a remote
+ * host is covered by `CSP_IMAGE_HOSTS` (see `proxy.ts`).
+ *
+ * `onError` covers the remaining cases — a typo'd URL, a dead host, a hotlink
+ * the stock site refuses, or a host the CSP blocks. The letter placeholder that
+ * was already the no-image state stands in, so a bad URL costs one thumbnail
+ * instead of a crash.
  */
-const CARD_TOP_PX = [140, 235, 330];
+function CardThumb({ thumb, title }: { thumb?: string | null; title: string }) {
+  const url = typeof thumb === "string" ? thumb.trim() : "";
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  const showImage = Boolean(url) && failedUrl !== url;
+
+  return (
+    <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-lg bg-white/10">
+      {showImage ? (
+        // eslint-disable-next-line @next/next/no-img-element -- admin-supplied URL, see docstring
+        <img
+          src={url}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          // Stock CDNs routinely 403 a hotlink based on Referer, and there is
+          // no reason to tell a third-party host which hero card was clicked.
+          referrerPolicy="no-referrer"
+          onError={() => setFailedUrl(url)}
+          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-110"
+        />
+      ) : (
+        <span
+          aria-hidden
+          className="grid h-full w-full place-items-center text-lg font-bold text-purple-200"
+        >
+          {title.charAt(0)}
+        </span>
+      )}
+    </div>
+  );
+}
 
 /**
  * True when the link should open in a new tab.
@@ -94,65 +132,68 @@ export function opensInNewTab(href: string): boolean {
 
 export function HeroVisualPanel({ cards }: { cards?: HeroCard[] }) {
   // `undefined` (caller chose not to resolve) falls back; an explicit empty
-  // array (admin cleared the slot) stays empty.
-  const visible = (cards ?? FALLBACK_CARDS).slice(0, MAX_CARDS);
+  // array (admin cleared the slot) stays empty. No slice: the list scrolls.
+  const visible = cards ?? FALLBACK_CARDS;
 
   return (
     <div className="relative hidden h-[600px] w-full lg:block">
       {/* Handwriting doodle top right */}
       <Handwriting />
 
-      {/* Floating Glassmorphic Cards on the right */}
-      <div className="absolute right-0 top-0 h-full w-72 pointer-events-none">
-        {visible.map((card, index) => {
-          const external = opensInNewTab(card.href);
-          return (
-            <motion.div
-              key={`${card.href}-${index}`}
-              initial={{ opacity: 0, x: 25 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.6, delay: 0.3 + index * 0.15, ease: [0.22, 1, 0.36, 1] }}
-              style={{ top: CARD_TOP_PX[index], right: 16 }}
-              className="pointer-events-auto absolute w-[240px]"
-            >
-              <Link
-                href={card.href}
-                target={external ? "_blank" : undefined}
-                rel={external ? "noopener noreferrer" : undefined}
-                className="group flex items-center gap-3 rounded-xl border border-white/20 bg-slate-900/60 p-2.5 shadow-xl backdrop-blur-md transition-all duration-300 hover:scale-[1.03] hover:border-white/40 hover:bg-slate-900/75"
-              >
-                <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-lg bg-white/10">
-                  {card.thumb ? (
-                    <Image
-                      src={card.thumb}
-                      alt=""
-                      fill
-                      sizes="44px"
-                      className="object-cover transition-transform duration-300 group-hover:scale-110"
-                    />
-                  ) : (
-                    <span
-                      aria-hidden
-                      className="grid h-full w-full place-items-center text-lg font-bold text-purple-200"
-                    >
-                      {card.title.charAt(0)}
-                    </span>
-                  )}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="line-clamp-2 text-xs font-semibold leading-tight text-white group-hover:text-purple-200">
-                    {card.title}
-                  </p>
-                  <p className="mt-1 flex items-center gap-1 text-[10px] font-medium text-purple-300 group-hover:text-white">
-                    {card.action}
-                    <ArrowRight className="h-2.5 w-2.5 transition-transform group-hover:translate-x-0.5" />
-                  </p>
-                </div>
-              </Link>
-            </motion.div>
-          );
-        })}
+      {/*
+        Scrolling card column, starting below the handwriting doodle.
+        There is no cap: the admin adds as many cards as the slot needs and the
+        list scrolls inside the 600px panel (roughly six visible at a time)
+        instead of running past the canvas. The old three-slot absolute
+        positioning (`top: 140/235/330px`) only ever had room for three.
 
+        `overscroll-contain` stops a wheel gesture at the end of the list from
+        scrolling the page behind it, which otherwise makes the hero jump under
+        the cursor.
+      */}
+      <div
+        role="region"
+        aria-label="Featured updates"
+        className="absolute bottom-0 right-0 top-[140px] w-72 overflow-y-auto overflow-x-hidden overscroll-contain px-1 pb-6 [scrollbar-color:rgba(255,255,255,0.28)_transparent] [scrollbar-width:thin]"
+      >
+        <div className="flex flex-col gap-3">
+          {visible.map((card, index) => {
+            const external = opensInNewTab(card.href);
+            return (
+              <motion.div
+                key={`${card.href}-${index}`}
+                initial={{ opacity: 0, x: 25 }}
+                animate={{ opacity: 1, x: 0 }}
+                // Capped: card 20 should not wait three seconds to appear. The
+                // stagger is a flourish, not a queue.
+                transition={{
+                  duration: 0.6,
+                  delay: Math.min(0.3 + index * 0.15, 0.9),
+                  ease: [0.22, 1, 0.36, 1],
+                }}
+                className="w-full shrink-0"
+              >
+                <Link
+                  href={card.href}
+                  target={external ? "_blank" : undefined}
+                  rel={external ? "noopener noreferrer" : undefined}
+                  className="group flex items-center gap-3 rounded-xl border border-white/20 bg-slate-900/60 p-2.5 shadow-xl backdrop-blur-md transition-all duration-300 hover:scale-[1.03] hover:border-white/40 hover:bg-slate-900/75"
+                >
+                  <CardThumb thumb={card.thumb} title={card.title} />
+                  <div className="min-w-0 flex-1">
+                    <p className="line-clamp-2 text-xs font-semibold leading-tight text-white group-hover:text-purple-200">
+                      {card.title}
+                    </p>
+                    <p className="mt-1 flex items-center gap-1 text-[10px] font-medium text-purple-300 group-hover:text-white">
+                      {card.action}
+                      <ArrowRight className="h-2.5 w-2.5 transition-transform group-hover:translate-x-0.5" />
+                    </p>
+                  </div>
+                </Link>
+              </motion.div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

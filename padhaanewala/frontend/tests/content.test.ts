@@ -240,10 +240,10 @@ describe("resolveHeroCards", () => {
     expect(card.action).toBe("Learn more");
   });
 
-  it("caps at the 3 cards the hero can lay out", async () => {
+  it("keeps every card, in order — the hero list is unbounded", async () => {
     stubFetch(() =>
       json(
-        [1, 2, 3, 4].map((n) => ({
+        [1, 2, 3, 4, 5].map((n) => ({
           ...heroCardRow,
           id: n,
           title: `Card ${n}`,
@@ -254,8 +254,14 @@ describe("resolveHeroCards", () => {
     const { resolveHeroCards } = await freshContent();
 
     const result = await resolveHeroCards();
-    expect(result.data).toHaveLength(3);
-    expect(result.data.map((c) => c.title)).toEqual(["Card 1", "Card 2", "Card 3"]);
+    expect(result.data).toHaveLength(5);
+    expect(result.data.map((c) => c.title)).toEqual([
+      "Card 1",
+      "Card 2",
+      "Card 3",
+      "Card 4",
+      "Card 5",
+    ]);
   });
 
   it("drops a card whose link is a scheme or protocol-relative, keeping the rest", async () => {

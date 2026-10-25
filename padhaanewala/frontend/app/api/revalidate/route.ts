@@ -140,6 +140,11 @@ export async function POST(request: Request) {
   // handler, not a Server Action, so `updateTag` is unavailable, and stale-while-
   // revalidate would still show the admin the pre-write page they just changed.
   // An admin who creates a college and clicks through expects to find it there.
+  //
+  // The second argument is explicit rather than omitted: the single-argument
+  // form is deprecated in Next 16 (it currently behaves as `{ expire: 0 }`, but
+  // the docs say that may be removed) and every call here logs a deprecation
+  // warning into the dev server output.
   const { revalidateTag } = await import("next/cache");
   const done: string[] = [];
   const unknown: string[] = [];
@@ -149,7 +154,7 @@ export async function POST(request: Request) {
       unknown.push(name);
       continue;
     }
-    (revalidateTag as unknown as (t: string) => void)(tag);
+    revalidateTag(tag, { expire: 0 });
     done.push(name);
   }
 

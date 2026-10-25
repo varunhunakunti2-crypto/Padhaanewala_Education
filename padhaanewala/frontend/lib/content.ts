@@ -296,9 +296,6 @@ const HERO_CARD_DEFAULTS: readonly HeroCard[] = [
   },
 ];
 
-/** How many cards the hero can lay out; the panel positions 3 and no more. */
-export const HERO_CARD_LIMIT = 3;
-
 /** The default CTA for a row saved without a subtitle. */
 const HERO_CARD_DEFAULT_ACTION = "Learn more";
 
@@ -318,7 +315,7 @@ export function isRenderableHref(href: string | null | undefined): href is strin
 }
 
 /**
- * The hero cards, in `display_order`, capped at what the hero can show.
+ * The hero cards, in `display_order`, unbounded.
  *
  * Three outcomes, and the distinction is the point:
  *   * `api`    — at least one card came back; the panel renders those.
@@ -326,6 +323,9 @@ export function isRenderableHref(href: string | null | undefined): href is strin
  *                slot). The panel renders nothing, which is the honest state.
  *   * `local`  — the backend did not answer, so the shipped defaults stand in
  *                and the hero keeps its three cards through an outage.
+ *
+ * No cap: the panel scrolls, so truncating here would silently drop the fourth
+ * announcement an admin added.
  */
 export async function resolveHeroCards(): Promise<Resolved<HeroCard[]>> {
   const rows = await getHeroCards();
@@ -343,8 +343,7 @@ export async function resolveHeroCards(): Promise<Resolved<HeroCard[]>> {
       action: r.subtitle?.trim() || HERO_CARD_DEFAULT_ACTION,
       href: r.link_url as string,
       thumb: r.image_url,
-    }))
-    .slice(0, HERO_CARD_LIMIT);
+    }));
 
   if (mapped.length) return { data: mapped, source: "api" };
   // Answered, but every row was unusable or the slot is empty. Both are an
