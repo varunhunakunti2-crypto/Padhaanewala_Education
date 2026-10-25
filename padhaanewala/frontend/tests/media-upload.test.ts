@@ -13,6 +13,7 @@ import {
   formatBytes,
   mediaEntityLabel,
   mediaFileExtension,
+  mediaLinkPath,
   validateMediaFile,
   type MediaFormValues,
 } from "@/lib/media-form";
@@ -292,6 +293,40 @@ describe("mediaEntityLabel", () => {
 
   it("names the library sentinel instead of printing it as a record type", () => {
     expect(mediaEntityLabel(MEDIA_LIBRARY_ENTITY_TYPE)).toBe("Library");
+  });
+});
+
+describe("mediaLinkPath", () => {
+  it("accepts the stored path and the absolute link the panel copies", () => {
+    // Both shapes name the same file; the forms store the path, so both must
+    // reduce to it.
+    expect(mediaLinkPath("/api/v1/media/files/12")).toBe("/api/v1/media/files/12");
+    expect(mediaLinkPath("https://padhaanewala.in/api/v1/media/files/12")).toBe(
+      "/api/v1/media/files/12",
+    );
+  });
+
+  it("strips a query string or fragment, which do not change the file", () => {
+    expect(mediaLinkPath("/api/v1/media/files/12?rev=2")).toBe("/api/v1/media/files/12");
+    expect(mediaLinkPath("https://padhaanewala.in/api/v1/media/files/12#top")).toBe(
+      "/api/v1/media/files/12",
+    );
+    expect(mediaLinkPath("/api/v1/media/files/12/")).toBe("/api/v1/media/files/12");
+  });
+
+  it("refuses any address that is not a media file, including external images", () => {
+    // Letting these through would quietly turn the picker back into a general
+    // URL box, which is exactly what moving uploads into Media removed.
+    expect(mediaLinkPath("https://example.com/logo.png")).toBeNull();
+    expect(mediaLinkPath("https://padhaanewala.in/logo.png")).toBeNull();
+    expect(mediaLinkPath("/api/v1/media/files/")).toBeNull();
+    expect(mediaLinkPath("/api/v1/colleges/12")).toBeNull();
+    expect(mediaLinkPath("")).toBeNull();
+  });
+
+  it("refuses id zero, which is the library sentinel rather than a file", () => {
+    expect(mediaLinkPath("/api/v1/media/files/0")).toBeNull();
+    expect(mediaLinkPath("/api/v1/media/files/007")).toBeNull();
   });
 });
 

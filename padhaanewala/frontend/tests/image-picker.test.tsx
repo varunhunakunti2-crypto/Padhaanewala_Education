@@ -110,6 +110,22 @@ function buttonByTitle(title: string): HTMLButtonElement | undefined {
   return container.querySelector<HTMLButtonElement>(`button[title="${title}"]`) ?? undefined;
 }
 
+function buttonByText(text: string): HTMLButtonElement | undefined {
+  return Array.from(container.querySelectorAll("button")).find(
+    (b) => b.textContent?.trim() === text,
+  );
+}
+
+/** Type into a controlled React input the way a keystroke does. */
+function type(input: HTMLInputElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+  expect(setter).toBeDefined();
+  act(() => {
+    setter?.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
 describe("ImageField — picking from the Media library", () => {
   it("writes the chosen file's URL into the form and closes the dialog", async () => {
     render(<Harness />);
@@ -178,6 +194,51 @@ describe("ImageField — picking from the Media library", () => {
 
     expect(container.textContent).toContain("The Media library is empty.");
     expect(container.textContent).toContain("Admin → Media");
+  });
+
+  it("accepts a Media link copied from the library", async () => {
+    render(<Harness />);
+    await openPicker();
+
+    const input = container.querySelector<HTMLInputElement>("#test-image-link");
+    expect(input).not.toBeNull();
+    if (!input) return;
+    // The panel copies an absolute URL, possibly with a cache-busting query.
+    type(input, "https://padhaanewala.in/api/v1/media/files/2?rev=1");
+    act(() => buttonByText("Use link")?.click());
+
+    expect(container.querySelector('[data-testid="value"]')?.textContent).toBe(
+      "/api/v1/media/files/2",
+    );
+    expect(buttonByTitle("logo.png")).toBeUndefined();
+  });
+
+  it("refuses a link to a file that is not in the library", async () => {
+    render(<Harness />);
+    await openPicker();
+
+    const input = container.querySelector<HTMLInputElement>("#test-image-link");
+    if (!input) throw new Error("paste field missing");
+    type(input, "/api/v1/media/files/999");
+    act(() => buttonByText("Use link")?.click());
+
+    expect(container.textContent).toContain("not in the Media library");
+    expect(container.querySelector('[data-testid="value"]')?.textContent).toBe("");
+    // Still open, so the admin can pick a real file or correct the link.
+    expect(buttonByTitle("campus.png")).toBeDefined();
+  });
+
+  it("refuses an external image address, because Media is the only upload point", async () => {
+    render(<Harness />);
+    await openPicker();
+
+    const input = container.querySelector<HTMLInputElement>("#test-image-link");
+    if (!input) throw new Error("paste field missing");
+    type(input, "https://example.com/logo.png");
+    act(() => buttonByText("Use link")?.click());
+
+    expect(container.textContent).toContain("Paste a Media link");
+    expect(container.querySelector('[data-testid="value"]')?.textContent).toBe("");
   });
 
   it("offers a retry when the list cannot be loaded", async () => {

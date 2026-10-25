@@ -4,10 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import { Check, Images, Loader2, X } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
-import { Label } from "@/components/ui/FormField";
+import { Input, Label } from "@/components/ui/FormField";
 import { Modal } from "@/components/ui/Modal";
 import { adminApi, isForbidden, type AdminMedia } from "@/lib/api";
 import { isRenderableImageUrl } from "@/lib/image-field";
+import { mediaLinkPath } from "@/lib/media-form";
 
 /**
  * An image field that picks from the Media library.
@@ -37,6 +38,14 @@ import { isRenderableImageUrl } from "@/lib/image-field";
  * touches the image field, so the effect is keyed on `open`. A failed request
  * keeps the field usable: the current value is still shown and can be removed,
  * and the dialog offers a retry rather than pretending the library is empty.
+ *
+ * ## A copied link works too
+ *
+ * The Media panel can copy an asset's link, and the same link may be pasted back
+ * here — in either its relative or absolute form. The link is only accepted if
+ * the dialog's own library list contains that path, so this cannot become a
+ * general URL box: an external address, or a link to a file that was deleted,
+ * gets a sentence instead of a broken image.
  */
 interface ImageFieldProps {
   id: string;
@@ -65,6 +74,8 @@ export function ImageField({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [link, setLink] = useState("");
+  const [linkError, setLinkError] = useState<string | null>(null);
 
   // Only re-fetch when the dialog is opened or the admin asks for a retry. The
   // cleanup flag discards a response that arrives after the dialog is closed.
@@ -97,12 +108,46 @@ export function ImageField({
 
   const openLibrary = () => {
     startLoading();
+    setLink("");
+    setLinkError(null);
     setOpen(true);
   };
 
   const retry = () => {
     startLoading();
     setAttempt((n) => n + 1);
+  };
+
+  const closeLibrary = () => {
+    setOpen(false);
+    setLink("");
+    setLinkError(null);
+  };
+
+  /**
+   * Accept a link copied from the Media panel.
+   *
+   * Checking it against the loaded list rather than just its shape is what keeps
+   * this honest: `/api/v1/media/files/999` is a well-formed path to a file that
+   * is not in the library, and writing it would put a 404 in the form. The list
+   * is already in hand, so the check costs nothing.
+   */
+  const usePastedLink = () => {
+    const path = mediaLinkPath(link);
+    if (!path) {
+      setLinkError("Paste a Media link, such as /api/v1/media/files/12.");
+      return;
+    }
+    if (rows === null) {
+      setLinkError("The Media library is not loaded, so this link cannot be checked. Retry above.");
+      return;
+    }
+    if (!rows.some((m) => m.url === path)) {
+      setLinkError("That file is not in the Media library. Upload it in Admin → Media first.");
+      return;
+    }
+    onChange(path);
+    closeLibrary();
   };
 
   const trimmed = value.trim();
@@ -194,7 +239,7 @@ export function ImageField({
 
       <Modal
         open={open}
-        onClose={() => setOpen(false)}
+        onClose={closeLibrary}
         title="Choose from Media"
         className="sm:max-w-3xl"
       >
@@ -241,7 +286,7 @@ export function ImageField({
                     title={media.file_name ?? media.url}
                     onClick={() => {
                       onChange(media.url);
-                      setOpen(false);
+                      closeLibrary();
                     }}
                     className={
                       "overflow-hidden rounded-xl border text-left transition " +
@@ -276,8 +321,40 @@ export function ImageField({
             </div>
           )}
 
+          <div className="rounded-xl border border-slate-200 px-3 py-3">
+            <Label htmlFor={`${id}-link`}>Or paste a Media link</Label>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Input
+                id={`${id}-link`}
+                value={link}
+                disabled={loading}
+                placeholder="https://…/api/v1/media/files/12"
+                onChange={(e) => {
+                  setLink(e.target.value);
+                  setLinkError(null);
+                }}
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={loading || link.trim() === ""}
+                onClick={usePastedLink}
+              >
+                Use link
+              </Button>
+            </div>
+            {linkError ? (
+              <p className="mt-1.5 text-xs font-medium text-red-600">{linkError}</p>
+            ) : (
+              <p className="mt-1.5 text-xs text-slate-400">
+                Copy the link from Admin → Media and paste it here.
+              </p>
+            )}
+          </div>
+
           <div className="flex justify-end">
-            <Button type="button" size="sm" variant="secondary" onClick={() => setOpen(false)}>
+            <Button type="button" size="sm" variant="secondary" onClick={closeLibrary}>
               Cancel
             </Button>
           </div>

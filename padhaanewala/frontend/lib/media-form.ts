@@ -126,6 +126,35 @@ export function mediaEntityLabel(entityType: string | null | undefined): string 
   return MEDIA_ENTITY_TYPES.find((t) => t.value === value)?.label ?? value;
 }
 
+/**
+ * The library path inside a Media link, or `null` if it is not one.
+ *
+ * The Media panel can copy an asset's link, and the same string may come back in
+ * two shapes: the stored relative path (`/api/v1/media/files/12`) or the
+ * absolute URL an admin copies (`https://…/api/v1/media/files/12`). Both mean
+ * the same file, so both reduce to the path the form columns actually store.
+ *
+ * It deliberately does **not** accept any other URL. An image field is not a
+ * general URL box any more — the Media library is the only place a file is
+ * uploaded — so a pasted external address has no path to return and the picker
+ * refuses it rather than writing a URL the backend never served. Query strings
+ * and fragments are stripped: `/files/12?rev=2` still names file 12.
+ */
+export function mediaLinkPath(value: string): string | null {
+  const raw = value.trim();
+  if (raw === "") return null;
+
+  let pathname = raw.split(/[?#]/)[0];
+  try {
+    pathname = new URL(raw).pathname;
+  } catch {
+    // A relative path is the normal case; `new URL` requires a base to parse it.
+  }
+
+  const match = /^\/api\/v1\/media\/files\/([1-9]\d*)$/.exec(pathname.replace(/\/+$/, ""));
+  return match ? `/api/v1/media/files/${match[1]}` : null;
+}
+
 /** Suggested `image_type` values. Free text is still allowed — see the builder. */
 export const MEDIA_IMAGE_TYPES = ["logo", "cover", "campus", "gallery", "banner"] as const;
 
