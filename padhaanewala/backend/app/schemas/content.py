@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class ReviewCreate(BaseModel):
@@ -275,8 +275,53 @@ class AuditLogResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+def _validate_banner_link(value: str | None) -> str | None:
+    """Accept an internal path or an absolute `http(s)` URL, nothing else.
+
+    A banner link is rendered into an `<a href>`, so `javascript:` or
+    `data:` would be stored XSS with an admin's blessing — and the console
+    lets content roles, not just super admins, write it. `//evil.example`
+    is rejected too: it is protocol-relative, so it leaves the site while
+    looking like a path to everyone skimming the row.
+    """
+    if value is None:
+        return None
+    value = value.strip()
+    if not value:
+        return None
+    lowered = value.lower()
+    if lowered.startswith(("javascript:", "data:", "vbscript:", "file:")):
+        raise ValueError("link_url must be an internal path or an http(s) URL")
+    if value.startswith("//"):
+        raise ValueError("protocol-relative links are not allowed")
+    if value.startswith("/"):
+        return value
+    if lowered.startswith(("http://", "https://")):
+        return value
+    raise ValueError("link_url must start with '/' or 'http(s)://'")
+
+
+def _validate_banner_title(value: str | None) -> str | None:
+    """Trim a title and refuse one that is empty after trimming.
+
+    `min_length=1` alone accepts `" "`, which stores a card that renders as a
+    blank row — the title is the only text both layouts are guaranteed to show,
+    so a whitespace-only value is a data-entry bug that looks like a layout bug
+    from the admin's side. Returning the trimmed value also means the leading
+    space does not survive in the database.
+    """
+    if value is None:
+        return None
+    trimmed = value.strip()
+    if not trimmed:
+        raise ValueError("title must not be blank")
+    return trimmed
+
+
 class BannerCreate(BaseModel):
-    title: str
+    title: str = Field(min_length=1, max_length=255)
+    #: CTA line under the title; only the `hero_card` position renders it.
+    subtitle: str | None = Field(None, max_length=120)
     image_url: str
     link_url: str | None = None
     position: str = "home_top"
@@ -285,9 +330,20 @@ class BannerCreate(BaseModel):
     start_date: date | None = None
     end_date: date | None = None
 
+    @field_validator("title")
+    @classmethod
+    def _check_title(cls, value: str) -> str:
+        return _validate_banner_title(value)  # type: ignore[return-value]
+
+    @field_validator("link_url")
+    @classmethod
+    def _check_link(cls, value: str | None) -> str | None:
+        return _validate_banner_link(value)
+
 
 class BannerUpdate(BaseModel):
-    title: str | None = None
+    title: str | None = Field(None, min_length=1, max_length=255)
+    subtitle: str | None = Field(None, max_length=120)
     image_url: str | None = None
     link_url: str | None = None
     position: str | None = None
@@ -296,10 +352,26 @@ class BannerUpdate(BaseModel):
     start_date: date | None = None
     end_date: date | None = None
 
+    @field_validator("title")
+    @classmethod
+    def _check_title(cls, value: str | None) -> str | None:
+        # `None` means the console did not send the field (an update that
+        # leaves the title alone); a blank string is still an error.
+        return _validate_banner_title(value)
+
+    @field_validator("link_url")
+    @classmethod
+    def _check_link(cls, value: str | None) -> str | None:
+        # `None` here means "the console sent an explicit null", i.e. clear the
+        # link — which is a legal edit, and distinct from the field being
+        # absent (`exclude_unset` keeps that out of the diff entirely).
+        return _validate_banner_link(value)
+
 
 class BannerResponse(BaseModel):
     id: int
     title: str
+    subtitle: str | None = None
     image_url: str
     link_url: str | None
     position: str

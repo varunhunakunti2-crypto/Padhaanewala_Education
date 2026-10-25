@@ -4,6 +4,7 @@ import {
   requiredText,
   type FormResult,
 } from "@/lib/form-parts";
+import { checkImageUrl } from "@/lib/image-field";
 
 /**
  * The exam admin form.
@@ -48,6 +49,7 @@ export interface ExamFormValues {
   result_date: string;
   official_website: string;
   official_notification: string;
+  image_url: string;
 }
 
 export const EMPTY_EXAM_FORM: ExamFormValues = {
@@ -64,6 +66,7 @@ export const EMPTY_EXAM_FORM: ExamFormValues = {
   result_date: "",
   official_website: "",
   official_notification: "",
+  image_url: "",
 };
 
 /** `Field(default="national", max_length=50)` on `ExamCreate`. */
@@ -84,6 +87,7 @@ export interface ExamDetail {
   result_date: string | null;
   official_website: string | null;
   official_notification: string | null;
+  image_url: string | null;
 }
 
 export function examFormFromDetail(detail: ExamDetail): ExamFormValues {
@@ -99,6 +103,7 @@ export function examFormFromDetail(detail: ExamDetail): ExamFormValues {
     result_date: dateOrBlank(detail.result_date),
     official_website: detail.official_website ?? "",
     official_notification: detail.official_notification ?? "",
+    image_url: detail.image_url ?? "",
   };
 }
 
@@ -151,6 +156,9 @@ export function buildExamPayload(
   const notification = optionalText(values.official_notification, "The official notification");
   if (!notification.ok) return notification;
 
+  const image = checkImageUrl(values.image_url);
+  if (!image.ok) return { ok: false, error: image.error };
+
   // An exam whose applications close after the exam itself is a data-entry slip
   // the admin cannot see, because both columns are independent in the schema and
   // nothing on the page puts them side by side. Caught here so the form can say
@@ -182,6 +190,7 @@ export function buildExamPayload(
       result_date: result.value,
       official_website: website.value,
       official_notification: notification.value,
+      image_url: image.value,
       // `syllabus`, `faqs` and `is_active` omitted on purpose — see the file note.
     },
   };

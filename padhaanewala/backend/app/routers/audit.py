@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
 from app.dependencies import require_role
-from app.models import AuditLog, User
+from app.models import AuditLog, StudentProfile, User
 from app.schemas.content import AuditLogResponse
 
 router = APIRouter(prefix="/api/v1/audit-logs", tags=["audit"])
@@ -39,6 +39,7 @@ def _to_response(log: AuditLog) -> AuditLogResponse:
 
 @router.get("", response_model=list[AuditLogResponse])
 def list_audit_logs(
+    q: str | None = Query(None, max_length=255),
     action: str | None = None,
     entity_type: str | None = None,
     entity_id: int | None = None,
@@ -48,7 +49,41 @@ def list_audit_logs(
     db: Session = Depends(get_db),
     _: User = Depends(require_role(*AUDIT_ROLES)),
 ):
+    """Newest-first audit trail, filterable.
+
+    `q` backs the admin console's search box. It matches the actor's name — the
+    question that actually brings an admin to this screen ("what has this person
+    been doing?") — plus the email that `display_name` falls back to, the action,
+    the entity type and the source IP. The filter runs here rather than in the
+    panel because a client-side search only ever sees the fifty rows that
+    happened to load, and a login history is exactly the kind of list that
+    outgrows one page.
+
+    An actor's audit history is *not* the same thing as their login history: no
+    auth route wrote an audit row before, so a student who only ever signed in
+    appeared nowhere here. `POST /auth/login` and `POST /auth/login/otp/verify`
+    now record a `login` row, which makes `?q=<name>&action=login` the login
+    history this search exists for.
+    """
     query = select(AuditLog)
+    if q and q.strip():
+        like = f"%{q.strip()}%"
+        # LEFT JOINs, not inner: an audit row written before its account was
+        # deleted keeps `user_id = NULL`, and those rows must remain searchable
+        # by action, entity or IP instead of vanishing from a name query.
+        query = (
+            query.outerjoin(User, User.id == AuditLog.user_id)
+            .outerjoin(StudentProfile, StudentProfile.user_id == User.id)
+            .where(
+                or_(
+                    StudentProfile.name.ilike(like),
+                    User.email.ilike(like),
+                    AuditLog.action.ilike(like),
+                    AuditLog.entity_type.ilike(like),
+                    AuditLog.ip_address.ilike(like),
+                )
+            )
+        )
     if action:
         query = query.where(AuditLog.action == action)
     if entity_type:

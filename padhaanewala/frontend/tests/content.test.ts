@@ -191,6 +191,255 @@ describe("list resolvers", () => {
   });
 });
 
+/* ----------------------------- hero cards ------------------------------ */
+
+/**
+ * `resolveHeroCards` is the one resolver whose fallback is *not* a bundled
+ * dataset standing in for an empty table — see the note on
+ * `HERO_CARD_DEFAULTS`. So its three outcomes have to be pinned separately,
+ * because each means something different to the hero:
+ *
+ *   `api`   — an admin authored cards; render them.
+ *   `empty` — an admin cleared the slot; render nothing (an authored state).
+ *   `local` — the backend did not answer; keep the shipped defaults up.
+ */
+describe("resolveHeroCards", () => {
+  const heroCardRow = {
+    id: 7,
+    title: "JEE Advanced 2027",
+    subtitle: "Register now",
+    image_url: "https://example.com/jee.png",
+    link_url: "/exams/jee-advanced",
+    position: "hero_card",
+    display_order: 1,
+    is_active: true,
+  };
+
+  it("reports `api` and maps title, CTA line and link", async () => {
+    stubFetch(() => json([heroCardRow]));
+    const { resolveHeroCards } = await freshContent();
+
+    const result = await resolveHeroCards();
+
+    expect(result.source).toBe("api");
+    expect(result.data).toEqual([
+      {
+        title: "JEE Advanced 2027",
+        action: "Register now",
+        href: "/exams/jee-advanced",
+        thumb: "https://example.com/jee.png",
+      },
+    ]);
+  });
+
+  it("defaults the CTA line to `Learn more` when an admin left it blank", async () => {
+    stubFetch(() => json([{ ...heroCardRow, subtitle: "   " }]));
+    const { resolveHeroCards } = await freshContent();
+
+    const [card] = (await resolveHeroCards()).data;
+    expect(card.action).toBe("Learn more");
+  });
+
+  it("keeps every card, in order — the hero list is unbounded", async () => {
+    stubFetch(() =>
+      json(
+        [1, 2, 3, 4, 5].map((n) => ({
+          ...heroCardRow,
+          id: n,
+          title: `Card ${n}`,
+          display_order: n,
+        })),
+      ),
+    );
+    const { resolveHeroCards } = await freshContent();
+
+    const result = await resolveHeroCards();
+    expect(result.data).toHaveLength(5);
+    expect(result.data.map((c) => c.title)).toEqual([
+      "Card 1",
+      "Card 2",
+      "Card 3",
+      "Card 4",
+      "Card 5",
+    ]);
+  });
+
+  it("drops a card whose link is a scheme or protocol-relative, keeping the rest", async () => {
+    // A row can predate the write-time validation, so the read path re-checks
+    // rather than trusting the column.
+    stubFetch(() =>
+      json([
+        { ...heroCardRow, id: 1, title: "Evil", link_url: "javascript:alert(1)" },
+        { ...heroCardRow, id: 2, title: "Also evil", link_url: "//evil.example" },
+        { ...heroCardRow, id: 3, title: "Fine" },
+      ]),
+    );
+    const { resolveHeroCards } = await freshContent();
+
+    const result = await resolveHeroCards();
+    expect(result.data.map((c) => c.title)).toEqual(["Fine"]);
+  });
+
+  it("reports `empty` — not `local` — when the backend answers with no cards", async () => {
+    // The distinction the other resolvers do not have: an empty slot is an
+    // admin's decision, and re-injecting defaults would override it.
+    stubFetch(() => json([]));
+    const { resolveHeroCards } = await freshContent();
+
+    const result = await resolveHeroCards();
+
+    expect(result.source).toBe("empty");
+    expect(result.data).toEqual([]);
+  });
+
+  it("falls back to the shipped defaults only when the backend cannot be reached", async () => {
+    stubFetch(() => {
+      throw new Error("connect ECONNREFUSED 127.0.0.1:8000");
+    });
+    const { resolveHeroCards } = await freshContent();
+
+    const result = await resolveHeroCards();
+
+    expect(result.source).toBe("local");
+    expect(result.data.length).toBeGreaterThan(0);
+    expect(result.data.length).toBeLessThanOrEqual(3);
+    // Every default has to be renderable, or the fallback reintroduces the
+    // unvalidated-link hazard it is standing in for.
+    for (const card of result.data) {
+      expect(card.href.startsWith("/")).toBe(true);
+    }
+  });
+
+  it("falls back to the shipped defaults when the backend answers 500", async () => {
+    stubFetch(() => json({ detail: "boom" }, 500));
+    const { resolveHeroCards } = await freshContent();
+
+    expect((await resolveHeroCards()).source).toBe("local");
+  });
+});
+
+/**
+ * The homepage strip. The one thing worth pinning beyond the mapping is that
+ * there is **no** shipped fallback here: an empty or unreachable `home_top`
+ * slot must render nothing, because a promo is an operator's message and the
+ * site cannot invent one.
+ */
+describe("resolveHomeStrip", () => {
+  const stripRow = {
+    id: 3,
+    title: "Admissions close 30 June",
+    subtitle: "  Apply before the deadline  ",
+    image_url: "https://example.com/admissions.jpg",
+    link_url: "/admission",
+    position: "home_top",
+    display_order: 1,
+    is_active: true,
+  };
+
+  it("maps title, supporting line, link and image", async () => {
+    stubFetch(() => json([stripRow]));
+    const { resolveHomeStrip } = await freshContent();
+
+    const result = await resolveHomeStrip();
+
+    expect(result.source).toBe("api");
+    expect(result.data).toEqual([
+      {
+        id: 3,
+        title: "Admissions close 30 June",
+        subtitle: "Apply before the deadline",
+        href: "/admission",
+        image: "https://example.com/admissions.jpg",
+      },
+    ]);
+  });
+
+  it("keeps a banner whose link is unsafe, dropping only the link", async () => {
+    // A non-renderable href must not take the whole promo down: the strip has a
+    // legitimate non-link state, so the message still shows.
+    stubFetch(() => json([{ ...stripRow, link_url: "javascript:alert(1)" }]));
+    const { resolveHomeStrip } = await freshContent();
+
+    const [banner] = (await resolveHomeStrip()).data;
+    expect(banner.title).toBe("Admissions close 30 June");
+    expect(banner.href).toBeNull();
+  });
+
+  it("treats a blank supporting line and image as null", async () => {
+    stubFetch(() => json([{ ...stripRow, subtitle: "   ", image_url: null }]));
+    const { resolveHomeStrip } = await freshContent();
+
+    const [banner] = (await resolveHomeStrip()).data;
+    expect(banner.subtitle).toBeNull();
+    expect(banner.image).toBeNull();
+  });
+
+  it("keeps every banner — the strip is unbounded", async () => {
+    stubFetch(() =>
+      json(
+        [1, 2, 3, 4, 5, 6].map((n) => ({
+          ...stripRow,
+          id: n,
+          title: `Promo ${n}`,
+          display_order: n,
+        })),
+      ),
+    );
+    const { resolveHomeStrip } = await freshContent();
+
+    expect((await resolveHomeStrip()).data.map((b) => b.title)).toEqual([
+      "Promo 1",
+      "Promo 2",
+      "Promo 3",
+      "Promo 4",
+      "Promo 5",
+      "Promo 6",
+    ]);
+  });
+
+  it("reports `empty` and shows nothing when the slot is empty", async () => {
+    stubFetch(() => json([]));
+    const { resolveHomeStrip } = await freshContent();
+
+    const result = await resolveHomeStrip();
+    expect(result.source).toBe("empty");
+    expect(result.data).toEqual([]);
+  });
+
+  it("still reports `empty` when the backend cannot be reached", async () => {
+    // Deliberately not `local`: there is no shipped promo to fall back to.
+    stubFetch(() => {
+      throw new Error("connect ECONNREFUSED 127.0.0.1:8000");
+    });
+    const { resolveHomeStrip } = await freshContent();
+
+    const result = await resolveHomeStrip();
+    expect(result.source).toBe("empty");
+    expect(result.data).toEqual([]);
+  });
+});
+
+describe("isRenderableHref", () => {
+  it("accepts an internal path and an absolute http(s) URL", async () => {
+    const { isRenderableHref } = await freshContent();
+    expect(isRenderableHref("/scholarships")).toBe(true);
+    expect(isRenderableHref("https://example.com/x")).toBe(true);
+    expect(isRenderableHref("http://example.com/x")).toBe(true);
+  });
+
+  it("rejects schemes, protocol-relative links and blanks", async () => {
+    const { isRenderableHref } = await freshContent();
+    expect(isRenderableHref("javascript:alert(1)")).toBe(false);
+    expect(isRenderableHref("data:text/html,<script>")).toBe(false);
+    expect(isRenderableHref("//evil.example")).toBe(false);
+    expect(isRenderableHref("colleges")).toBe(false);
+    expect(isRenderableHref("")).toBe(false);
+    expect(isRenderableHref("   ")).toBe(false);
+    expect(isRenderableHref(null)).toBe(false);
+    expect(isRenderableHref(undefined)).toBe(false);
+  });
+});
+
 /* --------------------------- the mock-test exception --------------------- */
 
 describe("resolveMockTests", () => {

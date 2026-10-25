@@ -46,6 +46,7 @@ export function CollegeCard({ college }: CollegeCardProps) {
           <CampusArt
             gradientId={college.gradientId}
             initials={college.initials}
+            imageUrl={college.imageUrl}
             className="h-32 w-full transition-transform duration-500 group-hover:scale-[1.05] sm:h-36"
           />
         </Link>
@@ -82,6 +83,7 @@ export function CollegeCard({ college }: CollegeCardProps) {
             <CollegeLogo
               initials={college.initials}
               gradientId={college.gradientId}
+              imageUrl={college.imageUrl}
               size="md"
               className="-mt-8 ring-4 ring-white dark:ring-slate-900"
             />

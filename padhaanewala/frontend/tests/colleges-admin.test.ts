@@ -48,6 +48,7 @@ function detail(overrides: Partial<ApiCollegeDetail> = {}): ApiCollegeDetail {
     college_id: "COLLEGE000007",
     name: "Anna University",
     slug: "anna-university",
+    image_url: null,
     college_type: "University",
     ownership: "Public",
     city: "Chennai",

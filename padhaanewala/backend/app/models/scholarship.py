@@ -37,6 +37,9 @@ class Scholarship(Base):
     documents_required: Mapped[list | None] = mapped_column(JSON, nullable=True)
     application_procedure: Mapped[str | None] = mapped_column(Text, nullable=True)
     official_website: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    #: Admin-uploaded image. See `College.image_url` for the accepted shapes and
+    #: the nullable/gradient-fallback contract.
+    image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     verification_status: Mapped[str] = mapped_column(String(20), default="unverified")
     last_verified_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     next_verification_date: Mapped[date | None] = mapped_column(Date, nullable=True)

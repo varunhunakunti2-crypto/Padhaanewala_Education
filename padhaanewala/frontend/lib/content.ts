@@ -41,10 +41,12 @@ import {
   getCourses,
   getExamBySlug,
   getExams,
+  getHeroCards,
   getMockTests,
   getMockTestBySlug,
   getScholarshipBySlug,
   getScholarships,
+  getStripBanners,
 } from "@/lib/api-server";
 import {
   mapBlogPost,
@@ -234,6 +236,169 @@ export async function resolveMockTest(slug: string): Promise<Resolved<MockTest |
   if (row) return { data: withLocalContent(mapMockTest(row), slug), source: "api" };
   const local = getMockTest(slug);
   return { data: local, source: local ? "local" : "empty" };
+}
+
+/* ------------------------------ hero cards ---------------------------- */
+
+/**
+ * A floating card beside the hero search, in the shape the hero renders.
+ *
+ * Deliberately not `ApiBanner`: the panel needs a guaranteed non-null `href`
+ * and a resolved CTA string, and it must not care whether a row came from the
+ * database or from `HERO_CARD_DEFAULTS`. Keeping this the presentation type
+ * means `HeroVisualPanel` never branches on a data source.
+ */
+export interface HeroCard {
+  title: string;
+  /** CTA line under the title ("Find opportunities"). Never empty. */
+  action: string;
+  /** Always a renderable path or absolute URL; null links are dropped. */
+  href: string;
+  /** Thumbnail URL, or null when the row has no image. */
+  thumb: string | null;
+}
+
+/**
+ * The three cards the hero shipped with before they were admin-editable.
+ *
+ * This is the one place a fallback is still warranted, and it differs from the
+ * catalog resolvers above in a way worth naming: those fall back because a
+ * cold database would render an empty catalogue, which reads as a broken site.
+ * Here an empty `hero_card` slot is not a failure — it is the admin having
+ * chosen to show nothing. So this fallback is only for the *unreachable*
+ * case (backend down), where the hero would otherwise render a bare headline
+ * with no cards at all. An empty-but-healthy database renders no cards, and
+ * that is correct; `resolveHeroCards` reports `empty` for it.
+ *
+ * These are seeded into the database by migration `a3f8d21c9b47`, so in
+ * practice this literal is a cold-start safety net rather than the usual path.
+ */
+const HERO_CARD_DEFAULTS: readonly HeroCard[] = [
+  {
+    title: "Top Engineering Colleges in India",
+    action: "Explore now",
+    href: "/colleges?stream=engineering",
+    thumb:
+      "https://images.unsplash.com/photo-1562774053-701939374585?auto=format&fit=crop&w=160&h=160&q=80",
+  },
+  {
+    title: "Scholarships for Your Goals",
+    action: "Find opportunities",
+    href: "/scholarships",
+    thumb:
+      "https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=160&h=160&q=80",
+  },
+  {
+    title: "Compare Colleges Side by Side",
+    action: "Make smarter choices",
+    href: "/compare",
+    thumb:
+      "https://images.unsplash.com/photo-1541339907198-e08756dedf3f?auto=format&fit=crop&w=160&h=160&q=80",
+  },
+];
+
+/** The default CTA for a row saved without a subtitle. */
+const HERO_CARD_DEFAULT_ACTION = "Learn more";
+
+/**
+ * Admin-authored links only — the same rule `app/schemas/content.py` enforces
+ * on write, re-checked here because a row can predate that validation or be
+ * inserted straight into the table. `//evil.example` is the case that looks
+ * like a path but resolves to another origin, so it is excluded alongside the
+ * `javascript:`/`data:` schemes.
+ */
+export function isRenderableHref(href: string | null | undefined): href is string {
+  if (!href) return false;
+  const value = href.trim();
+  if (!value) return false;
+  if (value.startsWith("//")) return false;
+  return value.startsWith("/") || /^https?:\/\//i.test(value);
+}
+
+/**
+ * The hero cards, in `display_order`, unbounded.
+ *
+ * Three outcomes, and the distinction is the point:
+ *   * `api`    — at least one card came back; the panel renders those.
+ *   * `empty`  — the backend answered with no cards (an admin cleared the
+ *                slot). The panel renders nothing, which is the honest state.
+ *   * `local`  — the backend did not answer, so the shipped defaults stand in
+ *                and the hero keeps its three cards through an outage.
+ *
+ * No cap: the panel scrolls, so truncating here would silently drop the fourth
+ * announcement an admin added.
+ */
+export async function resolveHeroCards(): Promise<Resolved<HeroCard[]>> {
+  const rows = await getHeroCards();
+
+  // `null` is "the backend did not answer" — the only case that falls back.
+  // This must be checked before mapping, because the distinction between
+  // "answered with nothing" and "did not answer" is exactly what `null`
+  // encodes; folding it into `[]` here would reintroduce the bug.
+  if (rows === null) return { data: [...HERO_CARD_DEFAULTS], source: "local" };
+
+  const mapped: HeroCard[] = rows
+    .filter((r) => isRenderableHref(r.link_url))
+    .map((r) => ({
+      title: r.title,
+      action: r.subtitle?.trim() || HERO_CARD_DEFAULT_ACTION,
+      href: r.link_url as string,
+      thumb: r.image_url,
+    }));
+
+  if (mapped.length) return { data: mapped, source: "api" };
+  // Answered, but every row was unusable or the slot is empty. Both are an
+  // honest "no cards": the admin cleared it, or authored links we refuse to
+  // render. Showing the shipped defaults here would resurrect content the
+  // admin deliberately removed.
+  return { data: [], source: "empty" };
+}
+
+/* ------------------------------ home strip ---------------------------- */
+
+/**
+ * One promotional banner in the homepage strip (`position='home_top'`).
+ *
+ * Unlike `HeroCard`, the link is optional: the admin schema allows a banner
+ * with no `link_url`, and a promo can be informational ("Admissions close on
+ * 30 June") without sending the visitor anywhere. A row whose authored link is
+ * not renderable keeps the banner and drops the link rather than disappearing —
+ * the same reading `resolveHeroCards` gives a bad row, except that the strip has
+ * a non-link state to fall back to.
+ */
+export interface StripBanner {
+  id: number;
+  title: string;
+  /** Supporting line under the title, or null when the row has none. */
+  subtitle: string | null;
+  /** A renderable path or absolute URL, or null when there is nowhere to go. */
+  href: string | null;
+  /** Background image URL, or null when the row has no image. */
+  image: string | null;
+}
+
+/**
+ * The homepage strip, in `display_order`, unbounded.
+ *
+ * No shipped fallback, deliberately. A hero without its three shipped cards is
+ * a bare headline, but a strip without banners is simply a site with no
+ * promotion running — and inventing one would put words in the operator's
+ * mouth. So an unreachable backend and an emptied slot both resolve to
+ * `empty`, and `PromoStrip` renders nothing for either.
+ */
+export async function resolveHomeStrip(): Promise<Resolved<StripBanner[]>> {
+  const rows = await getStripBanners();
+  if (rows === null) return { data: [], source: "empty" };
+
+  const mapped: StripBanner[] = rows.map((r) => ({
+    id: r.id,
+    title: r.title,
+    subtitle: r.subtitle?.trim() || null,
+    href: isRenderableHref(r.link_url) ? r.link_url : null,
+    image: r.image_url?.trim() || null,
+  }));
+
+  return { data: mapped, source: mapped.length ? "api" : "empty" };
 }
 
 /* ------------------------------- slugs -------------------------------- */

@@ -130,6 +130,7 @@ def _to_list_item(
         college_id=college.college_id,
         name=college.name,
         slug=college.slug,
+        image_url=college.image_url,
         college_type=college.college_type,
         ownership=college.ownership,
         city=college.city,
@@ -376,6 +377,11 @@ def create_college(
         overview=payload.overview,
         facilities=payload.facilities,
         has_hostel=payload.has_hostel,
+        # Listed explicitly, like every other column above, because this route
+        # builds the row field by field rather than from the payload. Omitting
+        # it here is the BUG-11 shape: `CollegeCreate` accepts `image_url`, the
+        # response reports it, and the value is silently dropped on the way in.
+        image_url=payload.image_url,
         verification_status="unverified",
     )
     db.add(college)

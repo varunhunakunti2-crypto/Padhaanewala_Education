@@ -22,6 +22,7 @@ def _to_response(banner: Banner) -> BannerResponse:
     return BannerResponse(
         id=banner.id,
         title=banner.title,
+        subtitle=banner.subtitle,
         image_url=banner.image_url,
         link_url=banner.link_url,
         position=banner.position,

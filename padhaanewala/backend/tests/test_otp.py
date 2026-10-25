@@ -21,7 +21,7 @@ from fastapi.testclient import TestClient
 from app.config import settings
 from app.database import SessionLocal
 from app.main import app
-from app.models import OtpRecord, User
+from app.models import AuditLog, OtpRecord, User
 from app.services import email_service, otp_service, sms_service
 
 client = TestClient(app)
@@ -258,6 +258,17 @@ def test_otp_login_is_blocked_until_the_email_is_confirmed(user, outbox, monkeyp
     assert password_path.status_code == 403
     assert password_path.json()["detail"] == detail
 
+    # A 403 is not a sign-in. Recording one would put a login that never
+    # happened into the history the admin console is about to be searched for.
+    with SessionLocal() as db:
+        row = db.query(User).filter(User.email == user["email"]).one()
+        assert (
+            db.query(AuditLog)
+            .filter(AuditLog.user_id == row.id, AuditLog.action == "login")
+            .count()
+            == 0
+        ), "an unverified-email 403 was recorded as a successful login"
+
     # Once confirmed, the same code path lets them straight in.
     _confirm_email(user, outbox)
     allowed = client.post(
@@ -269,6 +280,15 @@ def test_otp_login_is_blocked_until_the_email_is_confirmed(user, outbox, monkeyp
         "/api/v1/auth/login/otp/verify", json={"mobile": user["mobile"], "otp": otp}
     )
     assert verified.status_code == 200, verified.text
+
+    with SessionLocal() as db:
+        row = db.query(User).filter(User.email == user["email"]).one()
+        entry = (
+            db.query(AuditLog)
+            .filter(AuditLog.user_id == row.id, AuditLog.action == "login")
+            .one()
+        )
+        assert entry.new_value == {"method": "otp"}
 
 
 def test_advisory_lock_key_is_stable_across_processes():
@@ -306,6 +326,16 @@ def test_otp_login_succeeds_with_correct_code(user, outbox):
         row = db.query(User).filter(User.email == user["email"]).one()
         assert row.is_mobile_verified is True
         assert row.last_login_at is not None
+        # ... and the sign-in belongs in the audit trail, or the admin console
+        # cannot answer "when did this person last log in?".
+        entry = (
+            db.query(AuditLog)
+            .filter(AuditLog.user_id == row.id, AuditLog.action == "login")
+            .one()
+        )
+        assert entry.entity_type == "user"
+        assert entry.new_value == {"method": "otp"}
+        assert entry.ip_address
 
 
 def test_otp_replay_is_rejected(user, outbox):

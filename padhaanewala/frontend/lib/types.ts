@@ -81,6 +81,12 @@ export interface College {
   shortName: string;
   initials: string;
   gradientId: string;
+  /**
+   * Admin-uploaded banner/logo, or undefined. Components that render a campus
+   * image prefer this and fall back to the `gradientId` when it is absent, so
+   * every pre-existing record keeps the decoration it always had.
+   */
+  imageUrl?: string;
   tagline: string;
   overview: string;
   founded: number;
@@ -147,6 +153,8 @@ export interface Scholarship {
   renewable: boolean;
   tags: string[];
   color: string;
+  /** Admin-uploaded image, or undefined to fall back to the gradient/colour. */
+  imageUrl?: string;
   documents: string[];
   applicationProcess: string[];
   website?: string;
@@ -190,6 +198,8 @@ export interface Exam {
   website: string;
   coursesAccepted: string[];
   collegesAccepting: string[];
+  /** Admin-uploaded hero image, or undefined to fall back to the gradient. */
+  imageUrl?: string;
   faqs: Faq[];
 }
 

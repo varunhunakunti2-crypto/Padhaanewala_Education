@@ -2,6 +2,7 @@
 
 import { Input, Select } from "@/components/ui/FormField";
 import { Field, FieldSet, NoneOption, Textarea } from "@/components/admin/fields";
+import { ImageField } from "@/components/admin/ImageField";
 import type { AdminState } from "@/lib/api";
 import {
   SCHOLARSHIP_OWNERSHIPS,
@@ -155,6 +156,15 @@ export function ScholarshipFormFields({
             maxLength={255}
           />
         </Field>
+        <ImageField
+          id="scholarship-image"
+          label="Image"
+          entityType="scholarship"
+          value={values.image_url}
+          onChange={(v) => set("image_url", v)}
+          disabled={disabled}
+          hint="Upload a file or paste an image URL. Leave blank to keep the coloured card band."
+        />
       </FieldSet>
 
       <FieldSet legend="Who can apply" disabled={disabled}>

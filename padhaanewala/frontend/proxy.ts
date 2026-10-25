@@ -62,9 +62,25 @@ import { NextResponse, type NextRequest } from "next/server";
  * Option (b) was trialled during Phase 5 and is not in use; see the tracker.
  */
 
+/**
+ * Image origins that ship with the code and must always be allowed.
+ *
+ * `images.unsplash.com` is here because the hero's built-in fallback cards point
+ * at it. Those cards are rendered by a plain `<img>` — `next/image` would proxy
+ * them through `/_next/image` and hide the origin behind `'self'` — so without
+ * this entry an outage (or a cleared slot before an admin saves) would render
+ * three broken thumbnails.
+ *
+ * Operator-typed hosts are **not** here: they go in `CSP_IMAGE_HOSTS`, which is
+ * the documented contract for admin-supplied origins.
+ */
+const BUNDLED_IMAGE_HOSTS = ["https://images.unsplash.com"];
+
 /** Extra image origins, comma-separated. Server-side only — never `NEXT_PUBLIC_`. */
-const extraImageHosts = (process.env.CSP_IMAGE_HOSTS ?? "")
-  .split(",")
+const extraImageHosts = [
+  ...BUNDLED_IMAGE_HOSTS,
+  ...(process.env.CSP_IMAGE_HOSTS ?? "").split(","),
+]
   .map((h) => h.trim())
   .filter(Boolean);
 

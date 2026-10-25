@@ -42,6 +42,11 @@ class College(Base):
         nullable=True,
         index=True,
     )
+    #: Admin-uploaded banner/logo. A same-origin media path (`/media/files/12`)
+    #: or an absolute `http(s)` URL; validated on write by the request schemas.
+    #: Nullable, because every row predating this column has to render, and the
+    #: frontend falls back to the deterministic gradient when it is null.
+    image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     state_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("states.id", ondelete="SET NULL"), nullable=True, index=True
     )

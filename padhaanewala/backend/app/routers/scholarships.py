@@ -45,6 +45,7 @@ def _to_response(scholarship: Scholarship) -> ScholarshipResponse:
         documents_required=scholarship.documents_required,
         application_procedure=scholarship.application_procedure,
         official_website=scholarship.official_website,
+        image_url=scholarship.image_url,
         verification_status=scholarship.verification_status,
         last_verified_date=scholarship.last_verified_date,
         next_verification_date=scholarship.next_verification_date,

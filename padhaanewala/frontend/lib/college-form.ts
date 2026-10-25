@@ -1,5 +1,6 @@
 import { ApiError } from "@/lib/api";
 import type { ApiCollegeDetail, ApiCollegeListItem } from "@/lib/api-server";
+import { checkImageUrl } from "@/lib/image-field";
 
 /**
  * The college admin form, expressed as pure data.
@@ -65,6 +66,8 @@ export interface CollegeFormValues {
   accreditation_nba: TriState;
   overview: string;
   has_hostel: TriState;
+  /** Admin-uploaded banner/logo. Blank restores the gradient fallback. */
+  image_url: string;
   /**
    * Update-only. Absent from `CollegeCreate`, and the column defaults to false,
    * so a boolean is correct here rather than a tri-state.
@@ -104,6 +107,7 @@ export const EMPTY_COLLEGE_FORM: CollegeFormValues = {
   accreditation_nba: "unknown",
   overview: "",
   has_hostel: "unknown",
+  image_url: "",
   is_featured: false,
   courses: [],
 };
@@ -141,6 +145,7 @@ export function collegeFormFromDetail(detail: ApiCollegeDetail): CollegeFormValu
     accreditation_nba: tri(detail.accreditation_nba),
     overview: asString(detail.overview),
     has_hostel: tri(detail.has_hostel),
+    image_url: asString(detail.image_url),
     is_featured: detail.is_featured,
     // Editing courses goes through `PUT /colleges/{ref}/courses` and
     // `CollegeUpdate` has no `courses` key, so an edit deliberately does not
@@ -346,6 +351,12 @@ export function buildCollegePayload(
   const lng = optionalDecimal(values.lng, "Longitude");
   if (!lng.ok) return fail(lng.error);
 
+  // Rendered as an `<img src>` on the card and detail page, so a `javascript:`
+  // or `data:` value here is stored XSS. The backend refuses them too; this
+  // refuses at the keyboard so the admin gets a sentence, not a 422.
+  const image = checkImageUrl(values.image_url);
+  if (!image.ok) return fail(image.error);
+
   // Keys shared by both schemas.
   const shared: CollegeWritePayload = {
     name: name.value,
@@ -368,6 +379,7 @@ export function buildCollegePayload(
     accreditation_nba: triValue(values.accreditation_nba),
     overview: text(values.overview),
     has_hostel: triValue(values.has_hostel),
+    image_url: image.value,
   };
 
   if (mode === "create") {

@@ -4,6 +4,7 @@ import { Plus, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
 import { Input, Label, Select } from "@/components/ui/FormField";
+import { ImageField } from "@/components/admin/ImageField";
 import type { AdminCourse, AdminDistrict, AdminState, AdminUniversity } from "@/lib/api";
 import {
   COLLEGE_FIELD_MAX,
@@ -168,6 +169,15 @@ export function CollegeFormFields({
             </Select>
           </Field>
         </div>
+        <ImageField
+          id="college-image"
+          label="Campus image"
+          entityType="college"
+          value={values.image_url}
+          onChange={(v) => set("image_url", v)}
+          disabled={disabled}
+          hint="Upload a file or paste an image URL. Leave blank to keep the generated campus artwork."
+        />
       </fieldset>
 
       <fieldset className="space-y-3" disabled={disabled}>

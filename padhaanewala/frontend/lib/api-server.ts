@@ -270,6 +270,8 @@ export interface ApiCourse {
   degree: string | null;
   duration: string | null;
   category: string | null;
+  /** Admin-uploaded cover image, or null. */
+  image_url: string | null;
   overview: string | null;
   eligibility: string | null;
   career_information: string | null;
@@ -281,6 +283,8 @@ export interface ApiCollegeListItem {
   college_id: string;
   name: string;
   slug: string;
+  /** Admin-uploaded banner/logo, or null to fall back to the gradient. */
+  image_url: string | null;
   college_type: string | null;
   ownership: string | null;
   city: string | null;
@@ -486,6 +490,8 @@ export interface ApiExam {
   official_notification: string | null;
   syllabus: string[] | null;
   faqs: { question: string; answer: string }[] | null;
+  /** Admin-uploaded hero image, or null to fall back to the gradient. */
+  image_url: string | null;
   is_active: boolean;
 }
 
@@ -507,6 +513,8 @@ export interface ApiScholarship {
   application_procedure: string | null;
   official_website: string | null;
   verification_status: string | null;
+  /** Admin-uploaded image, or null to fall back to the gradient. */
+  image_url: string | null;
   is_active: boolean;
 }
 
@@ -566,6 +574,8 @@ export interface ApiMockTest {
 export interface ApiBanner {
   id: number;
   title: string;
+  /** CTA line under the title; only the `hero_card` layout renders it. */
+  subtitle: string | null;
   image_url: string | null;
   link_url: string | null;
   position: string;
@@ -660,7 +670,68 @@ export const getMockTests = (query = "") =>
 export const getMockTestBySlug = (slug: string) =>
   serverGet<ApiMockTest>(`/mock-tests/${encodeURIComponent(slug)}`, REVALIDATE.catalogDetail);
 
-export const getBanners = () => serverGetAll<ApiBanner>("/banners?limit=50", REVALIDATE.content);
+/** Rows per request. `GET /banners` caps `limit` at 100. */
+const BANNER_PAGE_SIZE = 100;
+
+/**
+ * A guard against a backend that ignores `offset`. At 5,000 rows this is a bug
+ * in the caller, not a real hero or strip.
+ */
+const BANNER_MAX_PAGES = 50;
+
+/**
+ * Every visible row at one `position`, walking pages.
+ *
+ * A dedicated fetcher rather than a `position` argument on the admin path,
+ * because the two callers want different things: the public pages want their
+ * slot in full, while the admin console's `adminApi.banners` wants every row
+ * including inactive ones. A shared function with a flag would push that
+ * distinction into each call site, where it can be forgotten — and
+ * `?include_inactive=true` is the flag that used to leak drafts to anonymous
+ * callers on this very route.
+ *
+ * **Returns `null`, not `[]`, when the backend does not answer on the first
+ * page.** Every other fetcher here collapses "no rows" and "no answer" into an
+ * empty array, which is fine for a catalogue resolver whose fallback is a local
+ * dataset. The hero needs the two kept apart: an empty `hero_card` slot is an
+ * admin's decision and must render no cards, while an unreachable backend must
+ * keep the shipped defaults. `serverGetAll` cannot express that, so this calls
+ * `serverGet` — the only place in this module that checks for `null`. A failure
+ * after page one returns what is already known instead of throwing away rows
+ * the backend did answer with.
+ *
+ * The query string is what puts this on the `content:banners` tag
+ * (`tagsFor` reads the first path segment), so an admin save followed by
+ * `revalidate(["banners"])` expires these rows along with the rest.
+ *
+ * The public lists are unbounded, but the backend caps a page at 100 rows, so
+ * this walks pages. A single request would silently truncate the 101st banner
+ * an admin adds — which reads as "my banner disappeared" rather than as a
+ * limit.
+ */
+async function getBannersAt(position: string): Promise<ApiBanner[] | null> {
+  const cards: ApiBanner[] = [];
+
+  for (let page = 0; page < BANNER_MAX_PAGES; page += 1) {
+    const rows = await serverGet<ApiBanner[]>(
+      `/banners?position=${encodeURIComponent(position)}&limit=${BANNER_PAGE_SIZE}&offset=${page * BANNER_PAGE_SIZE}`,
+      REVALIDATE.content,
+    );
+    // A 200 carrying something other than a list is a backend contract break,
+    // which is an outage as far as the public site is concerned - `null`, not [].
+    if (rows === null || !Array.isArray(rows)) return page === 0 ? null : cards;
+    cards.push(...rows);
+    if (rows.length < BANNER_PAGE_SIZE) return cards;
+  }
+
+  return cards;
+}
+
+/** The hero section's floating cards, served at `position='hero_card'`. */
+export const getHeroCards = () => getBannersAt("hero_card");
+
+/** The homepage strip above the hero, served at `position='home_top'`. */
+export const getStripBanners = () => getBannersAt("home_top");
 
 export interface ApiCollegeBundle {
   detail: ApiCollegeDetail;

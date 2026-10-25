@@ -1583,6 +1583,11 @@ export interface AdminNotificationBroadcast {
 export interface AdminBanner {
   id: number;
   title: string;
+  /**
+   * CTA line under the title ("Find opportunities"). Only the `hero_card`
+   * position renders it, so `home_top` strip banners leave it null.
+   */
+  subtitle?: string | null;
   image_url: string | null;
   link_url: string | null;
   position: string;
@@ -1719,6 +1724,33 @@ export interface AdminAuditLog {
   created_at: string;
 }
 
+/**
+ * Rows per audit request.
+ *
+ * `GET /audit-logs` defaults to 50 and caps `limit` at 200. The console starts
+ * at the default and grows the window in steps rather than walking every page
+ * of a table that is append-only and has no natural end.
+ */
+export const AUDIT_PAGE_SIZE = 50;
+
+/** The endpoint's hard cap (`Query(50, ge=1, le=200)` in `routers/audit.py`). */
+export const AUDIT_MAX_ROWS = 200;
+
+/** Server-side filters for the audit trail. */
+export interface AdminAuditQuery {
+  /**
+   * Free text matched against the actor's name and email, the action, the
+   * entity type and the source IP. Server-side on purpose: a person's login
+   * history routinely outgrows one page, and a client-side search would only
+   * ever see the rows that happened to load.
+   */
+  q?: string;
+  /** Exact action (`login`, `update_blog`, …). */
+  action?: string;
+  /** Window size, clamped to `AUDIT_MAX_ROWS`. */
+  limit?: number;
+}
+
 export interface AdminRole {
   id: number;
   name: string;
@@ -1851,6 +1883,8 @@ export interface AdminCourse {
   degree: string | null;
   duration: string | null;
   category: string | null;
+  /** Admin-uploaded cover image, or null. */
+  image_url: string | null;
 }
 
 /** `CourseDetailResponse` — the list row plus the three long-text columns. */
@@ -1884,6 +1918,8 @@ export interface AdminExam {
    */
   syllabus: unknown;
   faqs: unknown;
+  /** Admin-uploaded hero image, or null. */
+  image_url: string | null;
   is_active: boolean;
 }
 
@@ -1909,6 +1945,8 @@ export interface AdminScholarship {
   verification_status: string;
   last_verified_date: string | null;
   next_verification_date: string | null;
+  /** Admin-uploaded image, or null. */
+  image_url: string | null;
   is_active: boolean;
 }
 
@@ -2452,7 +2490,25 @@ export const adminApi = {
   createNotification: (payload: { user_id?: number; title: string; message: string; type?: string }) =>
     apiFetch<AdminNotificationBroadcast>("/notifications", { method: "POST", body: JSON.stringify(payload) }),
 
-  auditLogs: (params = "") => apiFetch<AdminAuditLog[]>(`/audit-logs${params}`),
+  /**
+   * One window of the audit trail, newest first.
+   *
+   * Deliberately not `fetchAllPages`: the audit table is append-only and
+   * unbounded, so opening the panel must not walk dozens of pages against the
+   * slowest read in the console. `AuditSection` grows the window in
+   * `AUDIT_PAGE_SIZE` steps up to `AUDIT_MAX_ROWS`.
+   *
+   * The filters live here so no panel hand-writes a `limit=` — the mistake
+   * `tests/page-size-contract.test.ts` exists to catch.
+   */
+  auditLogs: (query: AdminAuditQuery = {}) => {
+    const params = new URLSearchParams();
+    const q = query.q?.trim();
+    if (q) params.set("q", q);
+    if (query.action) params.set("action", query.action);
+    params.set("limit", String(Math.min(query.limit ?? AUDIT_PAGE_SIZE, AUDIT_MAX_ROWS)));
+    return apiFetch<AdminAuditLog[]>(`/audit-logs?${params.toString()}`);
+  },
 
   mockTests: () => apiFetch<unknown[]>("/mock-tests/admin/all"),
 

@@ -4,6 +4,7 @@ import {
   rowRefFor,
   type FormResult,
 } from "@/lib/form-parts";
+import { checkImageUrl } from "@/lib/image-field";
 
 /**
  * The course admin form.
@@ -45,6 +46,7 @@ export interface CourseFormValues {
   overview: string;
   eligibility: string;
   career_information: string;
+  image_url: string;
 }
 
 export const EMPTY_COURSE_FORM: CourseFormValues = {
@@ -55,6 +57,7 @@ export const EMPTY_COURSE_FORM: CourseFormValues = {
   overview: "",
   eligibility: "",
   career_information: "",
+  image_url: "",
 };
 
 export const COURSE_NAME_MIN = 2;
@@ -74,6 +77,7 @@ export interface CourseDetail {
   overview: string | null;
   eligibility: string | null;
   career_information: string | null;
+  image_url: string | null;
 }
 
 function asString(value: string | null | undefined): string {
@@ -90,6 +94,7 @@ export function courseFormFromDetail(detail: CourseDetail): CourseFormValues {
     overview: asString(detail.overview),
     eligibility: asString(detail.eligibility),
     career_information: asString(detail.career_information),
+    image_url: asString(detail.image_url),
   };
 }
 
@@ -139,6 +144,9 @@ export function buildCoursePayload(
   const career = optionalText(values.career_information, "Career information");
   if (!career.ok) return career;
 
+  const image = checkImageUrl(values.image_url);
+  if (!image.ok) return { ok: false, error: image.error };
+
   return {
     ok: true,
     value: {
@@ -149,6 +157,7 @@ export function buildCoursePayload(
       overview: overview.value,
       eligibility: eligibility.value,
       career_information: career.value,
+      image_url: image.value,
       // `is_active` omitted on purpose — see the note at the top of this file.
     },
   };

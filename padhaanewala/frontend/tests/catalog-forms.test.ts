@@ -176,6 +176,24 @@ describe("buildCoursePayload", () => {
       /100 characters/,
     );
   });
+
+  it("carries an uploaded image URL through to the payload", () => {
+    const payload = ok(
+      buildCoursePayload({ ...FILLED_COURSE, image_url: "/media/files/42" }, "create"),
+    );
+    expect(payload.image_url).toBe("/media/files/42");
+  });
+
+  it("sends a blank image box as null, which restores the gradient fallback", () => {
+    const payload = ok(buildCoursePayload({ ...FILLED_COURSE, image_url: "  " }, "update"));
+    expect(payload.image_url).toBeNull();
+  });
+
+  it("refuses an image URL that would be stored XSS in an <img src>", () => {
+    expect(
+      err(buildCoursePayload({ ...FILLED_COURSE, image_url: "javascript:alert(1)" }, "create")),
+    ).toMatch(/image/i);
+  });
 });
 
 describe("courseFormFromDetail", () => {
@@ -190,6 +208,7 @@ describe("courseFormFromDetail", () => {
         overview: null,
         eligibility: null,
         career_information: null,
+        image_url: null,
       }),
     ).toEqual({ ...EMPTY_COURSE_FORM, name: "BSc" });
   });
@@ -289,6 +308,22 @@ describe("buildScholarshipPayload", () => {
     ).toMatch(/not a real date/);
   });
 
+  it("carries an uploaded image through, and clears it on blank", () => {
+    expect(
+      ok(buildScholarshipPayload({ ...FILLED_SCHOLARSHIP, image_url: "/media/files/11" }, "create"))
+        .image_url,
+    ).toBe("/media/files/11");
+    expect(
+      ok(buildScholarshipPayload({ ...FILLED_SCHOLARSHIP, image_url: "  " }, "update")).image_url,
+    ).toBeNull();
+  });
+
+  it("refuses an image URL the backend would refuse", () => {
+    expect(
+      err(buildScholarshipPayload({ ...FILLED_SCHOLARSHIP, image_url: "//evil.example/a.png" }, "create")),
+    ).toMatch(/image|URL/i);
+  });
+
   it("truncates a full timestamp to the date the column expects", () => {
     const values = scholarshipFormFromDetail({
       id: 1,
@@ -307,6 +342,7 @@ describe("buildScholarshipPayload", () => {
       official_website: null,
       last_verified_date: null,
       next_verification_date: null,
+      image_url: null,
     });
     expect(values.application_deadline).toBe("2026-04-30");
     expect(values.state_id).toBe("3");
@@ -366,6 +402,21 @@ describe("buildExamPayload", () => {
     );
   });
 
+  it("carries an uploaded hero image through, and clears it on blank", () => {
+    expect(
+      ok(buildExamPayload({ ...FILLED_EXAM, image_url: "/media/files/13" }, "create")).image_url,
+    ).toBe("/media/files/13");
+    expect(
+      ok(buildExamPayload({ ...FILLED_EXAM, image_url: "" }, "update")).image_url,
+    ).toBeNull();
+  });
+
+  it("refuses a hero image URL the backend would refuse", () => {
+    expect(
+      err(buildExamPayload({ ...FILLED_EXAM, image_url: "data:image/png;base64,AAAA" }, "create")),
+    ).toMatch(/image/i);
+  });
+
   it("falls back to the declared exam type rather than to null", () => {
     const payload = ok(buildExamPayload({ ...FILLED_EXAM, exam_type: "" }, "create"));
     expect(payload.exam_type).toBe("national");
@@ -395,6 +446,7 @@ describe("examFormFromDetail", () => {
       result_date: null,
       official_website: null,
       official_notification: null,
+      image_url: null,
     });
     expect(values.application_deadline).toBe("2026-03-15");
   });

@@ -2,6 +2,7 @@
 
 import { Input } from "@/components/ui/FormField";
 import { Field, FieldSet, Textarea } from "@/components/admin/fields";
+import { ImageField } from "@/components/admin/ImageField";
 import {
   COURSE_CATEGORY_MAX,
   COURSE_DEGREE_MAX,
@@ -86,6 +87,15 @@ export function CourseFormFields({
             />
           </Field>
         </div>
+        <ImageField
+          id="course-image"
+          label="Cover image"
+          entityType="course"
+          value={values.image_url}
+          onChange={(v) => set("image_url", v)}
+          disabled={disabled}
+          hint="Upload a file or paste an image URL. Leave blank to keep the generated card styling."
+        />
       </FieldSet>
 
       <FieldSet
