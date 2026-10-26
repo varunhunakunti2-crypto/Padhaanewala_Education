@@ -172,11 +172,10 @@ export function CollegeFormFields({
         <ImageField
           id="college-image"
           label="Campus image"
-          entityType="college"
           value={values.image_url}
           onChange={(v) => set("image_url", v)}
           disabled={disabled}
-          hint="Upload a file or paste an image URL. Leave blank to keep the generated campus artwork."
+          hint="Pick a file from the Media library. Leave blank to keep the generated campus artwork."
         />
       </fieldset>
 

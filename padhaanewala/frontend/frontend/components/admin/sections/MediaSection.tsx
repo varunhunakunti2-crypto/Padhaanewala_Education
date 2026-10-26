@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, Trash2, Upload } from "lucide-react";
+import { Copy, Plus, Trash2, Upload } from "lucide-react";
 import { adminApi, CONTENT_ROLES, type AdminMedia } from "@/lib/api";
 import { ENTITY_LOADERS, mediaEntityLabel, type MediaEntityOption } from "@/lib/entity-options";
 import {
@@ -9,6 +9,7 @@ import {
   MEDIA_ACCEPT_ATTRIBUTE,
   MEDIA_ENTITY_TYPES,
   MEDIA_IMAGE_TYPES,
+  MEDIA_LIBRARY_ENTITY_TYPE,
   buildMediaUpload,
   describeMediaError,
   formatBytes,
@@ -116,6 +117,7 @@ export function MediaSection() {
   useEffect(() => {
     if (!dialogOpen) return;
     const type = values.entity_type;
+    if (type === MEDIA_LIBRARY_ENTITY_TYPE) return;
     const load = ENTITY_LOADERS[type];
     if (!load) return;
     let ignore = false;
@@ -139,11 +141,12 @@ export function MediaSection() {
   // Loading, empty and error are all derived during render, so switching type
   // never needs an effect to clear state — the previous list simply stops
   // matching the type and is discarded.
-  const noLoader = !ENTITY_LOADERS[values.entity_type];
+  const inLibrary = values.entity_type === MEDIA_LIBRARY_ENTITY_TYPE;
+  const noLoader = !inLibrary && !ENTITY_LOADERS[values.entity_type];
   const currentOptions = options?.type === values.entity_type ? options : null;
   const optionRows = currentOptions?.rows ?? null;
   const optionsError = currentOptions?.error ?? null;
-  const optionsLoading = dialogOpen && !noLoader && optionRows === null;
+  const optionsLoading = dialogOpen && !inLibrary && !noLoader && optionRows === null;
 
   const pickFile = (next: File | null) => {
     setFormError(null);
@@ -176,7 +179,11 @@ export function MediaSection() {
       const created = await adminApi.uploadMedia(built.body);
       showToast({
         title: "Image uploaded",
-        description: `${created.file_name ?? "Image"} → ${mediaEntityLabel(created.entity_type)} #${created.entity_id}`,
+        description: `${created.file_name ?? "Image"} → ${
+          created.entity_type === MEDIA_LIBRARY_ENTITY_TYPE
+            ? "Media library"
+            : `${mediaEntityLabel(created.entity_type)} #${created.entity_id}`
+        }`,
         variant: "success",
       });
       closeDialog();
@@ -202,6 +209,20 @@ export function MediaSection() {
     }
   };
 
+  const copyLink = async (record: AdminMedia) => {
+    // The origin the admin is actually using, not the canonical `SITE_URL`: a
+    // preview deployment must hand out links that resolve on that deployment.
+    const link = new URL(record.url, window.location.origin).href;
+    try {
+      await navigator.clipboard.writeText(link);
+      showToast({ title: "Link copied", description: link, variant: "success" });
+    } catch {
+      // Clipboard access can be denied (an insecure origin, a browser policy).
+      // The link is still in the toast, so it can be selected and copied by hand.
+      showToast({ title: "Could not copy the link", description: link, variant: "error" });
+    }
+  };
+
   const setValue = <K extends keyof MediaFormValues>(key: K, value: MediaFormValues[K]) => {
     setValues((v) => ({ ...v, [key]: value }));
   };
@@ -212,7 +233,7 @@ export function MediaSection() {
     <div>
       <SectionHeading
         title="Media library"
-        description="College logos, covers and campus imagery"
+        description="Upload images here, then pick one in any form — or copy its link"
         count={all.length}
         action={
           canWrite ? (
@@ -232,8 +253,7 @@ export function MediaSection() {
           <p className="text-sm text-slate-400">No files uploaded yet.</p>
           {canWrite && (
             <p className="mt-1 text-xs text-slate-400">
-              A college can be created without a logo, but it will have none until an image is
-              attached here.
+              Upload the images you want to use here. Every form picks from this library.
             </p>
           )}
         </div>
@@ -260,16 +280,29 @@ export function MediaSection() {
                   </p>
                   <p className="mt-0.5 truncate text-[11px] text-slate-400">
                     {mediaEntityLabel(m.entity_type)}
-                    {m.entity_id === null ? "" : ` #${m.entity_id}`}
+                    {m.entity_id === null || m.entity_type === MEDIA_LIBRARY_ENTITY_TYPE
+                      ? ""
+                      : ` #${m.entity_id}`}
                     {m.image_type ? ` · ${m.image_type}` : ""}
                   </p>
                   {m.file_size !== null && (
                     <p className="mt-0.5 text-[11px] text-slate-400">{formatBytes(m.file_size)}</p>
                   )}
+                  <p className="mt-1 truncate font-mono text-[10px] text-slate-400">{m.url}</p>
                 </div>
-                {canWrite && (
-                  <div className="flex items-center justify-end gap-1 border-t border-slate-100 px-2 py-1.5">
-                    {pendingDelete === m.id ? (
+                {/* Copy is available to readers too: the library is readable
+                    without a content role, and pasting a link into a form is a
+                    read-only action. Delete stays behind `canWrite`. */}
+                <div className="flex items-center justify-between gap-1 border-t border-slate-100 px-2 py-1.5">
+                  <IconAction
+                    title={`Copy link to ${m.file_name ?? "image"}`}
+                    onClick={() => void copyLink(m)}
+                    className="hover:bg-purple-50 hover:text-purple-700"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                  </IconAction>
+                  {canWrite &&
+                    (pendingDelete === m.id ? (
                       <>
                         <button
                           type="button"
@@ -296,9 +329,8 @@ export function MediaSection() {
                       >
                         <Trash2 className="h-4 w-4" />
                       </IconAction>
-                    )}
-                  </div>
-                )}
+                    ))}
+                </div>
               </div>
             );
           })}
@@ -389,55 +421,64 @@ export function MediaSection() {
                 setFormError(null);
               }}
             >
+              <option value={MEDIA_LIBRARY_ENTITY_TYPE}>No record — keep in library</option>
               {MEDIA_ENTITY_TYPES.map((t) => (
                 <option key={t.value} value={t.value}>
                   {t.label}
                 </option>
               ))}
             </Select>
+            {inLibrary && (
+              <p className="mt-1.5 text-xs text-slate-400">
+                The image is available to every form&apos;s image picker. Choose a record only if
+                you want the library to group it under that record.
+              </p>
+            )}
           </div>
 
-          <div>
-            <Label htmlFor="media-entity-id">{mediaEntityLabel(values.entity_type)}</Label>
-            <Select
-              id="media-entity-id"
-              value={values.entity_id}
-              disabled={submitting || optionsLoading || noLoader}
-              error={optionsError !== null}
-              onChange={(e) => setValue("entity_id", e.target.value)}
-            >
-              <option value="">
-                {optionsLoading
-                  ? `Loading ${mediaEntityLabel(values.entity_type).toLowerCase()}s…`
-                  : "Select…"}
-              </option>
-              {(optionRows ?? []).map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.label}
+          {!inLibrary && (
+            <div>
+              <Label htmlFor="media-entity-id">{mediaEntityLabel(values.entity_type)}</Label>
+              <Select
+                id="media-entity-id"
+                value={values.entity_id}
+                disabled={submitting || optionsLoading || noLoader}
+                error={optionsError !== null}
+                onChange={(e) => setValue("entity_id", e.target.value)}
+              >
+                <option value="">
+                  {optionsLoading
+                    ? `Loading ${mediaEntityLabel(values.entity_type).toLowerCase()}s…`
+                    : "Select…"}
                 </option>
-              ))}
-            </Select>
-            {optionsError && (
-              <p className="mt-1.5 text-xs text-red-600">
-                The list could not be loaded, so an image cannot be attached. Reload the page to
-                try again.
-              </p>
-            )}
-            {noLoader && (
-              <p className="mt-1.5 text-xs text-red-600">
-                No list is wired up for “{mediaEntityLabel(values.entity_type)}”, so an image
-                cannot be attached to it.
-              </p>
-            )}
-            {optionRows !== null && optionRows.length === 0 && !optionsError && !noLoader && (
-              <p className="mt-1.5 text-xs text-slate-400">
-                There are no {mediaEntityLabel(values.entity_type).toLowerCase()}s to attach to yet.
-              </p>
-            )}
-            {selectedEntityLabel && (
-              <p className="mt-1.5 text-xs text-slate-400">Will be attached to “{selectedEntityLabel}”.</p>
-            )}
-          </div>
+                {(optionRows ?? []).map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.label}
+                  </option>
+                ))}
+              </Select>
+              {optionsError && (
+                <p className="mt-1.5 text-xs text-red-600">
+                  The list could not be loaded, so an image cannot be attached. Reload the page to
+                  try again.
+                </p>
+              )}
+              {noLoader && (
+                <p className="mt-1.5 text-xs text-red-600">
+                  No list is wired up for “{mediaEntityLabel(values.entity_type)}”, so an image
+                  cannot be attached to it.
+                </p>
+              )}
+              {optionRows !== null && optionRows.length === 0 && !optionsError && !noLoader && (
+                <p className="mt-1.5 text-xs text-slate-400">
+                  There are no {mediaEntityLabel(values.entity_type).toLowerCase()}s to attach to yet.
+                </p>
+              )}
+              {selectedEntityLabel && (
+                <p className="mt-1.5 text-xs text-slate-400">Will be attached to “{selectedEntityLabel}”.</p>
+              )}
+            </div>
+          )}
 
           <div>
             <Label htmlFor="media-image-type">Image type</Label>

@@ -137,9 +137,11 @@ describe("BannersSection — editing an existing card", () => {
 
     expect(container.querySelector<HTMLInputElement>("#banner-title")?.value).toBe("hsrgh");
     expect(container.querySelector<HTMLInputElement>("#banner-subtitle")?.value).toBe("hgjfg");
-    expect(container.querySelector<HTMLInputElement>("#banner-image")?.value).toBe(
-      "https://t4.ftcdn.net/a.jpg",
-    );
+    // The image is a Media-library picker now, not a URL box. An image saved
+    // before the picker existed is still shown, and can be replaced or removed.
+    const image = container.querySelector<HTMLButtonElement>("#banner-image");
+    expect(image?.textContent).toContain("Replace image");
+    expect(container.textContent).toContain("https://t4.ftcdn.net/a.jpg");
     expect(container.querySelector<HTMLInputElement>("#banner-link")?.value).toBe("/exams");
     expect(container.textContent).toContain("Editing “hsrgh”");
   });

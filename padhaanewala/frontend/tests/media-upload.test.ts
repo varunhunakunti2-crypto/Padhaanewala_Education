@@ -4,6 +4,8 @@ import { ApiError, adminApi, type AdminMedia } from "@/lib/api";
 import {
   MEDIA_ALT_TEXT_MAX,
   MEDIA_ENTITY_TYPES,
+  MEDIA_LIBRARY_ENTITY_ID,
+  MEDIA_LIBRARY_ENTITY_TYPE,
   MEDIA_MAX_BYTES_DEFAULT,
   MEDIA_SVG_REASON,
   buildMediaUpload,
@@ -11,6 +13,7 @@ import {
   formatBytes,
   mediaEntityLabel,
   mediaFileExtension,
+  mediaLinkPath,
   validateMediaFile,
   type MediaFormValues,
 } from "@/lib/media-form";
@@ -140,9 +143,9 @@ describe("formatBytes", () => {
 
 describe("buildMediaUpload", () => {
   it("sends exactly the parts upload_media declares", () => {
-    // `file`, `entity_type`, `entity_id` are required; the rest are optional.
-    // A misspelled part name is not an error on this side — it is a 422 from
-    // FastAPI, or worse, a required part arriving as `None`.
+    // `file` is required; the rest have defaults on the route. A misspelled
+    // part name is not an error on this side — it is a 422 from FastAPI, or
+    // worse, an optional part silently arriving as `None`.
     const built = buildMediaUpload(values(), imageFile(2048));
     expect(built.ok).toBe(true);
     if (!built.ok) return;
@@ -165,12 +168,41 @@ describe("buildMediaUpload", () => {
     if (!built.ok) expect(built.error).toMatch(/Choose an image/);
   });
 
-  it("requires an entity, because the column is not nullable", () => {
-    // `entity_type` is `Mapped[str]` with no default and `entity_id` is
-    // `Mapped[int]` — a row without them cannot be written, and they are the
-    // only way the file can be found again.
-    expect(buildMediaUpload(values({ entity_type: "" }), imageFile(2048)).ok).toBe(false);
+  it("allows an unattached upload, storing the library sentinel", () => {
+    // The Media library is the only upload point, so an image is often uploaded
+    // before the record it will decorate exists. Both columns are NOT NULL, so
+    // "no record" is the explicit `library` / `0` pair.
+    const built = buildMediaUpload(
+      values({ entity_type: MEDIA_LIBRARY_ENTITY_TYPE, entity_id: "" }),
+      imageFile(2048),
+    );
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    expect(built.body.get("entity_type")).toBe(MEDIA_LIBRARY_ENTITY_TYPE);
+    expect(built.body.get("entity_id")).toBe(String(MEDIA_LIBRARY_ENTITY_ID));
+  });
+
+  it("drops a stale record id when the destination is the library", () => {
+    // Switching the select from College to Library clears the id in the UI, but
+    // the builder must not depend on that having happened: a leftover `42`
+    // beside `library` would describe an attachment that does not exist.
+    const built = buildMediaUpload(
+      values({ entity_type: MEDIA_LIBRARY_ENTITY_TYPE, entity_id: "42" }),
+      imageFile(2048),
+    );
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    expect(built.body.get("entity_id")).toBe(String(MEDIA_LIBRARY_ENTITY_ID));
+  });
+
+  it("still requires a record id for an attached upload", () => {
     expect(buildMediaUpload(values({ entity_id: "" }), imageFile(2048)).ok).toBe(false);
+  });
+
+  it("refuses an empty entity type rather than guessing the library", () => {
+    // The select always sends a value; a blank one means the form lost its
+    // state, not that the admin chose "unattached".
+    expect(buildMediaUpload(values({ entity_type: "" }), imageFile(2048)).ok).toBe(false);
   });
 
   it("refuses an id that is not a positive whole number", () => {
@@ -257,6 +289,44 @@ describe("mediaEntityLabel", () => {
   it("says so plainly when a row is unattached", () => {
     expect(mediaEntityLabel(null)).toBe("Unattached");
     expect(mediaEntityLabel("   ")).toBe("Unattached");
+  });
+
+  it("names the library sentinel instead of printing it as a record type", () => {
+    expect(mediaEntityLabel(MEDIA_LIBRARY_ENTITY_TYPE)).toBe("Library");
+  });
+});
+
+describe("mediaLinkPath", () => {
+  it("accepts the stored path and the absolute link the panel copies", () => {
+    // Both shapes name the same file; the forms store the path, so both must
+    // reduce to it.
+    expect(mediaLinkPath("/api/v1/media/files/12")).toBe("/api/v1/media/files/12");
+    expect(mediaLinkPath("https://padhaanewala.in/api/v1/media/files/12")).toBe(
+      "/api/v1/media/files/12",
+    );
+  });
+
+  it("strips a query string or fragment, which do not change the file", () => {
+    expect(mediaLinkPath("/api/v1/media/files/12?rev=2")).toBe("/api/v1/media/files/12");
+    expect(mediaLinkPath("https://padhaanewala.in/api/v1/media/files/12#top")).toBe(
+      "/api/v1/media/files/12",
+    );
+    expect(mediaLinkPath("/api/v1/media/files/12/")).toBe("/api/v1/media/files/12");
+  });
+
+  it("refuses any address that is not a media file, including external images", () => {
+    // Letting these through would quietly turn the picker back into a general
+    // URL box, which is exactly what moving uploads into Media removed.
+    expect(mediaLinkPath("https://example.com/logo.png")).toBeNull();
+    expect(mediaLinkPath("https://padhaanewala.in/logo.png")).toBeNull();
+    expect(mediaLinkPath("/api/v1/media/files/")).toBeNull();
+    expect(mediaLinkPath("/api/v1/colleges/12")).toBeNull();
+    expect(mediaLinkPath("")).toBeNull();
+  });
+
+  it("refuses id zero, which is the library sentinel rather than a file", () => {
+    expect(mediaLinkPath("/api/v1/media/files/0")).toBeNull();
+    expect(mediaLinkPath("/api/v1/media/files/007")).toBeNull();
   });
 });
 

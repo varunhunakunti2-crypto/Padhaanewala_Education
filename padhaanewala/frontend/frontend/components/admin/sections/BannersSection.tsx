@@ -5,6 +5,7 @@ import { Pencil, Plus, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/FormField";
+import { ImageField } from "@/components/admin/ImageField";
 import { useApp } from "@/lib/context/AppContext";
 import { adminApi, isForbidden, type AdminBanner } from "@/lib/api";
 import { useAdminResource } from "@/components/admin/useAdminResource";
@@ -117,19 +118,13 @@ function BannerForm({
         />
       </div>
       <div>
-        <Label htmlFor="banner-image">Image URL</Label>
-        <Input
+        <ImageField
           id="banner-image"
+          label="Image"
           value={draft.image_url}
-          onChange={(e) => setDraft({ ...draft, image_url: e.target.value })}
-          placeholder="https://…"
+          onChange={(image_url) => setDraft({ ...draft, image_url })}
+          hint="Pick a file from the Media library. Without an image the card shows its initials instead."
         />
-        <p className="mt-1 text-[11px] leading-snug text-slate-500">
-          Best: upload the file in the Media library and paste its
-          {" "}<code>/api/v1/media/files/…</code> path here. A third-party URL works
-          only if that host is allowlisted in the site CSP; otherwise the card
-          shows its initial instead.
-        </p>
       </div>
       <div className="sm:col-span-2">
         <Label htmlFor="banner-link">Link URL</Label>

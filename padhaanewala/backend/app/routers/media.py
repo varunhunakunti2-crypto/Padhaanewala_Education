@@ -30,6 +30,16 @@ from app.roles import CONTENT_ROLES
 #: ran.
 _UPLOAD_CHUNK = 64 * 1024
 
+#: The stored pair for an image that is not attached to a record.
+#:
+#: `media.entity_type` and `media.entity_id` are `NOT NULL` with no foreign key,
+#: so "no record" has no null representation. The Media library is the only
+#: upload point now, and an image is often uploaded before the banner, post or
+#: college it will decorate exists — this sentinel is how that honest state is
+#: written without a schema migration. Nothing joins on it.
+LIBRARY_ENTITY_TYPE = "library"
+LIBRARY_ENTITY_ID = 0
+
 def _to_response(media: Media) -> MediaResponse:
     return MediaResponse(
         id=media.id,
@@ -192,14 +202,14 @@ def delete_media(
 )
 async def upload_media(
     file: UploadFile = File(...),
-    entity_type: str = Form(...),
-    entity_id: int = Form(...),
+    entity_type: str | None = Form(None),
+    entity_id: int | None = Form(None),
     image_type: str | None = Form(None),
     alt_text: str | None = Form(None),
     display_order: int = Form(0),
     db: Session = Depends(get_db),
 ):
-    """Store an uploaded image and register it against an entity.
+    """Store an uploaded image, optionally attached to an entity.
 
     The entity is not verified to exist. `media` has no foreign key to
     `college`, `blog` or anything else — the column pair is a soft reference,
@@ -207,8 +217,31 @@ async def upload_media(
     invisible in every listing and impossible to find later. Validating it would
     mean a registry of entity types, which the schema does not have; the admin
     panel picks both values from a real list, which is the actual safeguard.
+
+    Both parts are optional because the Media library is the only upload point:
+    an admin uploads the image first and picks it in a form later. Omitting the
+    pair stores it unattached as ``library`` / ``0``. Supplying one half without
+    the other is refused rather than guessed — an id with no type, or a type
+    with no id, is exactly the half-written soft reference this route cannot
+    validate.
     """
     settings = get_settings()
+
+    chosen_type = (entity_type or "").strip()
+    if (chosen_type == "") != (entity_id is None):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Provide both entity_type and entity_id, or neither to keep the "
+                "image in the library."
+            ),
+        )
+    if chosen_type:
+        stored_type = chosen_type[:50]
+        stored_id = entity_id if entity_id is not None else LIBRARY_ENTITY_ID
+    else:
+        stored_type = LIBRARY_ENTITY_TYPE
+        stored_id = LIBRARY_ENTITY_ID
 
     data = bytearray()
     while True:
@@ -235,8 +268,8 @@ async def upload_media(
         url="pending",
         file_name=media_store.safe_label(file.filename or "upload"),
         alt_text=alt_text or None,
-        entity_type=entity_type.strip()[:50],
-        entity_id=entity_id,
+        entity_type=stored_type,
+        entity_id=stored_id,
         image_type=image_type or None,
         display_order=display_order,
     )

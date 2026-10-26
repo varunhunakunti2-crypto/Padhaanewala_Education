@@ -2,6 +2,7 @@
 
 import { Input, Select } from "@/components/ui/FormField";
 import { Field, FieldSet, NoneOption, Textarea } from "@/components/admin/fields";
+import { ImageField } from "@/components/admin/ImageField";
 import type { AdminBlogCategory } from "@/lib/api";
 import { BLOG_STATUSES, type BlogFormValues, type BlogStatus } from "@/lib/blog-form";
 
@@ -110,18 +111,13 @@ export function BlogFormFields({
 
       <FieldSet legend="Presentation" disabled={disabled}>
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field
+          <ImageField
             id="blog-image"
-            label="Featured image URL"
-            hint="An http(s) address, or a path such as /api/v1/media/files/12 from the media library."
-          >
-            <Input
-              id="blog-image"
-              value={values.featured_image_url}
-              onChange={(e) => set("featured_image_url", e.target.value)}
-              placeholder="https://"
-            />
-          </Field>
+            label="Featured image"
+            value={values.featured_image_url}
+            onChange={(v) => set("featured_image_url", v)}
+            hint="Pick a file from the Media library. Without one the article uses its generated artwork."
+          />
           <Field id="blog-category" label="Category">
             <Select
               id="blog-category"
