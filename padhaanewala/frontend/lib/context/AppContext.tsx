@@ -18,6 +18,7 @@ import {
   fetchMyRoles,
   getAccessToken,
   hasAdminRole,
+  notificationsApi,
   purgeLegacyTokenStorage,
   refreshAccessToken,
   subscribeToAccessToken,
@@ -28,6 +29,12 @@ import {
   unsaveCollegeRemote,
   type SavedCollegeRecord,
 } from "@/lib/api";
+import {
+  apiNotificationId,
+  isApiNotification,
+  localNotifications,
+  mergeApiNotifications,
+} from "@/lib/notification-inbox";
 
 export interface ToastItem {
   id: number;
@@ -265,9 +272,60 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setIsAuthenticated(false);
         setRoles([]);
         setRolesReady(true);
+        // Another tab signed out. Drop the fetched inbox: those rows belong to
+        // the session that just ended, and the next sign-in is a different
+        // person on a shared browser.
+        setNotifications((prev) => prev.filter((n) => !isApiNotification(n)));
       }
     });
   }, [refreshRoles]);
+
+  /**
+   * The inbox is server state.
+   *
+   * `cp_notifications` only ever held rows a browser wrote to itself, so a
+   * broadcast from the admin console — which writes one row per student in
+   * `notifications` — never appeared on this page. Fetching `/notifications/my`
+   * is what makes the other end of that console exist.
+   *
+   * Refreshed on three triggers: when the session becomes available (boot
+   * exchange or sign-in), when the tab regains focus, and once a minute while it
+   * is open. The header bell reads this same list, so without the two live
+   * triggers a message sent while the student was reading would not appear until
+   * a full reload.
+   *
+   * The `ignore` flag drops a response that lands after sign-out, which would
+   * otherwise put one user's messages on the next user's page.
+   *
+   * A failure keeps the local rows rather than clearing the list. An inbox that
+   * is empty because the network dropped is indistinguishable from "you have no
+   * updates", and the second one is a much worse thing to show someone.
+   */
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let ignore = false;
+
+    const pull = () => {
+      void notificationsApi
+        .my()
+        .then((rows) => {
+          if (ignore) return;
+          setNotifications((prev) => mergeApiNotifications(prev, rows));
+        })
+        .catch(() => undefined);
+    };
+
+    pull();
+    const onFocus = () => pull();
+    const timer = window.setInterval(pull, 60_000);
+    window.addEventListener("focus", onFocus);
+
+    return () => {
+      ignore = true;
+      window.clearInterval(timer);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [isAuthenticated]);
 
   const toggleDarkMode = useCallback(() => {
     setDarkMode((prev) => {
@@ -329,7 +387,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [testHistory]);
   useEffect(() => {
     if (!hydrated.current) return;
-    save("cp_notifications", notifications);
+    save("cp_notifications", localNotifications(notifications));
   }, [notifications]);
   useEffect(() => {
     if (!hydrated.current) return;
@@ -585,10 +643,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const markNotificationRead = useCallback((id: string) => {
     setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+    // The flip above is optimistic: the badge clears immediately, and a failed
+    // write only means the row comes back unread on the next fetch. That is
+    // preferable to a click that appears to do nothing while the request is in
+    // flight, which is what a server round-trip before the state change looks
+    // like on a slow connection.
+    const serverId = apiNotificationId(id);
+    if (serverId !== null) {
+      void notificationsApi.markRead(serverId).catch(() => undefined);
+    }
   }, []);
 
   const markAllNotificationsRead = useCallback(() => {
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    // Marks the caller's rows only; the endpoint is scoped to the access token,
+    // so this cannot touch anybody else's inbox.
+    void notificationsApi.markAllRead().catch(() => undefined);
   }, []);
 
   const addReview = useCallback(
@@ -607,6 +677,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       } else {
         setRoles([]);
         setRolesReady(true);
+        setNotifications((prev) => prev.filter((n) => !isApiNotification(n)));
       }
     },
     [refreshRoles],
@@ -625,6 +696,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setRoles([]);
     setRolesReady(true);
     setProfileState(null);
+    // Same reason as the cross-tab branch: the fetched inbox is the ending
+    // session's, not this browser's.
+    setNotifications((prev) => prev.filter((n) => !isApiNotification(n)));
     showToast({
       variant: "info",
       title: "Signed out",

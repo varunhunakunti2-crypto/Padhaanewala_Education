@@ -79,7 +79,17 @@ describe("role gates", () => {
       exam: ["super_admin", "admin"],
       blog: ["super_admin", "admin"],
       faq: ["super_admin", "admin", "content_manager"],
+      // Not a catalogue table: the log is readable by `admin`, but sending,
+      // editing and retracting are SUPER_ADMIN_ROLES.
+      notification: ["super_admin"],
     });
+  });
+
+  it("reserves notification writes for a super admin", () => {
+    expect(hasAnyRole(SUPER_ADMIN, CATALOG_DELETE_ROLES.notification)).toBe(true);
+    for (const roles of [ADMIN, CONTENT_MANAGER, ["admin", "content_manager"]]) {
+      expect(hasAnyRole(roles, CATALOG_DELETE_ROLES.notification), roles.join()).toBe(false);
+    }
   });
 
   it("grants a super-admin-only user the delete button the API would accept", () => {

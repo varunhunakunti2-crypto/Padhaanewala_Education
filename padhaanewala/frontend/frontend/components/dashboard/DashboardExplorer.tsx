@@ -56,6 +56,8 @@ export default function DashboardExplorer() {
     compareList,
     refreshSavedColleges,
     notifications,
+    markNotificationRead,
+    markAllNotificationsRead,
   } = useApp();
 
   const displayName = profile?.name?.trim() || "";
@@ -256,13 +258,31 @@ export default function DashboardExplorer() {
 
         {/* notifications */}
         <div className={`mt-5 overflow-hidden rounded-[22px] ${T.card}`}>
-          <div className={`flex items-center justify-between border-b px-6 py-4 ${T.divider}`}>
+          <div className={`flex flex-wrap items-center justify-between gap-2 border-b px-6 py-4 ${T.divider}`}>
             <h2 className={`font-display text-[17px] font-extrabold tracking-tight ${T.heading}`}>Recent updates</h2>
-            {unread > 0 ? (
-              <span className="rounded-full bg-[#FDE8EE] px-3 py-1 text-[12px] font-bold text-[#F45D76] dark:bg-rose-500/15 dark:text-rose-400">
-                {unread} unread
-              </span>
-            ) : null}
+            <div className="flex items-center gap-2">
+              {unread > 0 ? (
+                <span className="rounded-full bg-[#FDE8EE] px-3 py-1 text-[12px] font-bold text-[#F45D76] dark:bg-rose-500/15 dark:text-rose-400">
+                  {unread} unread
+                </span>
+              ) : null}
+              {/*
+                Without this, nothing in the app could ever call
+                `markNotificationRead`: the count would sit at "12 unread"
+                forever and the admin console's Read column would always show
+                zero. It only appears when there is something to mark, so the
+                header does not carry a no-op button.
+              */}
+              {unread > 0 ? (
+                <button
+                  type="button"
+                  onClick={markAllNotificationsRead}
+                  className={`rounded-full px-3 py-1 text-[12px] font-semibold transition-colors hover:bg-[#F4F2EC] dark:hover:bg-slate-800 ${T.accent}`}
+                >
+                  Mark all read
+                </button>
+              ) : null}
+            </div>
           </div>
           <div className={`divide-y ${T.divider}`}>
             {notifications.length === 0 ? (
@@ -271,10 +291,28 @@ export default function DashboardExplorer() {
               </p>
             ) : (
               notifications.slice(0, 5).map((n) => (
-                <div key={n.id} className="px-6 py-4">
-                  <p className={`text-[15px] font-semibold ${T.heading}`}>{n.title}</p>
-                  {n.message ? <p className={`mt-1 text-[14px] ${T.body}`}>{n.message}</p> : null}
-                </div>
+                <button
+                  key={n.id}
+                  type="button"
+                  onClick={() => markNotificationRead(n.id)}
+                  disabled={n.read}
+                  className={`block w-full px-6 py-4 text-left transition-colors enabled:hover:bg-[#FAF9F6] dark:enabled:hover:bg-slate-800/60 disabled:cursor-default`}
+                >
+                  <span className="flex items-start gap-2.5">
+                    <span
+                      aria-hidden="true"
+                      className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
+                        n.read ? "bg-transparent" : "bg-[#3159C9] dark:bg-indigo-400"
+                      }`}
+                    />
+                    <span className="min-w-0">
+                      <span className={`block text-[15px] ${n.read ? `font-medium ${T.body}` : `font-semibold ${T.heading}`}`}>
+                        {n.title}
+                      </span>
+                      {n.message ? <span className={`mt-1 block text-[14px] ${T.body}`}>{n.message}</span> : null}
+                    </span>
+                  </span>
+                </button>
               ))
             )}
           </div>

@@ -58,6 +58,19 @@ def admin_token():
     return token
 
 
+@pytest.fixture
+def super_admin_token():
+    """A caller holding only `super_admin`.
+
+    Role membership is not implied by rank, so a token holding `admin` alone is
+    refused by `require_role(*SUPER_ADMIN_ROLES)` even though `super_admin`
+    outranks it. Notification mutations are gated on that tuple, so the writes
+    below need this token rather than `admin_token`.
+    """
+    token, _ = _token_for(_unique("superadmin"), "super_admin")
+    return token
+
+
 def _college_ref() -> str:
     college = client.get("/api/v1/colleges").json()[0]
     return college["id"]
@@ -292,7 +305,7 @@ def test_seo_write_requires_role(student):
 # ---------- Notifications ----------
 
 
-def test_notification_flow(student, admin_token):
+def test_notification_flow(student, super_admin_token):
     headers = {"Authorization": f"Bearer {student['token']}"}
 
     empty = client.get("/api/v1/notifications/my", headers=headers)
@@ -307,7 +320,7 @@ def test_notification_flow(student, admin_token):
     student_id = int(
         jwt.decode(student["token"], options={"verify_signature": False})["sub"]
     )
-    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    admin_headers = {"Authorization": f"Bearer {super_admin_token}"}
     created = client.post(
         "/api/v1/notifications",
         json={
@@ -342,7 +355,7 @@ def test_notification_flow(student, admin_token):
     assert zero.json() == 0
 
 
-def test_admin_notification_log_names_the_recipient(admin_token, student):
+def test_admin_notification_log_names_the_recipient(super_admin_token, student):
     """The log must say who received a notification.
 
     An admin broadcast log that renders every row as an anonymous delivery is
@@ -355,10 +368,10 @@ def test_admin_notification_log_names_the_recipient(admin_token, student):
     client.post(
         "/api/v1/notifications",
         json={"user_id": student_id, "type": "exam", "title": "JEE Main date"},
-        headers={"Authorization": f"Bearer {admin_token}"},
+        headers={"Authorization": f"Bearer {super_admin_token}"},
     )
     log = client.get(
-        "/api/v1/notifications", headers={"Authorization": f"Bearer {admin_token}"}
+        "/api/v1/notifications", headers={"Authorization": f"Bearer {super_admin_token}"}
     )
     assert log.status_code == 200, log.text
     row = next(r for r in log.json() if r["title"] == "JEE Main date")
@@ -366,7 +379,7 @@ def test_admin_notification_log_names_the_recipient(admin_token, student):
     assert row["user_id"] == student_id
 
 
-def test_broadcast_reaches_every_active_student(admin_token, student):
+def test_broadcast_reaches_every_active_student(super_admin_token, student):
     """Omitting `user_id` is a broadcast, not a validation error.
 
     The admin console's compose form is labelled "Send broadcast" and sends no
@@ -376,7 +389,7 @@ def test_broadcast_reaches_every_active_student(admin_token, student):
     result = client.post(
         "/api/v1/notifications",
         json={"type": "scholarship", "title": "Scholarships open", "message": "Apply now."},
-        headers={"Authorization": f"Bearer {admin_token}"},
+        headers={"Authorization": f"Bearer {super_admin_token}"},
     )
     assert result.status_code == 201, result.text
     assert result.json()["created"] >= 1
@@ -387,17 +400,17 @@ def test_broadcast_reaches_every_active_student(admin_token, student):
     assert any(n["title"] == "Scholarships open" for n in mine.json())
 
 
-def test_notification_broadcast_is_audited(admin_token, student):
+def test_notification_broadcast_is_audited(super_admin_token, student):
     """A mass write to student accounts must leave a trail (Phase 4.4)."""
     client.post(
         "/api/v1/notifications",
         json={"type": "general", "title": "Audited broadcast"},
-        headers={"Authorization": f"Bearer {admin_token}"},
+        headers={"Authorization": f"Bearer {super_admin_token}"},
     )
     log = client.get(
         "/api/v1/audit-logs",
         params={"action": "notification.broadcast"},
-        headers={"Authorization": f"Bearer {admin_token}"},
+        headers={"Authorization": f"Bearer {super_admin_token}"},
     )
     assert log.status_code == 200, log.text
     assert log.json(), "broadcast wrote no audit row"
@@ -416,7 +429,7 @@ def test_notification_read_all_admin_only(student):
     assert created.status_code == 403
 
 
-def test_admin_can_list_notifications_across_accounts(student, admin_token):
+def test_admin_can_list_notifications_across_accounts(student, admin_token, super_admin_token):
     """`GET /notifications` is the admin console's read path.
 
     It did not exist. `NotificationsSection` called it, got a 404, and rendered
@@ -424,16 +437,20 @@ def test_admin_can_list_notifications_across_accounts(student, admin_token):
     missing route. `/my` is not a substitute because it is self-scoped, so an
     admin using it would see their own rows and read an empty list as "no
     notifications exist".
+
+    The send needs a super admin; the read is deliberately open to `admin` too,
+    which is why both tokens appear here.
     """
     student_id = int(
         jwt.decode(student["token"], options={"verify_signature": False})["sub"]
     )
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    sender_headers = {"Authorization": f"Bearer {super_admin_token}"}
 
     created = client.post(
         "/api/v1/notifications",
         json={"user_id": student_id, "type": "admission", "title": "For the student"},
-        headers=admin_headers,
+        headers=sender_headers,
     )
     assert created.status_code == 201, created.text
 
@@ -457,6 +474,325 @@ def test_admin_notification_listing_is_not_reachable_by_students(student):
     headers = {"Authorization": f"Bearer {student['token']}"}
     assert client.get("/api/v1/notifications", headers=headers).status_code == 403
     assert client.get("/api/v1/notifications").status_code == 401
+
+
+def _student_id(student: dict) -> int:
+    return int(jwt.decode(student["token"], options={"verify_signature": False})["sub"])
+
+
+def _send_broadcast(super_admin_token: str, title: str) -> dict:
+    created = client.post(
+        "/api/v1/notifications",
+        json={"type": "general", "title": title, "message": "Original wording."},
+        headers={"Authorization": f"Bearer {super_admin_token}"},
+    )
+    assert created.status_code == 201, created.text
+    return created.json()
+
+
+def test_plain_admin_cannot_send_edit_or_delete_notifications(
+    student, admin_token, super_admin_token
+):
+    """Notification writes are a super-admin capability, not an admin one.
+
+    A broadcast is an unrecallable mass write into accounts that are frequently
+    minors, so `require_role(*SUPER_ADMIN_ROLES)` sits on every mutation. Role
+    membership is not implied by rank, so an account holding `admin` is refused
+    even though `super_admin` outranks it.
+    """
+    student_id = _student_id(student)
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    sender_headers = {"Authorization": f"Bearer {super_admin_token}"}
+
+    sent = client.post(
+        "/api/v1/notifications",
+        json={"user_id": student_id, "type": "exam", "title": "Super admin only"},
+        headers=admin_headers,
+    )
+    assert sent.status_code == 403, sent.text
+
+    # A real row exists, so the refusals below are about the role and not a 404.
+    created = client.post(
+        "/api/v1/notifications",
+        json={"user_id": student_id, "type": "exam", "title": "Super admin only"},
+        headers=sender_headers,
+    )
+    assert created.status_code == 201, created.text
+    row = created.json()["recipients"][0]
+
+    assert (
+        client.put(
+            f"/api/v1/notifications/{row['id']}",
+            json={"title": "Edited by an admin"},
+            headers=admin_headers,
+        ).status_code
+        == 403
+    )
+    assert (
+        client.delete(
+            f"/api/v1/notifications/{row['id']}", headers=admin_headers
+        ).status_code
+        == 404
+    ), "a non-owner without super_admin is answered as not-found, so existence is not leaked"
+    assert (
+        client.put(
+            f"/api/v1/notifications/batch/{row['batch_id']}",
+            json={"title": "Edited by an admin"},
+            headers=admin_headers,
+        ).status_code
+        == 403
+    )
+    assert (
+        client.delete(
+            f"/api/v1/notifications/batch/{row['batch_id']}", headers=admin_headers
+        ).status_code
+        == 403
+    )
+
+
+def test_super_admin_edits_one_notification(student, super_admin_token):
+    """`PUT /notifications/{id}` changes the row the student reads."""
+    sender_headers = {"Authorization": f"Bearer {super_admin_token}"}
+    created = client.post(
+        "/api/v1/notifications",
+        json={"user_id": _student_id(student), "type": "exam", "title": "Old title"},
+        headers=sender_headers,
+    )
+    assert created.status_code == 201, created.text
+    row_id = created.json()["recipients"][0]["id"]
+
+    edited = client.put(
+        f"/api/v1/notifications/{row_id}",
+        json={"title": "New title", "message": "Corrected wording."},
+        headers=sender_headers,
+    )
+    assert edited.status_code == 200, edited.text
+    assert edited.json()["title"] == "New title"
+    assert edited.json()["message"] == "Corrected wording."
+    # The recipient is fixed: an edit is not a re-send.
+    assert edited.json()["user_id"] == _student_id(student)
+
+    mine = client.get(
+        "/api/v1/notifications/my",
+        headers={"Authorization": f"Bearer {student['token']}"},
+    )
+    assert any(
+        n["id"] == row_id and n["title"] == "New title" for n in mine.json()
+    ), mine.json()
+
+
+def test_notification_update_rejects_an_empty_body(super_admin_token):
+    """An `{}` body must not answer 200 over an unchanged row."""
+    created = client.post(
+        "/api/v1/notifications",
+        json={"type": "general", "title": "No-op guard"},
+        headers={"Authorization": f"Bearer {super_admin_token}"},
+    )
+    assert created.status_code == 201, created.text
+    row_id = created.json()["recipients"][0]["id"]
+
+    empty = client.put(
+        f"/api/v1/notifications/{row_id}",
+        json={},
+        headers={"Authorization": f"Bearer {super_admin_token}"},
+    )
+    assert empty.status_code == 400, empty.text
+
+
+def test_super_admin_edits_a_whole_broadcast(student, super_admin_token):
+    """A broadcast is one entry in the UI, so one edit must reach every row."""
+    sender_headers = {"Authorization": f"Bearer {super_admin_token}"}
+    sent = _send_broadcast(super_admin_token, "Broadcast before edit")
+    batch_id = sent["recipients"][0]["batch_id"]
+    assert batch_id, sent
+    # Every row of the send shares the id.
+    assert {r["batch_id"] for r in sent["recipients"]} == {batch_id}
+
+    edited = client.put(
+        f"/api/v1/notifications/batch/{batch_id}",
+        json={"title": "Broadcast after edit", "message": "Corrected wording."},
+        headers=sender_headers,
+    )
+    assert edited.status_code == 200, edited.text
+    assert edited.json()["affected"] == sent["created"]
+
+    mine = client.get(
+        "/api/v1/notifications/my",
+        headers={"Authorization": f"Bearer {student['token']}"},
+    )
+    # `/my` is `NotificationResponse` ��' no `batch_id`, because the grouping is an
+    # admin concern. The student's copy just has to show the new wording.
+    assert [n for n in mine.json() if n["title"] == "Broadcast after edit"], mine.json()
+
+    # The log confirms the whole send was rewritten, not one row of it.
+    log = client.get(
+        "/api/v1/notifications",
+        params={"batch_id": batch_id},
+        headers=sender_headers,
+    )
+    assert log.status_code == 200, log.text
+    rows = log.json()
+    assert len(rows) == sent["created"], rows
+    assert {r["title"] for r in rows} == {"Broadcast after edit"}
+    assert {r["batch_id"] for r in rows} == {batch_id}
+
+    # A batch id that matches nothing is a 404, not a silent 0-row success.
+    missing = client.put(
+        "/api/v1/notifications/batch/does-not-exist",
+        json={"title": "Nope"},
+        headers=sender_headers,
+    )
+    assert missing.status_code == 404, missing.text
+
+
+def test_super_admin_deletes_a_notification(student, super_admin_token):
+    """`DELETE` reaches rows owned by someone else, which the student path cannot."""
+    sender_headers = {"Authorization": f"Bearer {super_admin_token}"}
+    created = client.post(
+        "/api/v1/notifications",
+        json={"user_id": _student_id(student), "type": "general", "title": "Remove me"},
+        headers=sender_headers,
+    )
+    assert created.status_code == 201, created.text
+    row_id = created.json()["recipients"][0]["id"]
+
+    removed = client.delete(f"/api/v1/notifications/{row_id}", headers=sender_headers)
+    assert removed.status_code == 204, removed.text
+
+    mine = client.get(
+        "/api/v1/notifications/my",
+        headers={"Authorization": f"Bearer {student['token']}"},
+    )
+    assert all(n["id"] != row_id for n in mine.json()), mine.json()
+
+    assert (
+        client.delete(f"/api/v1/notifications/{row_id}", headers=sender_headers).status_code
+        == 404
+    )
+
+
+def test_super_admin_retracts_a_broadcast(super_admin_token):
+    """Retracting a send removes every row it wrote, and reports the count."""
+    sender_headers = {"Authorization": f"Bearer {super_admin_token}"}
+    sent = _send_broadcast(super_admin_token, "Retract this")
+    batch_id = sent["recipients"][0]["batch_id"]
+
+    removed = client.delete(
+        f"/api/v1/notifications/batch/{batch_id}", headers=sender_headers
+    )
+    assert removed.status_code == 200, removed.text
+    assert removed.json()["affected"] == sent["created"]
+
+    remaining = client.get(
+        "/api/v1/notifications",
+        params={"batch_id": batch_id},
+        headers=sender_headers,
+    )
+    assert remaining.status_code == 200, remaining.text
+    assert remaining.json() == []
+
+    again = client.delete(
+        f"/api/v1/notifications/batch/{batch_id}", headers=sender_headers
+    )
+    assert again.status_code == 404, again.text
+
+
+def test_notification_sends_group_a_broadcast_into_one_entry(
+    student, admin_token, super_admin_token
+):
+    """The console's list is one row per send, with real recipient counts.
+
+    Listing delivery rows would show a 500-student announcement as 500 entries
+    and the page size would cut it in half, so the count in the panel would
+    understate the audience. `/sends` groups in SQL and reports the true count.
+    """
+    sent = _send_broadcast(super_admin_token, "Grouped send")
+    batch_id = sent["recipients"][0]["batch_id"]
+    assert sent["created"] > 1, sent
+
+    listed = client.get(
+        "/api/v1/notifications/sends",
+        headers={"Authorization": f"Bearer {super_admin_token}"},
+    )
+    assert listed.status_code == 200, listed.text
+    entry = next(s for s in listed.json() if s["batch_id"] == batch_id)
+    assert entry["recipients"] == sent["created"]
+    assert entry["read_count"] == 0
+    assert entry["title"] == "Grouped send"
+    assert [s for s in listed.json() if s["batch_id"] == batch_id] == [entry]
+
+    # A targeted send is still a send, of one recipient.
+    targeted = client.post(
+        "/api/v1/notifications",
+        json={"user_id": _student_id(student), "type": "exam", "title": "Just you"},
+        headers={"Authorization": f"Bearer {super_admin_token}"},
+    )
+    assert targeted.status_code == 201, targeted.text
+    target_batch = targeted.json()["recipients"][0]["batch_id"]
+    listed = client.get(
+        "/api/v1/notifications/sends",
+        headers={"Authorization": f"Bearer {super_admin_token}"},
+    )
+    target_entry = next(s for s in listed.json() if s["batch_id"] == target_batch)
+    assert target_entry["recipients"] == 1
+
+    # Reading the grouped log is not a mutation: an `admin` can see it.
+    as_admin = client.get(
+        "/api/v1/notifications/sends",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert as_admin.status_code == 200, as_admin.text
+
+    as_student = client.get(
+        "/api/v1/notifications/sends",
+        headers={"Authorization": f"Bearer {student['token']}"},
+    )
+    assert as_student.status_code == 403, as_student.text
+
+
+def test_student_still_deletes_their_own_notification(student, super_admin_token):
+    """Widening `DELETE` to super admins must not take the owner path away."""
+    created = client.post(
+        "/api/v1/notifications",
+        json={"user_id": _student_id(student), "type": "general", "title": "Mine"},
+        headers={"Authorization": f"Bearer {super_admin_token}"},
+    )
+    assert created.status_code == 201, created.text
+    row_id = created.json()["recipients"][0]["id"]
+
+    assert (
+        client.delete(
+            f"/api/v1/notifications/{row_id}",
+            headers={"Authorization": f"Bearer {student['token']}"},
+        ).status_code
+        == 204
+    )
+
+
+def test_notification_mutations_are_audited(super_admin_token):
+    """Edits and retractions leave a trail, like sends and deletes already do."""
+    sent = _send_broadcast(super_admin_token, "Audited edit")
+    batch_id = sent["recipients"][0]["batch_id"]
+    headers = {"Authorization": f"Bearer {super_admin_token}"}
+
+    client.put(
+        f"/api/v1/notifications/batch/{batch_id}",
+        json={"title": "Audited edit v2"},
+        headers=headers,
+    )
+    client.delete(f"/api/v1/notifications/batch/{batch_id}", headers=headers)
+
+    for action, key in (
+        ("notification.batch_update", "new_value"),
+        ("notification.batch_delete", "old_value"),
+    ):
+        log = client.get(
+            "/api/v1/audit-logs", params={"action": action}, headers=headers
+        )
+        assert log.status_code == 200, log.text
+        assert any(
+            (row[key] or {}).get("batch_id") == batch_id for row in log.json()
+        ), f"no audit row for {action}"
 
 
 # ---------- Audit logs ----------

@@ -255,6 +255,13 @@ export const CATALOG_DELETE_ROLES = {
   exam: ["super_admin", "admin"],
   blog: ["super_admin", "admin"],
   faq: ["super_admin", "admin", "content_manager"],
+  /**
+   * Notifications are the odd one out twice over: the list is readable by
+   * `admin`, but sending, editing and retracting are `SUPER_ADMIN_ROLES` only.
+   * A broadcast is an unrecallable mass write into student inboxes, so it sits
+   * above the content gates rather than alongside them.
+   */
+  notification: ["super_admin"],
 } as const satisfies Record<string, readonly string[]>;
 
 /**

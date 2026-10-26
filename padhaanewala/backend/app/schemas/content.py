@@ -244,9 +244,68 @@ class AdminNotificationResponse(NotificationResponse):
     A log that cannot say who received a message is not much of a log, so the
     recipient's display name travels with the row rather than being resolved by
     a second request per entry.
+
+    ``batch_id`` is the send the row belongs to. A broadcast writes one row per
+    student, and the admin panel groups them with this so one announcement is
+    one editable, deletable entry rather than N look-alike rows.
     """
 
     username: str | None = None
+    batch_id: str | None = None
+
+
+class NotificationUpdate(BaseModel):
+    """Edit a delivered notification, or every row of one send.
+
+    Every field is optional and the router applies ``exclude_unset``, so a
+    partial edit leaves the untouched columns alone. ``user_id`` is deliberately
+    absent: moving a delivered message to a different account is a re-send, not
+    an edit.
+    """
+
+    type: str | None = Field(default=None, max_length=50)
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    message: str | None = Field(default=None, max_length=1000)
+    data: dict[str, Any] | None = None
+    channel: str | None = Field(default=None, max_length=20)
+    is_read: bool | None = None
+
+
+class NotificationBatchResult(BaseModel):
+    """How many rows a batch edit or delete touched.
+
+    A broadcast is N rows, so a client that cannot tell 1 from 500 cannot report
+    what happened. ``batch_id`` is echoed so the caller can reload one entry.
+    """
+
+    batch_id: str
+    affected: int
+
+
+class NotificationSendSummary(BaseModel):
+    """One entry in the admin log: a whole send, not one recipient's copy.
+
+    The log is stored one row per recipient, so listing raw rows made a
+    500-student announcement 500 entries — and the page size (50) cut a single
+    send in half, which made the recipient count in the panel a lie. This shape
+    is what the console actually needs: one announcement, with how many inboxes
+    it reached and how many of them read it.
+
+    ``notification_id`` is a representative row of the send (the lowest id). It
+    is what an edit dialog prefills from, and the id a legacy row is edited and
+    deleted by. ``batch_id`` is `None` for rows written before the column
+    existed; those are individual entries rather than sends.
+    """
+
+    notification_id: int
+    batch_id: str | None
+    type: str
+    title: str
+    message: str | None
+    channel: str
+    recipients: int
+    read_count: int
+    created_at: datetime
 
 
 class NotificationBroadcastResult(BaseModel):

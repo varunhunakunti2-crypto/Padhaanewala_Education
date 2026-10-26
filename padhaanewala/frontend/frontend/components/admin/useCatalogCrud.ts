@@ -64,6 +64,14 @@ export interface CrudOptions<T, V> {
   noun: string;
   /** Entity key into `CATALOG_DELETE_ROLES`. */
   entity: keyof typeof CATALOG_DELETE_ROLES;
+  /**
+   * The create / edit gate, when it is not the default `CATALOG_WRITE_ROLES`.
+   *
+   * Notifications are the caller that needs this: their list is readable by an
+   * `admin` but every mutation is `SUPER_ADMIN_ROLES` only. Reusing the hook
+   * with its default gate would render Add and Edit buttons that 403.
+   */
+  writeRoles?: readonly string[];
   /** The list request. Usually `adminApi.<entity>s()`. */
   load: () => Promise<T[]>;
   /** Copy shown when the list request fails. */
@@ -124,12 +132,12 @@ export interface CrudState<T, V> {
 export function useCatalogCrud<T extends { id: number }, V>(
   opts: CrudOptions<T, V>,
 ): CrudState<T, V> {
-  const { noun, entity, load, unreachableMessage, emptyValues, loadDetail, refFor, labelFor, build, create, update, remove, valuesFromRow } = opts;
+  const { noun, entity, writeRoles, load, unreachableMessage, emptyValues, loadDetail, refFor, labelFor, build, create, update, remove, valuesFromRow } = opts;
 
   const { showToast, roles } = useApp();
   const { data, error, loading, reload } = useAdminResource<T[]>(load, { unreachableMessage });
 
-  const canWrite = hasAnyRole(roles, CATALOG_WRITE_ROLES);
+  const canWrite = hasAnyRole(roles, writeRoles ?? CATALOG_WRITE_ROLES);
   const canDelete = hasAnyRole(roles, CATALOG_DELETE_ROLES[entity]);
 
   const [dialog, setDialog] = useState<CrudDialog>(null);

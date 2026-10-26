@@ -17,6 +17,7 @@ import { cn, initialsOf } from "@/lib/utils";
 import { ButtonLink } from "@/components/ui/Button";
 import { usePathname, useRouter } from "next/navigation";
 import { ThemeToggle } from "@/components/layout/ThemeToggle";
+import { NotificationBell } from "@/components/layout/NotificationBell";
 import { useApp } from "@/lib/context/AppContext";
 import { MORE_NAV, PRIMARY_NAV } from "@/lib/nav";
 
@@ -191,98 +192,103 @@ export function Header() {
           </div>
         </nav>
 
-        {/* Right: Auth controls + Theme toggle */}
-        <div className="hidden items-center gap-3 min-[900px]:flex">
-          <ThemeToggle />
-          {isAuthenticated ? (
-            <div className="relative" ref={authRef}>
-              <button
-                type="button"
-                aria-label="Account menu"
-                aria-expanded={authMenuOpen}
-                onClick={() => setAuthMenuOpen((o) => !o)}
-                className="flex items-center gap-2 rounded-full bg-gradient-to-tr from-purple-600 to-indigo-500 p-1 pr-3 text-white shadow-md shadow-purple-600/30 transition hover:brightness-110"
-              >
-                <span className="grid h-8 w-8 place-items-center rounded-full bg-white/20 text-sm font-extrabold">
-                  {userInitials}
-                </span>
-                <span className="hidden max-w-[9rem] truncate text-sm font-semibold lg:block">
-                  {userName || "My Account"}
-                </span>
-                <ChevronDown className={cn("h-3.5 w-3.5 transition-transform duration-200", authMenuOpen && "rotate-180")} />
-              </button>
+        {/* Right: the bell once, then the breakpoint-specific controls */}
+        <div className="flex items-center gap-2 min-[900px]:gap-3">
+          {isAuthenticated && <NotificationBell />}
 
-              {authMenuOpen && (
-                <div className="absolute right-0 top-full mt-3 w-56 overflow-hidden rounded-2xl border border-purple-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-1.5 shadow-2xl animate-fade-up">
-                  {userName && (
-                    <div className="border-b border-gray-100 dark:border-slate-800 px-3.5 py-2.5">
-                      <p className="truncate text-sm font-bold text-gray-900 dark:text-white">{userName}</p>
-                      {profile?.email && (
-                        <p className="truncate text-xs text-gray-400">{profile.email}</p>
-                      )}
-                    </div>
-                  )}
-                  <Link
-                    href="/dashboard"
-                    onClick={() => setAuthMenuOpen(false)}
-                    className="flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-800"
-                  >
-                    <LayoutDashboard className="h-4 w-4 text-purple-500" />
-                    Dashboard
-                  </Link>
-                  {isAdmin && (
+          {/* Desktop: auth controls + theme toggle */}
+          <div className="hidden items-center gap-3 min-[900px]:flex">
+            <ThemeToggle />
+            {isAuthenticated ? (
+              <div className="relative" ref={authRef}>
+                <button
+                  type="button"
+                  aria-label="Account menu"
+                  aria-expanded={authMenuOpen}
+                  onClick={() => setAuthMenuOpen((o) => !o)}
+                  className="flex items-center gap-2 rounded-full bg-gradient-to-tr from-purple-600 to-indigo-500 p-1 pr-3 text-white shadow-md shadow-purple-600/30 transition hover:brightness-110"
+                >
+                  <span className="grid h-8 w-8 place-items-center rounded-full bg-white/20 text-sm font-extrabold">
+                    {userInitials}
+                  </span>
+                  <span className="hidden max-w-[9rem] truncate text-sm font-semibold lg:block">
+                    {userName || "My Account"}
+                  </span>
+                  <ChevronDown className={cn("h-3.5 w-3.5 transition-transform duration-200", authMenuOpen && "rotate-180")} />
+                </button>
+
+                {authMenuOpen && (
+                  <div className="absolute right-0 top-full mt-3 w-56 overflow-hidden rounded-2xl border border-purple-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-1.5 shadow-2xl animate-fade-up">
+                    {userName && (
+                      <div className="border-b border-gray-100 dark:border-slate-800 px-3.5 py-2.5">
+                        <p className="truncate text-sm font-bold text-gray-900 dark:text-white">{userName}</p>
+                        {profile?.email && (
+                          <p className="truncate text-xs text-gray-400">{profile.email}</p>
+                        )}
+                      </div>
+                    )}
                     <Link
-                      href="/admin"
+                      href="/dashboard"
                       onClick={() => setAuthMenuOpen(false)}
                       className="flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-800"
                     >
-                      <ShieldCheck className="h-4 w-4 text-purple-500" />
-                      Admin
+                      <LayoutDashboard className="h-4 w-4 text-purple-500" />
+                      Dashboard
                     </Link>
-                  )}
-                  <button
-                    type="button"
-                    onClick={handleLogout}
-                    className="flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40"
-                  >
-                    <LogOut className="h-4 w-4" />
-                    Log out
-                  </button>
-                </div>
-              )}
-            </div>
-          ) : (
-            <>
-              <Link
-                href="/login"
-                className="rounded-full px-3.5 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 transition-colors hover:text-purple-700 dark:hover:text-purple-300"
-              >
-                Sign in
-              </Link>
-              <Link
-                href="/login?mode=signup"
-                className="btn-uiverse-arrow text-xs font-bold py-2 px-4.5"
-              >
-                <span>Get Started</span>
-                <div className="arrow-wrapper">
-                  <div className="arrow" />
-                </div>
-              </Link>
-            </>
-          )}
-        </div>
+                    {isAdmin && (
+                      <Link
+                        href="/admin"
+                        onClick={() => setAuthMenuOpen(false)}
+                        className="flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-800"
+                      >
+                        <ShieldCheck className="h-4 w-4 text-purple-500" />
+                        Admin
+                      </Link>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      className="flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40"
+                    >
+                      <LogOut className="h-4 w-4" />
+                      Log out
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <>
+                <Link
+                  href="/login"
+                  className="rounded-full px-3.5 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 transition-colors hover:text-purple-700 dark:hover:text-purple-300"
+                >
+                  Sign in
+                </Link>
+                <Link
+                  href="/login?mode=signup"
+                  className="btn-uiverse-arrow text-xs font-bold py-2 px-4.5"
+                >
+                  <span>Get Started</span>
+                  <div className="arrow-wrapper">
+                    <div className="arrow" />
+                  </div>
+                </Link>
+              </>
+            )}
+          </div>
 
-        {/* Mobile menu button (< 900px) */}
-        <div className="flex items-center gap-2 min-[900px]:hidden">
-          <ThemeToggle />
-          <button
-            aria-label="Toggle menu"
-            aria-expanded={open}
-            className="grid h-9 w-9 place-items-center rounded-full bg-purple-100/60 text-purple-900 dark:bg-slate-800 dark:text-purple-300 transition-colors"
-            onClick={() => setOpen((o) => !o)}
-          >
-            {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-          </button>
+          {/* Mobile menu button (< 900px) */}
+          <div className="flex items-center gap-2 min-[900px]:hidden">
+            <ThemeToggle />
+            <button
+              aria-label="Toggle menu"
+              aria-expanded={open}
+              className="grid h-9 w-9 place-items-center rounded-full bg-purple-100/60 text-purple-900 dark:bg-slate-800 dark:text-purple-300 transition-colors"
+              onClick={() => setOpen((o) => !o)}
+            >
+              {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            </button>
+          </div>
         </div>
       </div>
 

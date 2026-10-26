@@ -1569,7 +1569,49 @@ export interface AdminNotification {
   is_read: boolean;
   channel: string;
   created_at: string;
+  /**
+   * The send this row belongs to.
+   *
+   * A broadcast writes one row per student (`user_id` is `NOT NULL`), so the
+   * log would otherwise show one announcement as N unrelated entries. Rows
+   * written before the column existed have `null`, and the panel edits those
+   * individually.
+   */
+  batch_id: string | null;
 }
+
+/** How many rows a batch edit or retraction touched. */
+export interface AdminNotificationBatchResult {
+  batch_id: string;
+  affected: number;
+}
+
+/**
+ * One entry in the admin log: a whole send, not one recipient's copy.
+ *
+ * `GET /notifications` returns delivery rows (one per student); the console
+ * groups them. `notification_id` is a representative row of the send.
+ */
+export interface AdminNotificationSend {
+  notification_id: number;
+  batch_id: string | null;
+  type: string;
+  title: string;
+  message: string | null;
+  channel: string;
+  recipients: number;
+  read_count: number;
+  created_at: string;
+}
+
+/**
+ * The editable columns of a delivered notification, as the update schema
+ * declares them: `type`, `title`, `message`, `channel`, `is_read`.
+ *
+ * `user_id` is absent on purpose: moving a message to a different account is a
+ * re-send, not an edit, and the update schema does not accept it.
+ */
+export type AdminNotificationUpdate = Record<string, unknown>;
 
 /**
  * `NotificationBroadcastResult`. `created` is the recipient count, so the UI can
@@ -2020,6 +2062,45 @@ export type SiteSettingsUpdate = Partial<
     | "number_formatting"
   >
 >;
+
+/**
+ * `NotificationResponse` — one row in the signed-in user's own inbox.
+ *
+ * Distinct from {@link AdminNotificationSend}: the student endpoints are scoped
+ * to the caller by the server (`/notifications/my`), and `batch_id` is
+ * deliberately not exposed here. A recipient has no business knowing how many
+ * other people got the same message, or that they can address the other copies.
+ */
+export interface StudentNotification {
+  id: number;
+  user_id: number;
+  type: string;
+  title: string;
+  message: string | null;
+  data: Record<string, unknown> | null;
+  is_read: boolean;
+  channel: string;
+  created_at: string;
+}
+
+/**
+ * The signed-in user's inbox.
+ *
+ * These three are the receiving end of the admin console: a broadcast written by
+ * `POST /notifications` is only visible to a student because `/notifications/my`
+ * returns it. Until this existed the student inbox read `cp_notifications` from
+ * `localStorage`, which the server has never written to.
+ */
+export const notificationsApi = {
+  my: () => apiFetch<StudentNotification[]>("/notifications/my"),
+
+  /** Idempotent; a row the caller does not own answers 404. */
+  markRead: (id: number) =>
+    apiFetch<StudentNotification>(`/notifications/${id}/read`, { method: "PUT" }),
+
+  /** Marks every unread row of the caller. Returns how many changed. */
+  markAllRead: () => apiFetch<number>("/notifications/my/read-all", { method: "PUT" }),
+};
 
 export const adminApi = {
   /**
@@ -2482,13 +2563,58 @@ export const adminApi = {
   notifications: () => apiFetch<AdminNotification[]>("/notifications"),
 
   /**
+   * The same log, grouped one entry per send.
+   *
+   * The panel uses this rather than grouping `notifications()` in the browser:
+   * that route is paginated per recipient, so an announcement to 500 students
+   * arrives cut in half and a client-side count would report the page size as
+   * the audience.
+   */
+  notificationSends: () => apiFetch<AdminNotificationSend[]>("/notifications/sends"),
+
+  /**
    * Omitting `user_id` broadcasts to every active student; supplying one targets
    * that account. `notifications.user_id` is `NOT NULL`, so a broadcast is
    * fanned out into one row per recipient rather than stored as a single
    * recipient-less message.
    */
-  createNotification: (payload: { user_id?: number; title: string; message: string; type?: string }) =>
+  createNotification: (payload: Record<string, unknown>) =>
     apiFetch<AdminNotificationBroadcast>("/notifications", { method: "POST", body: JSON.stringify(payload) }),
+
+  /**
+   * Edit one delivered notification. Super admin only.
+   *
+   * Used for rows written before `batch_id` existed; everything sent since is
+   * edited through {@link updateNotificationBatch} so the whole send changes at
+   * once.
+   */
+  updateNotification: (id: number, payload: AdminNotificationUpdate) =>
+    apiFetch<AdminNotification>(`/notifications/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+
+  /** Delete one row. Super admin only; a student has their own path. */
+  deleteNotification: (id: number) =>
+    apiFetch<void>(`/notifications/${id}`, { method: "DELETE" }),
+
+  /**
+   * Rewrite every row of one send.
+   *
+   * The response reports how many rows changed, so the panel can say "updated
+   * for 12 students" instead of implying a single row was touched.
+   */
+  updateNotificationBatch: (batchId: string, payload: AdminNotificationUpdate) =>
+    apiFetch<AdminNotificationBatchResult>(`/notifications/batch/${batchId}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+
+  /** Retract one send from every recipient's inbox. Super admin only. */
+  deleteNotificationBatch: (batchId: string) =>
+    apiFetch<AdminNotificationBatchResult>(`/notifications/batch/${batchId}`, {
+      method: "DELETE",
+    }),
 
   /**
    * One window of the audit trail, newest first.

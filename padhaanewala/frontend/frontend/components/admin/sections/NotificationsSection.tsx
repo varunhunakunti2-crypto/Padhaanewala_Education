@@ -1,187 +1,297 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Send } from "lucide-react";
+import { useMemo } from "react";
+import { Plus } from "lucide-react";
+
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { DataTable } from "@/components/ui/DataTable";
-import { Input, Label } from "@/components/ui/FormField";
-import { useApp } from "@/lib/context/AppContext";
-import { adminApi, isForbidden } from "@/lib/api";
-import { useAdminResource } from "@/components/admin/useAdminResource";
+import { adminApi } from "@/lib/api";
+import {
+  EMPTY_NOTIFICATION_FORM,
+  buildNotificationPayload,
+  notificationFormFromSend,
+  notificationSendRef,
+  parseNotificationSendRef,
+  toNotificationSendRow,
+  type NotificationFormValues,
+  type NotificationSendRow,
+} from "@/lib/notification-form";
+
 import { SectionHeading } from "@/components/admin/primitives";
+import { RowCrudActions } from "@/components/admin/RowCrudActions";
+import { CatalogDialog } from "@/components/admin/CatalogDialog";
+import { useCatalogCrud } from "@/components/admin/useCatalogCrud";
+import { NotificationFormFields } from "@/components/admin/sections/NotificationForm";
 
 /**
- * Notification broadcast log, backed by `GET/POST /api/v1/notifications`.
+ * A table row: `DataTable` keys rows by a string `id`, while the CRUD hook and
+ * the API work with the numeric send. `record` keeps the original so the row
+ * actions never have to re-derive it from the string.
+ */
+interface NotificationRow extends Omit<NotificationSendRow, "id"> {
+  id: string;
+  record: NotificationSendRow;
+}
+
+/**
+ * The broadcast console: send, edit and retract platform notifications.
  *
- * The list endpoint is admin-only; students read their own via `/notifications/my`.
+ * ## Reads are `admin`, writes are `super_admin`
  *
- * ## This panel used to display three different things and none of them was the log
+ * `GET /notifications/sends` is open to `ADMIN_ROLES` — answering "did the
+ * announcement go out?" is a support task. Every mutation is
+ * `SUPER_ADMIN_ROLES`: a broadcast is an unrecallable mass write into student
+ * inboxes, so it sits above the content roles. A plain admin therefore sees the
+ * log with no Add button and no row actions, and a banner says why rather than
+ * leaving them to discover it as a 403.
  *
- * 1. `adminApi.notifications()` called `GET /api/v1/notifications`, which did not
- *    exist. The request 405'd, so the panel always rendered its error banner.
- * 2. With no real rows, it fell back to **this browser's own** `cp_notifications`
- *    localStorage inbox — so an admin with personal notifications in the browser
- *    saw those presented as the platform-wide broadcast history, and an admin
- *    without them saw nothing.
- * 3. With neither, it rendered a hardcoded row reading "No notifications sent yet".
- *    That row was indistinguishable from a genuinely empty log, which is the one
- *    thing this screen exists to answer.
+ * `writeRoles` is passed explicitly. The hook's default is `CONTENT_ROLES`,
+ * which would render controls an admin can click and the API would refuse.
  *
- * All three are gone. The table now shows only what `GET /notifications` returns,
- * an empty log renders `DataTable`'s own empty state, and a failed read renders
- * the error and no table at all — because a broadcast log that cannot be read
- * must not look like a broadcast log with nothing in it.
+ * ## Why the list is `/sends` and not `/notifications`
+ *
+ * The table is one row per *send*, which is not how the rows are stored. A
+ * broadcast is fanned out into one notification row per student, so the raw log
+ * shows a 14-student announcement as 14 rows and a 500-student one as 500 — and
+ * because that endpoint is paginated per row, grouping it in the browser would
+ * report the page size as the audience. `/sends` does the grouping in SQL and
+ * returns the real `recipients` and `read_count`.
+ *
+ * ## Edit and delete act on a whole send
+ *
+ * Editing addresses `PUT /notifications/batch/{batch_id}` and retracting addresses
+ * `DELETE /notifications/batch/{batch_id}`, so changing a typo fixes every
+ * recipient's copy instead of one student's. Rows written before `batch_id`
+ * existed have no send to address; those fall back to the single-row endpoints.
+ * `notificationSendRef` / `parseNotificationSendRef` own that decision in both
+ * directions, so the table and the write path cannot disagree.
  */
 export function NotificationsSection() {
-  const { showToast } = useApp();
-  const [sending, setSending] = useState(false);
-  const [draft, setDraft] = useState({ title: "", message: "", type: "general" });
-
-  const { data, error, loading, reload } = useAdminResource(
-    () => adminApi.notifications(),
-    {
-      forbiddenMessage: "You do not have permission to view the broadcast log.",
-      unreachableMessage: "Could not reach the notifications API.",
+  const crud = useCatalogCrud<NotificationSendRow, NotificationFormValues>({
+    noun: "notification",
+    entity: "notification",
+    writeRoles: ["super_admin"],
+    load: async () => (await adminApi.notificationSends()).map(toNotificationSendRow),
+    unreachableMessage: "Could not reach the notifications API.",
+    emptyValues: EMPTY_NOTIFICATION_FORM,
+    // The list row already carries every field the form edits, so there is no
+    // detail request and the edit dialog can open immediately.
+    valuesFromRow: notificationFormFromSend,
+    refFor: notificationSendRef,
+    labelFor: (send) =>
+      `${send.title} (${send.recipients} recipient${send.recipients === 1 ? "" : "s"})`,
+    build: buildNotificationPayload,
+    create: async (payload) => {
+      // No `user_id`: this is a broadcast, fanned out to every active student.
+      // The response reports how many rows were written, so the toast states
+      // the real audience instead of implying a delivery that did not happen.
+      const sent = await adminApi.createNotification(payload);
+      return {
+        name: `${sent.created} recipient${sent.created === 1 ? "" : "s"}`,
+      };
     },
-  );
+    update: async (ref, payload) => {
+      const target = parseNotificationSendRef(ref);
+      if (target === null) {
+        throw new Error(`Unrecognised notification reference: ${ref}`);
+      }
+      if (target.kind === "batch") {
+        const result = await adminApi.updateNotificationBatch(target.batchId, payload);
+        const title = typeof payload.title === "string" ? payload.title : "Notification";
+        return {
+          name: `${title} — ${result.affected} recipient${result.affected === 1 ? "" : "s"}`,
+        };
+      }
+      const updated = await adminApi.updateNotification(target.id, payload);
+      return { name: updated.title };
+    },
+    remove: async (ref) => {
+      const target = parseNotificationSendRef(ref);
+      if (target === null) {
+        throw new Error(`Unrecognised notification reference: ${ref}`);
+      }
+      if (target.kind === "batch") {
+        await adminApi.deleteNotificationBatch(target.batchId);
+        return;
+      }
+      await adminApi.deleteNotification(target.id);
+    },
+  });
 
-  const rows = useMemo(
+  // The row being edited, for the "applies to N recipients" note. Derived from
+  // the ref rather than stored separately, so it cannot go stale after a reload.
+  // Bound to a local first: TypeScript cannot narrow `crud.dialog` inside the
+  // `find` callback of a ternary.
+  const updateRef = crud.dialog?.mode === "update" ? crud.dialog.ref : null;
+  const editing =
+    updateRef === null
+      ? null
+      : (crud.rows.find((row) => notificationSendRef(row) === updateRef) ?? null);
+
+  const rows = useMemo<NotificationRow[]>(
     () =>
-      (data ?? []).map((n) => ({
-        id: String(n.id),
-        title: n.title,
-        message: n.message ?? "",
-        type: n.type,
-        recipient: n.username ?? `user #${n.user_id}`,
-        status: n.is_read ? "Read" : "Unread",
-        created: new Date(n.created_at).toLocaleString("en-IN"),
+      crud.rows.map((send) => ({
+        ...send,
+        id: notificationSendRef(send),
+        record: send,
       })),
-    [data],
+    [crud.rows],
   );
 
-  const send = async () => {
-    if (!draft.title.trim() || !draft.message.trim()) return;
-    setSending(true);
-    try {
-      // No `user_id`: this is a broadcast. The endpoint fans it out to every
-      // active student and reports how many rows it wrote, so the toast states
-      // the real audience instead of implying a delivery that may not have
-      // happened.
-      const result = await adminApi.createNotification({
-        title: draft.title.trim(),
-        message: draft.message.trim(),
-        type: draft.type,
-      });
-      setDraft({ title: "", message: "", type: "general" });
-      reload();
-      showToast({
-        title: "Broadcast sent",
-        description: `Delivered to ${result.created} active student account${result.created === 1 ? "" : "s"}.`,
-        variant: "success",
-      });
-    } catch (err) {
-      showToast({
-        title: "Could not send notification",
-        description: isForbidden(err) ? "You lack permission." : "Please retry.",
-        variant: "error",
-      });
-    } finally {
-      setSending(false);
-    }
-  };
+  const dialogTitle =
+    crud.dialog === null
+      ? "Notification"
+      : crud.dialog.mode === "create"
+        ? "Send notification"
+        : "Edit notification";
 
   return (
     <div>
       <SectionHeading
         title="Push notifications"
-        description="Broadcast alerts to every active student account"
-        count={rows.length}
+        description="Announcements delivered to every active student account"
+        count={crud.rows.length}
+        action={
+          crud.canWrite ? (
+            <Button type="button" size="sm" variant="accent" onClick={crud.openCreate}>
+              <Plus className="h-4 w-4" /> New notification
+            </Button>
+          ) : undefined
+        }
       />
 
-      {error && (
-        <p className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200">
-          {error}
+      {!crud.canWrite && (
+        <p className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+          Read-only: sending, editing and retracting notifications requires the
+          super admin role. You can still see what went out and how many
+          students read it.
         </p>
       )}
 
-      <div className="mb-5 grid gap-3 rounded-2xl border border-slate-200 p-4 sm:grid-cols-3">
-        <div className="sm:col-span-1">
-          <Label htmlFor="notif-type">Type</Label>
-          <select
-            id="notif-type"
-            value={draft.type}
-            onChange={(e) => setDraft((d) => ({ ...d, type: e.target.value }))}
-            className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-900"
-          >
-            {["general", "admission", "exam", "scholarship"].map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="sm:col-span-2">
-          <Label htmlFor="notif-title">Title</Label>
-          <Input
-            id="notif-title"
-            value={draft.title}
-            onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))}
-            placeholder="JEE Main registration opens"
-          />
-        </div>
-        <div className="sm:col-span-3">
-          <Label htmlFor="notif-message">Message</Label>
-          <textarea
-            id="notif-message"
-            rows={3}
-            value={draft.message}
-            onChange={(e) => setDraft((d) => ({ ...d, message: e.target.value }))}
-            placeholder="Registration for JEE Main 2027 opens on 1 March."
-            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
-          />
-        </div>
-        <div className="sm:col-span-3">
-          <Button type="button" size="sm" variant="primary" disabled={sending} onClick={send}>
-            <Send className="h-4 w-4" /> {sending ? "Sending…" : "Send broadcast"}
-          </Button>
-        </div>
-      </div>
-
-      {loading && rows.length === 0 ? (
-        <p className="rounded-2xl border border-dashed border-slate-200 py-12 text-center text-sm text-slate-400">
-          Loading broadcast log…
-        </p>
+      {crud.error ? (
+        <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">{crud.error}</p>
+      ) : crud.loading && crud.rows.length === 0 ? (
+        <p className="px-1 py-6 text-sm text-slate-400">Loading notifications…</p>
       ) : (
         <DataTable
           columns={[
             {
               key: "title",
               header: "Title",
-              render: (r) => <span className="font-semibold text-gray-900">{r.title}</span>,
-            },
-            { key: "message", header: "Message" },
-            { key: "type", header: "Type" },
-            { key: "recipient", header: "Recipient" },
-            { key: "created", header: "Created" },
-            {
-              key: "status",
-              header: "Status",
-              render: (r) => (
-                <Badge variant={r.status === "Unread" ? "yellow" : "gray"}>{r.status}</Badge>
+              render: (row) => (
+                <div>
+                  <span className="font-semibold text-gray-900">{row.record.title}</span>
+                  {row.record.message && (
+                    <span className="mt-0.5 block max-w-xl text-xs text-slate-400">
+                      {row.record.message}
+                    </span>
+                  )}
+                </div>
               ),
+            },
+            {
+              key: "type",
+              header: "Type",
+              render: (row) => (
+                <Badge variant="purple">
+                  {row.record.type.charAt(0).toUpperCase() + row.record.type.slice(1)}
+                </Badge>
+              ),
+            },
+            {
+              key: "recipients",
+              header: "Audience",
+              render: (row) => (
+                <span className="text-sm text-slate-600">
+                  {row.record.recipients.toLocaleString("en-IN")}{" "}
+                  {row.record.recipients === 1 ? "recipient" : "recipients"}
+                </span>
+              ),
+            },
+            {
+              key: "read_count",
+              header: "Read",
+              render: (row) => (
+                <Badge
+                  variant={
+                    row.record.read_count === row.record.recipients
+                      ? "green"
+                      : row.record.read_count === 0
+                        ? "gray"
+                        : "yellow"
+                  }
+                >
+                  {row.record.read_count.toLocaleString("en-IN")} /{" "}
+                  {row.record.recipients.toLocaleString("en-IN")}
+                </Badge>
+              ),
+            },
+            {
+              key: "created_at",
+              header: "Sent",
+              render: (row) => (
+                <span className="whitespace-nowrap text-xs text-slate-500">
+                  {new Date(row.record.created_at).toLocaleString("en-IN")}
+                </span>
+              ),
+            },
+            {
+              key: "actions",
+              header: "",
+              className: "text-right",
+              render: (row) => {
+                const ref = row.id;
+                return (
+                  <RowCrudActions
+                    noun="notification"
+                    canWrite={crud.canWrite}
+                    canDelete={crud.canDelete}
+                    busy={crud.busyRow === ref || crud.submitting}
+                    deleting={crud.pendingDelete === ref}
+                    onEdit={() => crud.openEdit(row.record)}
+                    onDelete={
+                      crud.pendingDelete === ref
+                        ? () => crud.confirmDelete(row.record)
+                        : () => crud.armDelete(ref)
+                    }
+                    onCancelDelete={crud.cancelDelete}
+                  />
+                );
+              },
             },
           ]}
           rows={rows}
-          searchKeys={["title", "message", "recipient"]}
+          searchKeys={["title", "message", "type"]}
           searchPlaceholder="Search notifications..."
-          emptyState={
-            error
-              ? "The broadcast log could not be read."
-              : "No notifications sent yet."
-          }
+          emptyState="No notifications sent yet."
         />
       )}
+
+      <CatalogDialog
+        open={crud.dialog !== null}
+        title={dialogTitle}
+        mode={crud.dialog?.mode ?? "create"}
+        formError={crud.formError}
+        submitting={crud.submitting}
+        onClose={crud.closeDialog}
+        onSubmit={crud.submit}
+        createLabel="Send to all students"
+      >
+        {crud.values && (
+          <NotificationFormFields
+            values={crud.values}
+            onChange={crud.setValues}
+            mode={crud.dialog?.mode ?? "create"}
+            audience={
+              editing
+                ? `${editing.recipients} recipient${editing.recipients === 1 ? "" : "s"}`
+                : "every active student account"
+            }
+            disabled={crud.submitting}
+          />
+        )}
+      </CatalogDialog>
     </div>
   );
 }
