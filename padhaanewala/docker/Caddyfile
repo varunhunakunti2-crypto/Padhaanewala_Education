@@ -47,11 +47,50 @@
 		respond "ok" 200
 	}
 
+	# The redirect target needs the *public* HTTPS port, and Caddy cannot know
+	# it. Caddy sees the request on container port 80 and knows only that its
+	# own TLS listener is on 443, but the host publishes that listener on
+	# whatever port the operator chose — 28443 in the localtest stack, 443 in
+	# production. `{host}` is the Host header *minus* its port, so a bare
+	# `https://{host}{uri}` sends the visitor to port 443, which on a remapped
+	# stack is not published at all: the browser gets ERR_CONNECTION_REFUSED
+	# and the redirect looks broken.
+	#
+	# `HTTPS_PORT_SUFFIX` carries the difference. It is empty in production,
+	# where 443 is the real port and the canonical URL has no port in it, and
+	# it is `:28443` in the localtest stack. The default is empty so a
+	# deployment that never sets it behaves exactly as before.
+	#
+	# Note that this is the *fallback* path. A request whose Host matches the
+	# `{$SITE_ADDRESS}` site never reaches this block — Caddy's own automatic
+	# HTTP->HTTPS redirect answers it first, and that one is correct by
+	# construction, because the site address carries the port:
+	# `SITE_ADDRESS=localhost:28443` makes Caddy redirect to
+	# `https://localhost:28443/...`. See the note on the site block below.
 	handle {
-		redir https://{host}{uri} permanent
+		redir https://{host}{$HTTPS_PORT_SUFFIX:}{uri} permanent
 	}
 }
 
+# The site address may carry a port, and that is not a cosmetic detail.
+#
+# `SITE_ADDRESS=padhaanewala.in` in production: Caddy listens on 443 and its
+# automatic HTTP->HTTPS redirect sends the visitor to `https://padhaanewala.in/`.
+#
+# `SITE_ADDRESS=localhost:28443` in the localtest stack: Caddy listens on 28443
+# *inside the container* (so the host must publish 28443->28443, not
+# 28443->443), and the automatic redirect becomes
+# `https://localhost:28443/...` — with the port, which is the whole point.
+# Without the port in the address, Caddy redirects to `https://localhost/...`,
+# i.e. port 443, which the localtest stack does not publish.
+#
+# The certificate is unaffected: Caddy's internal CA keys it by hostname, so a
+# port-qualified address still gets a certificate for `localhost` with
+# `DNS Name=localhost` in the SAN. The port is not part of the name.
+#
+# The port is NOT part of the name the backend accepts, either. `ALLOWED_HOSTS`
+# holds hostnames only, and `allowed_host_list` in the backend's config.py
+# strips the port when it derives hosts from APP_URL and API_URL.
 {$SITE_ADDRESS:padhaanewala.in} {
 	encode zstd gzip
 

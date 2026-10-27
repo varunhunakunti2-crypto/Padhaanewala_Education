@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, Suspense } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, Suspense } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import type { College, SearchFilters, SortKey } from "@/lib/types";
 import { searchColleges, buildFacets, searchTokens, PAGE_SIZE } from "@/lib/data";
@@ -15,6 +15,10 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Chip as FilterChip } from "@/components/ui/Chip";
 import { SearchX } from "lucide-react";
 import { cn, debounce } from "@/lib/utils";
+
+const subscribeToNothing = () => () => {};
+const getClientSnapshot = () => true;
+const getServerSnapshot = () => false;
 
 export default function CollegesExplorer({
   colleges: dataset,
@@ -34,6 +38,26 @@ export default function CollegesExplorer({
    * an explicit close — the scrim, the ✕, or "Show N results" — closes it.
    */
   const [filterOpen, setFilterOpen] = useState(false);
+
+  /**
+   * The drawer is off-canvas (`-translate-x-full`) until opened, so rendering it
+   * during SSR buys nothing and costs hydration robustness: browser extensions
+   * that attach helpers to dialogs and form controls (TextBlaze injects
+   * `<text-blaze-app-reference>`) mutate this subtree between the server HTML
+   * and React's hydration pass, which React reports as a hydration mismatch.
+   * Rendering it only after mount keeps the extension's edits on the client side
+   * of that boundary.
+   *
+   * `useSyncExternalStore` rather than a `mounted` flag set in an effect: the
+   * server snapshot is `false` and the client snapshot is `true`, so React swaps
+   * it in after hydration without a cascading render (the lint rules reject
+   * setState in an effect body for exactly that reason).
+   */
+  const mounted = useSyncExternalStore(
+    subscribeToNothing,
+    getClientSnapshot,
+    getServerSnapshot,
+  );
 
   const colleges = useMemo(() => dataset?.length ? dataset : COLLEGES, [dataset]);
   const facets = useMemo(() => buildFacets(colleges), [colleges]);
@@ -253,42 +277,44 @@ export default function CollegesExplorer({
         </div>
       </div>
 
-      {/* mobile filter drawer */}
-      <Suspense fallback={null}>
-        <div
-          aria-hidden={!filterOpen}
-          className={cn(
-            "fixed inset-0 z-[80] lg:hidden",
-            filterOpen ? "pointer-events-auto" : "pointer-events-none",
-          )}
-        >
-          <button
-            aria-label="Close filters"
-            onClick={() => setFilterOpen(false)}
-            className={cn(
-              "absolute inset-0 bg-gray-900/50 backdrop-blur-sm transition-opacity",
-              filterOpen ? "opacity-100" : "opacity-0",
-            )}
-          />
+      {/* mobile filter drawer — client-only, see `mounted` above */}
+      {mounted && (
+        <Suspense fallback={null}>
           <div
-            role="dialog"
-            aria-modal="true"
-            aria-label="Filters"
+            aria-hidden={!filterOpen}
             className={cn(
-              "absolute inset-y-0 left-0 w-[min(22rem,88vw)] bg-white shadow-2xl transition-transform duration-300",
-              filterOpen ? "translate-x-0" : "-translate-x-full",
+              "fixed inset-0 z-[80] lg:hidden",
+              filterOpen ? "pointer-events-auto" : "pointer-events-none",
             )}
           >
-            <FiltersPanel
-              filters={filters}
-              onChange={updateFilters}
-              onClear={clearAll}
-              onClose={() => setFilterOpen(false)}
-              facets={facets}
+            <button
+              aria-label="Close filters"
+              onClick={() => setFilterOpen(false)}
+              className={cn(
+                "absolute inset-0 bg-gray-900/50 backdrop-blur-sm transition-opacity",
+                filterOpen ? "opacity-100" : "opacity-0",
+              )}
             />
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Filters"
+              className={cn(
+                "absolute inset-y-0 left-0 w-[min(22rem,88vw)] bg-white shadow-2xl transition-transform duration-300",
+                filterOpen ? "translate-x-0" : "-translate-x-full",
+              )}
+            >
+              <FiltersPanel
+                filters={filters}
+                onChange={updateFilters}
+                onClear={clearAll}
+                onClose={() => setFilterOpen(false)}
+                facets={facets}
+              />
+            </div>
           </div>
-        </div>
-      </Suspense>
+        </Suspense>
+      )}
     </div>
   );
 }

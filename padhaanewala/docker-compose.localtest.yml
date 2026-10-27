@@ -45,16 +45,37 @@ services:
     # `!override` is required and is not decoration. Compose *appends* list-valued
     # keys when merging files rather than replacing them, so a plain `ports:`
     # here would leave Caddy holding both the production mapping
-    # (80:80, 443:443) and this one (18080:80, 18443:443). The result is a bind
-    # failure — and the first draft of this file made exactly that mistake, then
-    # a second time on 8080, which is also commonly occupied. Neither failure
-    # points at Caddy; both read as "port is already allocated", which is a very
-    # confusing way to learn that a file merge is additive.
+    # (80:80, 443:443) and this one (28080:80, 28443:28443). The result is a
+    # bind failure — and the first draft of this file made exactly that
+    # mistake, then a second time on 8080, which is also commonly occupied.
+    # Neither failure points at Caddy; both read as "port is already allocated",
+    # which is a very confusing way to learn that a file merge is additive.
     #
     # These are deliberately high and deliberately not 80/443: a developer
     # machine is likely to already have something on the low ports, and the
     # verification stack must not be what displaces it.
+    #
+    # The HTTPS mapping is 28443->28443 and NOT 28443->443, and that is the
+    # fix for "the HTTP redirect sends me to a port nothing is listening on".
+    # `SITE_ADDRESS` in .env.localtest is `localhost:28443`, so Caddy opens its
+    # TLS listener on 28443 inside the container. Publishing 28443->443 would
+    # map the host's 28443 onto a container port Caddy is not listening on,
+    # and the site would refuse every connection.
+    #
+    # It also means Caddy's own automatic HTTP->HTTPS redirect produces
+    # `https://localhost:28443/...` — the port included — because the port is
+    # part of the site address. A bare `SITE_ADDRESS=localhost` would redirect
+    # to `https://localhost/...`, i.e. port 443, which this stack does not
+    # publish. The container port and the published port are therefore the
+    # same number on purpose, and must be changed together with
+    # `SITE_ADDRESS` and `HTTPS_PORT_SUFFIX` in .env.localtest.
     ports: !override
-      - "18080:80"
-      - "18443:443"
-      - "18443:443/udp"
+      - "28080:80"
+      - "28443:28443"
+      - "28443:28443/udp"
+    environment:
+      # The public HTTPS port, used only by the `:80` block's redirect for
+      # requests whose Host does not match `SITE_ADDRESS`. Empty in
+      # production, where 443 is the real port and the canonical URL carries
+      # no port. See the Caddyfile for the full explanation.
+      HTTPS_PORT_SUFFIX: ${HTTPS_PORT_SUFFIX:-}
