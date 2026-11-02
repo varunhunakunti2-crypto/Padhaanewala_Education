@@ -41,6 +41,10 @@ logs/
 padhaanewala/backend/var/
 padhaanewala/backend/data/
 
+# Local agent/tooling state. .opencode/ is machine-local (installed skills,
+# hooks and their node_modules), not part of the application source.
+.opencode/
+
 # Defence in depth. The nested .gitignore files already cover these, but a stray
 # copy at the root would otherwise be unprotected.
 node_modules/
