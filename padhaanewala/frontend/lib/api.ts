@@ -2064,6 +2064,67 @@ export type SiteSettingsUpdate = Partial<
 >;
 
 /**
+ * Where the active credential came from. The console shows this so a super
+ * admin can tell "saved here" from "still coming from the server environment".
+ */
+export type AiKeySource = "database" | "environment" | "none";
+
+/**
+ * `AiSettingsResponse` from `GET` / `PUT /settings/ai` -- super-admin only.
+ *
+ * There is deliberately no `*_api_key` field. The server returns a boolean and
+ * a last-four hint, so a browser (or anyone with the console open) can tell
+ * *which* key is active without holding a credential that spends real money.
+ */
+export interface AiSettings {
+  chat_base_url: string;
+  chat_model: string;
+  chat_api_key_set: boolean;
+  chat_api_key_hint: string | null;
+  chat_api_key_source: AiKeySource;
+  gemini_model: string;
+  gemini_api_key_set: boolean;
+  gemini_api_key_hint: string | null;
+  gemini_api_key_source: AiKeySource;
+  updated_at: string;
+  updated_by: number | null;
+}
+
+/**
+ * The writable subset of {@link AiSettings}. Absent fields are left untouched;
+ * an **empty string** on a key field clears the saved key. `null` would be
+ * ambiguous with "absent", which is why the panel sends `""` to clear.
+ */
+export interface AiSettingsUpdate {
+  chat_base_url?: string;
+  chat_model?: string;
+  chat_api_key?: string;
+  gemini_model?: string;
+  gemini_api_key?: string;
+}
+
+/** Which provider a connection test exercises. */
+export type AiTarget = "chat" | "gemini";
+
+export interface AiSettingsTestInput {
+  target: AiTarget;
+  /** Chat only. Omitted falls back to the saved base URL. */
+  base_url?: string;
+  /** Omitted falls back to the saved model. */
+  model?: string;
+  /** Used for this test only; omitted falls back to the saved key. */
+  api_key?: string;
+}
+
+export interface AiSettingsTestResult {
+  ok: boolean;
+  target: AiTarget;
+  model: string;
+  message: string;
+  latency_ms: number;
+}
+
+/**
  * `NotificationResponse` — one row in the signed-in user's own inbox.
  *
  * Distinct from {@link AdminNotificationSend}: the student endpoints are scoped
@@ -2145,6 +2206,33 @@ export const adminApi = {
    */
   updateSettings: (payload: SiteSettingsUpdate) =>
     apiFetch<SiteSettings>("/settings", { method: "PUT", body: JSON.stringify(payload) }),
+
+  /**
+   * `GET /settings/ai` - super-admin only. Credentials are never returned in
+   * plaintext; see {@link AiSettings}.
+   */
+  aiSettings: () => apiFetch<AiSettings>("/settings/ai"),
+
+  /**
+   * `PUT /settings/ai`. Send only changed fields. An empty string on a key
+   * field clears it; omitting the field leaves it alone.
+   */
+  updateAiSettings: (payload: AiSettingsUpdate) =>
+    apiFetch<AiSettings>("/settings/ai", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+
+  /**
+   * `POST /settings/ai/test` - one live provider call with unsaved draft
+   * values. `200` means the test ran; `ok` says whether the provider accepted
+   * it, so a rejected key renders inline rather than throwing.
+   */
+  testAiSettings: (payload: AiSettingsTestInput) =>
+    apiFetch<AiSettingsTestResult>("/settings/ai/test", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
 
   updateUser: (id: number, payload: AdminUpdateUserPayload) =>
     apiFetch<AdminUser>(`/users/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),

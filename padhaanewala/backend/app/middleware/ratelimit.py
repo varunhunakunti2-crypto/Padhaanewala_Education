@@ -38,6 +38,12 @@ PUBLIC_WRITE_LIMITS: dict[str, tuple[int, int]] = {
     "/api/v1/predictor": (60, 60),
     # 4.8 — six COUNT(*) per request, unauthenticated.
     "/api/v1/stats/catalog": (60, 60),
+    # The student assistant. The Next.js proxy already throttles per browser IP
+    # at 12/min; this is a coarse ceiling for a caller reaching FastAPI
+    # directly. It is intentionally looser because the proxy's server IP is the
+    # only client address this layer can see in the normal path, so a tight
+    # limit here would throttle every student together.
+    "/api/v1/ai/chat": (60, 60),
 }
 
 #: Namespace whose limiter fails *closed*. Brute-forcing credentials is the one

@@ -181,15 +181,20 @@ MIN_OPTIONS = 2
 MAX_OPTIONS = 8
 
 
-def generation_is_configured() -> bool:
+def generation_is_configured(api_key: str | None = None) -> bool:
     """True when a real credential is present.
 
     Shares `config._is_placeholder`'s definition of "no credential" without
     importing the private name: an unedited `change-me` is not a key, and
     calling the provider with it produces an opaque 400 instead of an honest
     "not configured".
+
+    ``api_key`` lets the caller supply the key the super admin saved in the
+    console. ``None`` keeps the previous behaviour and reads the environment,
+    which is what every existing test and deployment does.
     """
-    return settings.GEMINI_API_KEY.strip() not in ("", "change-me", "changeme", "none")
+    key = settings.GEMINI_API_KEY if api_key is None else api_key
+    return key.strip().lower() not in ("", "change-me", "changeme", "none")
 
 
 def extract_pdf_text(data: bytes, *, max_pages: int | None = None) -> tuple[list[str], int]:
@@ -633,6 +638,8 @@ def generate_drafts(
     subject: str | None = None,
     max_drafts: int | None = None,
     client: httpx.Client | None = None,
+    api_key: str | None = None,
+    model: str | None = None,
 ) -> GenerationResult:
     """The whole pipeline: PDF bytes in, validated drafts out.
 
@@ -646,11 +653,18 @@ def generate_drafts(
     because a paper silently missing a third of its questions is worse than one
     the admin was told to retry.
     """
-    if not generation_is_configured():
+    if not generation_is_configured(api_key):
         raise GenerationUnavailable(
-            "PDF question import is not configured: GEMINI_API_KEY is unset on "
-            "the server."
+            "PDF question import is not configured: no Gemini API key is set. "
+            "A super admin can add one in the admin console, or set "
+            "GEMINI_API_KEY on the server."
         )
+
+    # `None` means "not supplied by the caller", so keep reading the environment
+    # exactly as before. The router passes the resolved console value when one
+    # exists.
+    effective_key = api_key if api_key is not None else settings.GEMINI_API_KEY
+    effective_model = model or settings.GEMINI_MODEL
 
     pages, _ = extract_pdf_text(pdf_bytes)
     chunks = chunk_pages(pages)
@@ -670,7 +684,7 @@ def generate_drafts(
     owns_client = client is None
     http = client or httpx.Client(
         timeout=settings.PDF_IMPORT_LLM_TIMEOUT_SECONDS,
-        headers={"x-goog-api-key": settings.GEMINI_API_KEY},
+        headers={"x-goog-api-key": effective_key},
     )
     try:
         for chunk in chunks:
@@ -679,7 +693,7 @@ def generate_drafts(
             remaining = ceiling - len(result.drafts)
             raw_objects = _call_gemini(
                 http,
-                settings.GEMINI_MODEL,
+                effective_model,
                 chunk,
                 count=min(wanted, remaining),
                 subject=subject,

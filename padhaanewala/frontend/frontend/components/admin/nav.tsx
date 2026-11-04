@@ -21,6 +21,7 @@ import {
   Images as MediaIcon,
   Settings,
   ShieldCheck,
+  Sparkles,
   Star,
   TrendingUp,
   Users,
@@ -28,7 +29,17 @@ import {
 } from "lucide-react";
 import type { SectionKey } from "@/components/admin/types";
 
-export const NAV: { key: SectionKey; label: string; icon: typeof LayoutDashboard }[] = [
+export const NAV: {
+  key: SectionKey;
+  label: string;
+  icon: typeof LayoutDashboard;
+  /**
+   * Hidden from the sidebar for everyone else. This is a courtesy, not the
+   * security boundary: the backend route itself is `SUPER_ADMIN_ROLES`, so a
+   * plain admin who bookmarks the section gets a 403 the panel renders.
+   */
+  superAdminOnly?: boolean;
+}[] = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { key: "analytics", label: "Analytics", icon: BarChart3 },
   { key: "colleges", label: "Colleges", icon: Building2 },
@@ -49,6 +60,9 @@ export const NAV: { key: SectionKey; label: string; icon: typeof LayoutDashboard
   { key: "datarequests", label: "Data Requests", icon: ShieldCheck },
   { key: "media", label: "Media", icon: MediaIcon },
   { key: "seo", label: "SEO", icon: TrendingUp },
+  // Placed next to Settings: it is configuration, but its own entry because a
+  // credential rotation is the thing a super admin is usually looking for.
+  { key: "aisettings", label: "AI Settings", icon: Sparkles, superAdminOnly: true },
   { key: "settings", label: "Settings", icon: Settings },
   { key: "audit", label: "Audit Logs", icon: ScrollText },
 ];

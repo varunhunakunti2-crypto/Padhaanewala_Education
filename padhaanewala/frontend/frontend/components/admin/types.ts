@@ -20,6 +20,7 @@ export type SectionKey =
   | "datarequests"
   | "media"
   | "seo"
+  | "aisettings"
   | "settings"
   | "audit"
   | "analytics";

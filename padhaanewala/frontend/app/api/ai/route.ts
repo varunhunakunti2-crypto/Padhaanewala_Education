@@ -1,17 +1,13 @@
 import { NextResponse } from "next/server";
 
+import { SERVER_API } from "@/lib/api-server";
 import { getAiResponse } from "@/lib/data/notifications";
 
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
-
-// Base URL is overridable so any OpenAI-compatible provider (Groq, Gemini,
-// OpenRouter, Cerebras, …) can back the assistant in development without
-// editing this file. Defaults to OpenAI, so production is unchanged. The
-// trailing slash is trimmed so `.../v1/` and `.../v1` both resolve.
-const OPENAI_BASE_URL = (
-  process.env.OPENAI_BASE_URL || "https://api.openai.com/v1"
-).replace(/\/+$/, "");
+// The provider call now lives in the backend (`POST /api/v1/ai/chat`), which
+// reads the key the super admin saved in the console and falls back to
+// `OPENAI_*` in the server environment. That is what makes a key rotation take
+// effect without redeploying this route. `OPENAI_*` is deliberately not read
+// here any more: two readers would drift.
 
 // 4.7 — /api/ai was unauthenticated, unthrottled, took any input length and
 // made an OpenAI call with no timeout. The three caps below bound the damage:
@@ -25,9 +21,11 @@ const MAX_MESSAGE_CHARS = 500;
 const AI_RATE_LIMIT = 12;
 const AI_RATE_WINDOW_MS = 60_000;
 
-// 3. OpenAi response timeout. A hanging upstream used to hold the lambda/route
-//    open indefinitely; an abort caps the worst case at one request duration.
-const OPENAI_TIMEOUT_MS = 15_000;
+// 3. Backend response timeout. A hanging upstream used to hold the route open
+//    indefinitely; an abort caps the worst case at one request duration. Slightly
+//    above the backend's own 15s provider timeout, so the backend reports the
+//    specific failure before the proxy gives up on it.
+const AI_BACKEND_TIMEOUT_MS = 18_000;
 
 /**
  * Per-process sliding-window rate limiter.
@@ -105,38 +103,30 @@ export async function POST(req: Request) {
     });
   }
 
-  if (OPENAI_API_KEY && OPENAI_API_KEY !== "change-me") {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), OPENAI_TIMEOUT_MS);
-    try {
-      const res = await fetch(`${OPENAI_BASE_URL}/chat/completions`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${OPENAI_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: OPENAI_MODEL,
-          temperature: 0.4,
-          max_tokens: 500,
-          messages: [
-            { role: "system", content: SYSTEM_PROMPT },
-            { role: "user", content: message },
-          ],
-        }),
-        signal: controller.signal,
-      });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), AI_BACKEND_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${SERVER_API}/ai/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message, system_prompt: SYSTEM_PROMPT }),
+      signal: controller.signal,
+      // The assistant answer is per-message and must never be cached.
+      cache: "no-store",
+    });
 
-      if (res.ok) {
-        const data = await res.json();
-        const reply = data?.choices?.[0]?.message?.content?.trim();
-        if (reply) return NextResponse.json({ reply });
-      }
-    } catch {
-      /* fall back to the offline responder below */
-    } finally {
-      clearTimeout(timer);
+    if (res.ok) {
+      const data = await res.json();
+      const reply = typeof data?.reply === "string" ? data.reply.trim() : "";
+      if (reply) return NextResponse.json({ reply });
     }
+    // A non-2xx (503 when nothing is configured, 502 when the provider fails)
+    // is not an error the student should see: the offline responder answers
+    // instead, exactly as it did when the key was missing at module load.
+  } catch {
+    /* fall back to the offline responder below */
+  } finally {
+    clearTimeout(timer);
   }
 
   return NextResponse.json({ reply: getAiResponse() });

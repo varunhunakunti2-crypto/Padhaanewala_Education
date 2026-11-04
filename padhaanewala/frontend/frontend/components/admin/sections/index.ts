@@ -1,4 +1,5 @@
 export { DashboardSection } from "@/components/admin/sections/DashboardSection";
+export { AiSettingsSection } from "@/components/admin/sections/AiSettingsSection";
 export { AnalyticsSection } from "@/components/admin/sections/AnalyticsSection";
 export { CollegesSection } from "@/components/admin/sections/CollegesSection";
 export { CollegeSubmissionsSection } from "@/components/admin/sections/CollegeSubmissionsSection";

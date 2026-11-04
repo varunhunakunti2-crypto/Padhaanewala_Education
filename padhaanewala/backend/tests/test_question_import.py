@@ -216,7 +216,7 @@ def configured(monkeypatch):
     these tests do not depend on the prompt, the response schema, or the network.
     `tests/test_question_generation.py` covers the provider call itself.
     """
-    monkeypatch.setattr(qg, "generation_is_configured", lambda: True)
+    monkeypatch.setattr(qg, "generation_is_configured", lambda api_key=None: True)
     monkeypatch.setattr(
         qg,
         "generate_drafts",
@@ -760,7 +760,7 @@ def test_a_generation_failure_is_recorded_with_a_readable_reason(
             "like a scan -- upload a version with a text layer."
         )
 
-    monkeypatch.setattr(qg, "generation_is_configured", lambda: True)
+    monkeypatch.setattr(qg, "generation_is_configured", lambda api_key=None: True)
     monkeypatch.setattr(qg, "generate_drafts", explode)
 
     from app.routers.question_imports import _generate
@@ -793,7 +793,7 @@ def test_an_unexpected_generation_error_does_not_leak_its_text(monkeypatch):
             "/models?key=SECRET-KEY-VALUE"
         )
 
-    monkeypatch.setattr(qg, "generation_is_configured", lambda: True)
+    monkeypatch.setattr(qg, "generation_is_configured", lambda api_key=None: True)
     monkeypatch.setattr(qg, "generate_drafts", explode)
 
     from app.routers.question_imports import _generate
@@ -814,7 +814,7 @@ def test_an_unexpected_generation_error_does_not_leak_its_text(monkeypatch):
 
 
 def test_a_missing_stored_pdf_says_to_upload_again(admin_headers, monkeypatch):
-    monkeypatch.setattr(qg, "generation_is_configured", lambda: True)
+    monkeypatch.setattr(qg, "generation_is_configured", lambda api_key=None: True)
 
     from app.routers.question_imports import _generate
 
@@ -902,7 +902,7 @@ def test_an_unconfigured_server_refuses_the_upload_before_reading_it(
     admin_headers, monkeypatch
 ):
     """There is no point accepting 20 MB to report that nothing can be done."""
-    monkeypatch.setattr(qg, "generation_is_configured", lambda: False)
+    monkeypatch.setattr(qg, "generation_is_configured", lambda api_key=None: False)
     response = client.post(
         "/api/v1/question-imports/pdf",
         files={"file": ("paper.pdf", PDF_BODY, "application/pdf")},
