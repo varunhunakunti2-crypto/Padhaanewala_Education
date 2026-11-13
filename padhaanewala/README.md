@@ -247,6 +247,79 @@ npm run dev
 
 Website: http://localhost:3000
 
+## Production Stack (Docker Compose)
+
+`docker-compose.prod.yml` is the shipping topology: Caddy is the only published
+port, and only it terminates TLS. It requires a Compose-shaped env file and
+refuses to start without one.
+
+```bash
+cp .env.prod.example .env.prod      # then replace every `change-me`
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
+```
+
+`.env.prod.example` is tracked; `.env.prod` is gitignored. To check the Compose
+file offline without starting anything:
+
+```bash
+docker compose --env-file .env.prod.example -f docker-compose.prod.yml config --quiet
+```
+
+That command succeeding only means the `${VAR:?}` interpolations resolved — the
+template's placeholders are rejected at runtime by `backend/app/config.py` and
+`frontend/next.config.ts`, by design.
+
+### Which env file is for what
+
+| File | Used by | Purpose |
+|---|---|---|
+| `.env.development` (in `backend/`) | FastAPI, run from source | Local development |
+| `.env.example` | — | Development template; copy to `backend/.env.development` |
+| `.env.prod.example` | — | Production template; copy to `.env.prod` |
+| `.env.prod` (gitignored) | `docker-compose.prod.yml` | VPS deployment |
+| `.env.localtest` (gitignored) | prod compose + `docker-compose.localtest.yml` | Local rehearsal of the production stack |
+| `.env.deploy` (gitignored) | Render + Vercel via `render.yaml` | Free-tier demo; **cannot boot this stack** |
+
+### Why `.env.deploy` cannot start the production stack
+
+It is not a Compose env file, and adding keys to it does not make it one:
+
+- It has no `DB_NAME`, `DB_USER` or `DB_PASSWORD`. It carries a Render
+  `DATABASE_URL` instead, but `docker-compose.prod.yml` builds `DATABASE_URL`
+  from the three `DB_*` values and never passes a supplied one through, so the
+  stack fails on `${DB_NAME:?DB_NAME is required}` before anything starts.
+- It is written for `APP_ENV=staging`. The Compose file hardcodes
+  `APP_ENV: production` on the backend, so that value is ignored — while the
+  production guards it then triggers reject the file's `EMAIL_PROVIDER=console`
+  and `SMS_PROVIDER=console`.
+- `docker compose up` also requires `SITE_ADDRESS`, `ACME_EMAIL`,
+  `EMAIL_FROM_EMAIL`, `SMS_API_KEY`, `SMS_SENDER_ID`, `SMS_DLT_TEMPLATE_ID` and
+  `NEXT_PUBLIC_GRIEVANCE_OFFICER_NAME`, none of which it sets.
+
+Use `.env.deploy` with `render.yaml` only. Use `.env.prod` for the Compose stack.
+
+### `ADMIN_PASSWORD` is not a boot variable
+
+An empty `ADMIN_PASSWORD` does not block `docker compose up`: neither the
+Compose file nor `backend/docker-entrypoint.sh` reads it. The only reader is
+`backend/scripts/seed_admin.py` (also not in the `RUN_SEEDS` list — seeds load
+reference data, not administrators), which refuses to run without a password.
+Create the admin after the stack is healthy:
+
+```bash
+docker compose --env-file .env.prod -f docker-compose.prod.yml \
+  exec -e ADMIN_PASSWORD='...' backend python scripts/seed_admin.py
+```
+
+### Trap: your shell beats `--env-file`
+
+Compose interpolation resolves `VAR` in this order: the shell environment first,
+then `--env-file`. An exported `DB_PASSWORD`, `APP_URL` or `SECRET_KEY` from an
+unrelated project silently overrides the file you passed, and the stack boots
+with the wrong value with no warning. If a value in `.env.prod` appears to be
+ignored, check `$env:DB_PASSWORD` / `printenv DB_PASSWORD` before editing the
+file.
+
 ## Git Workflow
 
 - `main` — production (protected, deploys require approval)

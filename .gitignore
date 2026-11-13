@@ -10,6 +10,9 @@
 # Environment files - never commit real values
 .env*
 !.env.example
+# Compose-shaped production template (see padhaanewala/.env.prod.example). A
+# nested .gitignore is not overridden by this file, so both need the negation.
+!.env.prod.example
 
 # OS / editor cruft
 .DS_Store

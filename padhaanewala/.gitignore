@@ -3,6 +3,10 @@
 # ============================================================================
 .env*
 !.env.example
+# Compose-shaped production template. Only placeholders, and every value that
+# matters is one the startup guards reject, so it is safe to track. The real
+# `.env.prod` it is copied to stays ignored.
+!.env.prod.example
 
 # ============================================================================
 # NODE (frontend)
