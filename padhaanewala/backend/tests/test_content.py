@@ -625,13 +625,25 @@ def test_super_admin_edits_a_whole_broadcast(student, super_admin_token):
     assert [n for n in mine.json() if n["title"] == "Broadcast after edit"], mine.json()
 
     # The log confirms the whole send was rewritten, not one row of it.
-    log = client.get(
-        "/api/v1/notifications",
-        params={"batch_id": batch_id},
-        headers=sender_headers,
-    )
-    assert log.status_code == 200, log.text
-    rows = log.json()
+    #
+    # `GET /notifications` defaults to `limit=50`, while a broadcast fans out one
+    # row per active student. Once the shared test schema holds more than 50
+    # students, a single page can never equal `created`, which is a pagination
+    # fact and not a broadcast defect. Page until a short page arrives.
+    rows: list[dict] = []
+    offset = 0
+    while True:
+        log = client.get(
+            "/api/v1/notifications",
+            params={"batch_id": batch_id, "limit": 200, "offset": offset},
+            headers=sender_headers,
+        )
+        assert log.status_code == 200, log.text
+        page = log.json()
+        rows.extend(page)
+        if len(page) < 200:
+            break
+        offset += 200
     assert len(rows) == sent["created"], rows
     assert {r["title"] for r in rows} == {"Broadcast after edit"}
     assert {r["batch_id"] for r in rows} == {batch_id}

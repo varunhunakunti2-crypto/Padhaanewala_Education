@@ -683,6 +683,12 @@ def _production_baseline(monkeypatch, **overrides) -> None:
     monkeypatch.setattr(settings, "MEDIA_ROOT", "/var/lib/padhaanewala/media")
     monkeypatch.setattr(settings, "MEDIA_MAX_BYTES", 5 * 1024 * 1024)
     monkeypatch.setattr(settings, "MEDIA_URL_PREFIX", "/api/v1/media/files")
+    # P10 added rate-limit startup guards that also precede the delivery checks.
+    # The suite disables the limiter globally (conftest), which production now
+    # refuses. Satisfy those guards here so each test still asserts its own.
+    monkeypatch.setattr(settings, "RATE_LIMIT_ENABLED", True)
+    monkeypatch.setattr(settings, "RATE_LIMIT_POLICY_ENGINE_ENABLED", True)
+    monkeypatch.setattr(settings, "RATE_LIMIT_EXEMPT_METHODS", ["OPTIONS"])
     for name, value in overrides.items():
         monkeypatch.setattr(settings, name, value)
 

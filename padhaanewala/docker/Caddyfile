@@ -23,6 +23,26 @@
 	admin off
 }
 
+# Reconstruct the forwarding headers at the edge (P10).
+#
+# X-Forwarded-For and X-Real-IP are client-controlled. Caddy's default is to
+# *append* the peer to an incoming X-Forwarded-For, which preserves any forged
+# prefix, and it forwards a client-supplied X-Real-IP unchanged. The backend
+# trusts the rightmost hop declared by TRUSTED_PROXY_HOPS, so a forged value
+# cannot normally win — but defence in depth means the edge should not forward
+# one at all. `header_up` replaces the header with the address Caddy itself
+# observed (and in localtest, the one it observed on the host network).
+#
+# Next.js passes X-Forwarded-For through unchanged (`??=` in base-server.js), so
+# after this snippet the backend sees exactly one value: the real client. That is
+# what makes TRUSTED_PROXY_HOPS=1 correct for the Caddy -> Next -> FastAPI chain.
+(trusted_proxy_headers) {
+	header_up X-Forwarded-For {remote_host}
+	header_up X-Real-IP {remote_host}
+	header_up X-Forwarded-Proto {scheme}
+	header_up X-Forwarded-Host {host}
+}
+
 # Plain HTTP exists only to redirect and to answer the ACME challenge. Nothing is
 # served from it.
 :80 {
@@ -144,7 +164,9 @@
 	# The only backend path Caddy exposes directly. The rest of the API goes
 	# through the frontend rewrite, which is what keeps the browser same-origin.
 	handle /health {
-		reverse_proxy backend:8000
+		reverse_proxy backend:8000 {
+			import trusted_proxy_headers
+		}
 	}
 
 	# --- API ---------------------------------------------------------------
@@ -154,12 +176,16 @@
 	# talks to this origin — one less hop, and the reason the refresh cookie can
 	# be SameSite=strict.
 	handle /api/v1/* {
-		reverse_proxy frontend:3000
+		reverse_proxy frontend:3000 {
+			import trusted_proxy_headers
+		}
 	}
 
 	# --- Everything else ---------------------------------------------------
 	handle {
-		reverse_proxy frontend:3000
+		reverse_proxy frontend:3000 {
+			import trusted_proxy_headers
+		}
 	}
 
 	log {

@@ -43,6 +43,265 @@ def _is_absolute_path(value: str) -> bool:
     return text.startswith(("/", "\\")) or (len(text) > 1 and text[1] == ":")
 
 
+#: Methods the limiter understands. An exemption for anything else is a typo,
+#: and exempting a real data method disables throttling for it.
+_RATE_LIMIT_KNOWN_METHODS = frozenset(
+    {"GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"}
+)
+
+
+def _rate_limit_int(value, *, label: str) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{label} must be an integer, got {value!r}") from None
+
+
+def _validate_limit_entries(mapping, *, label: str, minimum: int) -> None:
+    """Validate a ``{name: {limit, window_seconds}}`` configuration map."""
+    if not isinstance(mapping, dict):
+        raise ValueError(
+            f"{label} must be an object of name -> {{limit, window_seconds}}"
+        )
+    for name, entry in mapping.items():
+        item = f"{label}[{name!r}]"
+        if not isinstance(entry, dict):
+            raise ValueError(f"{item} must be an object with limit and window_seconds")
+        if "limit" not in entry and "window_seconds" not in entry:
+            raise ValueError(f"{item} must define limit and/or window_seconds")
+        if "limit" in entry:
+            limit = _rate_limit_int(entry["limit"], label=f"{item}.limit")
+            if limit < minimum:
+                raise ValueError(f"{item}.limit must be >= {minimum} (got {limit})")
+        if "window_seconds" in entry:
+            window = _rate_limit_int(
+                entry["window_seconds"], label=f"{item}.window_seconds"
+            )
+            if window <= 0:
+                raise ValueError(f"{item}.window_seconds must be > 0 (got {window})")
+
+
+def _validate_rate_limit_config(cfg, *, production: bool) -> None:
+    """Validate every rate-limit setting at startup (P10).
+
+    Two classes of problem are refused here rather than discovered in traffic:
+
+    * **Dangerous production combinations** — a kill switch, a method exemption
+      that unthrottles real traffic, a non-Redis ``REDIS_URL``, or a zero limit
+      that silently disables a route.
+    * **Malformed maps** — a typo such as ``window_seconds: "60s"`` would
+      otherwise be ignored by the rule setters (they keep the default), so the
+      operator would believe a limit was changed when it was not.
+
+    Every message names the setting and echoes only its non-secret value. The
+    Redis URL is never echoed; only the expected scheme is stated. This runs for
+    all environments, with the production-only checks gated on ``production``.
+    """
+    minimum = 1 if production else 0
+
+    if production:
+        if not bool(getattr(cfg, "RATE_LIMIT_ENABLED", True)):
+            raise ValueError(
+                "RATE_LIMIT_ENABLED must be true in production; disabling the "
+                "limiter removes every login, enquiry and AI quota"
+            )
+        if not bool(getattr(cfg, "RATE_LIMIT_POLICY_ENGINE_ENABLED", True)):
+            raise ValueError(
+                "RATE_LIMIT_POLICY_ENGINE_ENABLED must be true in production; "
+                "disabling it bypasses the centralized route policy engine"
+            )
+        exempt = {
+            str(method).upper()
+            for method in (getattr(cfg, "RATE_LIMIT_EXEMPT_METHODS", []) or [])
+        }
+        dangerous = exempt & ({"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"})
+        if dangerous:
+            raise ValueError(
+                "RATE_LIMIT_EXEMPT_METHODS must not exempt real traffic methods "
+                f"in production (got {sorted(dangerous)}); only OPTIONS is safe"
+            )
+        redis_url = str(getattr(cfg, "REDIS_URL", "") or "")
+        if not redis_url.startswith(("redis://", "rediss://", "unix://")):
+            raise ValueError(
+                "REDIS_URL must use the redis://, rediss:// or unix:// scheme in "
+                "production; the shared counters cannot work with any other URL"
+            )
+
+    for attr in (
+        "RATE_LIMIT_CATEGORY_DEFAULTS",
+        "RATE_LIMIT_NAMED_DEFAULTS",
+        "RATE_LIMIT_READ_CATEGORY_LIMITS",
+        "RATE_LIMIT_P7_STUDENT_LIMITS",
+        "RATE_LIMIT_P8_CRM_LIMITS",
+        "RATE_LIMIT_P9_ROLE_LIMITS",
+        "RATE_LIMIT_P9_SENSITIVE_LIMITS",
+        "RATE_LIMIT_P3_IDENTIFIER_LIMITS",
+        "RATE_LIMIT_P3_DAILY_LIMITS",
+        "RATE_LIMIT_P8_IDENTIFIER_LIMITS",
+    ):
+        _validate_limit_entries(
+            getattr(cfg, attr, {}) or {}, label=attr, minimum=minimum
+        )
+
+    identity = getattr(cfg, "RATE_LIMIT_P3_CATEGORY_IDENTITY_LIMITS", {}) or {}
+    if not isinstance(identity, dict):
+        raise ValueError(
+            "RATE_LIMIT_P3_CATEGORY_IDENTITY_LIMITS must be an object of "
+            "category -> {ip_limit, user_limit, ip_window, user_window}"
+        )
+    for name, entry in identity.items():
+        item = f"RATE_LIMIT_P3_CATEGORY_IDENTITY_LIMITS[{name!r}]"
+        if not isinstance(entry, dict):
+            raise ValueError(f"{item} must be an object")
+        for key in ("ip_limit", "user_limit"):
+            value = entry.get(key)
+            if value is None:
+                continue  # None deliberately disables this dimension
+            limit = _rate_limit_int(value, label=f"{item}.{key}")
+            if limit < minimum:
+                raise ValueError(f"{item}.{key} must be >= {minimum} (got {limit})")
+        for key in ("ip_window", "user_window"):
+            value = entry.get(key)
+            if value is None:
+                continue
+            window = _rate_limit_int(value, label=f"{item}.{key}")
+            if window <= 0:
+                raise ValueError(f"{item}.{key} must be > 0 (got {window})")
+
+    extras = getattr(cfg, "RATE_LIMIT_P3_CATEGORY_EXTRA_LIMITS", {}) or {}
+    if not isinstance(extras, dict):
+        raise ValueError(
+            "RATE_LIMIT_P3_CATEGORY_EXTRA_LIMITS must be an object of "
+            "category -> [dimension/limit/window entries]"
+        )
+    for name, entries in extras.items():
+        if not isinstance(entries, list):
+            raise ValueError(
+                f"RATE_LIMIT_P3_CATEGORY_EXTRA_LIMITS[{name!r}] must be a list"
+            )
+        for index, entry in enumerate(entries):
+            item = f"RATE_LIMIT_P3_CATEGORY_EXTRA_LIMITS[{name!r}][{index}]"
+            if not isinstance(entry, dict):
+                raise ValueError(f"{item} must be an object")
+            dimension = str(entry.get("dimension", "")).lower()
+            if dimension not in {"ip", "user"}:
+                raise ValueError(f"{item}.dimension must be 'ip' or 'user'")
+            limit = _rate_limit_int(entry.get("limit"), label=f"{item}.limit")
+            window = _rate_limit_int(
+                entry.get("window_seconds"), label=f"{item}.window_seconds"
+            )
+            if limit < minimum:
+                raise ValueError(f"{item}.limit must be >= {minimum} (got {limit})")
+            if window <= 0:
+                raise ValueError(f"{item}.window_seconds must be > 0 (got {window})")
+
+    unauthenticated = getattr(cfg, "RATE_LIMIT_P9_UNAUTHENTICATED_ADMIN", {}) or {}
+    if not isinstance(unauthenticated, dict):
+        raise ValueError(
+            "RATE_LIMIT_P9_UNAUTHENTICATED_ADMIN must be an object with "
+            "limit and window_seconds"
+        )
+    _validate_limit_entries(
+        {"unauthenticated_admin": unauthenticated},
+        label="RATE_LIMIT_P9_UNAUTHENTICATED_ADMIN",
+        minimum=minimum,
+    )
+
+    exempt = {
+        str(method).upper()
+        for method in (getattr(cfg, "RATE_LIMIT_EXEMPT_METHODS", []) or [])
+    }
+    unknown = exempt - _RATE_LIMIT_KNOWN_METHODS
+    if unknown:
+        raise ValueError(
+            f"RATE_LIMIT_EXEMPT_METHODS contains unknown methods {sorted(unknown)}"
+        )
+
+    fallback_methods = {
+        str(method).upper()
+        for method in (
+            getattr(cfg, "RATE_LIMIT_DEFAULT_FALLBACK_METHODS", []) or []
+        )
+    }
+    unknown = fallback_methods - _RATE_LIMIT_KNOWN_METHODS
+    if unknown:
+        raise ValueError(
+            "RATE_LIMIT_DEFAULT_FALLBACK_METHODS contains unknown methods "
+            f"{sorted(unknown)}"
+        )
+    if bool(getattr(cfg, "RATE_LIMIT_DEFAULT_FALLBACK_ENABLED", False)):
+        limit = _rate_limit_int(
+            getattr(cfg, "RATE_LIMIT_DEFAULT_FALLBACK_LIMIT", 0),
+            label="RATE_LIMIT_DEFAULT_FALLBACK_LIMIT",
+        )
+        window = _rate_limit_int(
+            getattr(cfg, "RATE_LIMIT_DEFAULT_FALLBACK_WINDOW_SECONDS", 0),
+            label="RATE_LIMIT_DEFAULT_FALLBACK_WINDOW_SECONDS",
+        )
+        if limit <= 0 or window <= 0:
+            raise ValueError(
+                "RATE_LIMIT_DEFAULT_FALLBACK_LIMIT and "
+                "RATE_LIMIT_DEFAULT_FALLBACK_WINDOW_SECONDS must both be > 0 "
+                "when the fallback policy is enabled"
+            )
+        if not fallback_methods:
+            raise ValueError(
+                "RATE_LIMIT_DEFAULT_FALLBACK_METHODS must not be empty when the "
+                "fallback policy is enabled"
+            )
+
+    def _validate_override(
+        entry, *, label: str, default_match: str
+    ) -> None:
+        if not isinstance(entry, dict):
+            raise ValueError(f"{label} must be an object")
+        enabled = bool(entry.get("enabled", True))
+        # An override without a limit can only be a disabled placeholder. If it
+        # is enabled, the limit is the whole point of the entry, and silently
+        # defaulting it would create a route the operator believes is configured
+        # when it is not.
+        if enabled and "limit" not in entry:
+            raise ValueError(
+                f"{label}.limit is required unless the override is disabled"
+            )
+        limit = _rate_limit_int(entry.get("limit", 0), label=f"{label}.limit")
+        window = _rate_limit_int(
+            entry.get("window_seconds", 60), label=f"{label}.window_seconds"
+        )
+        if window <= 0:
+            raise ValueError(f"{label}.window_seconds must be > 0 (got {window})")
+        if enabled and limit < minimum:
+            raise ValueError(f"{label}.limit must be >= {minimum} (got {limit})")
+        match = str(entry.get("match", default_match))
+        if match not in {"exact", "prefix"}:
+            raise ValueError(f"{label}.match must be 'exact' or 'prefix'")
+        methods = {str(m).upper() for m in (entry.get("methods") or [])}
+        unknown_methods = methods - _RATE_LIMIT_KNOWN_METHODS
+        if unknown_methods:
+            raise ValueError(
+                f"{label}.methods contains unknown methods {sorted(unknown_methods)}"
+            )
+
+    exact = getattr(cfg, "RATE_LIMIT_EXACT_OVERRIDES", {}) or {}
+    if not isinstance(exact, dict):
+        raise ValueError("RATE_LIMIT_EXACT_OVERRIDES must be an object")
+    for pattern, entry in exact.items():
+        _validate_override(
+            entry,
+            label=f"RATE_LIMIT_EXACT_OVERRIDES[{pattern!r}]",
+            default_match="exact",
+        )
+    prefix = getattr(cfg, "RATE_LIMIT_PREFIX_OVERRIDES", []) or []
+    if not isinstance(prefix, list):
+        raise ValueError("RATE_LIMIT_PREFIX_OVERRIDES must be a list")
+    for index, entry in enumerate(prefix):
+        _validate_override(
+            entry,
+            label=f"RATE_LIMIT_PREFIX_OVERRIDES[{index}]",
+            default_match="prefix",
+        )
+
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -110,6 +369,285 @@ class Settings(BaseSettings):
     #: login path is exactly the window an attacker picks. This flag governs the
     #: public lead-capture and predictor routes only.
     RATE_LIMIT_FAIL_OPEN: bool = True
+
+    # --- P10 observability -------------------------------------------------
+    # Structured JSON events go to the existing stdout log stream (the one
+    # Caddy already writes JSON to). The allowed-request event is off by
+    # default because public catalogue reads are high-volume; throttles,
+    # dependency failures and quota exhaustion are always emitted. Enabling it
+    # adds per-route statistics to the log stream, which the log platform
+    # aggregates. The helpers accept only bounded labels — never an IP, user
+    # id, identifier hash, token, prompt or raw path.
+    RATE_LIMIT_OBSERVABILITY_ENABLED: bool = True
+    RATE_LIMIT_OBSERVABILITY_LOG_ALLOWED: bool = False
+
+    # --- Centralized rate-limit policy engine (P2) -----------------------
+    # Single source of truth for route classification lives in
+    # `app.middleware.rate_limit_policy`. Defaults below preserve existing
+    # effective limits/coverage; endpoint-specific protections are added in
+    # later phases.
+    RATE_LIMIT_POLICY_ENGINE_ENABLED: bool = True
+    # Explicit method exemptions (OPTIONS kept safe for CORS preflight).
+    RATE_LIMIT_EXEMPT_METHODS: list[str] = ["OPTIONS"]
+    # Default fallback for unclassified requests. Disabled in P2 to avoid
+    # silently changing endpoint limits while architecture is introduced.
+    RATE_LIMIT_DEFAULT_FALLBACK_ENABLED: bool = False
+    RATE_LIMIT_DEFAULT_FALLBACK_CATEGORY: str = "anonymous_api"
+    RATE_LIMIT_DEFAULT_FALLBACK_NAMESPACE: str = "default"
+    RATE_LIMIT_DEFAULT_FALLBACK_LIMIT: int = 60
+    RATE_LIMIT_DEFAULT_FALLBACK_WINDOW_SECONDS: int = 60
+    RATE_LIMIT_DEFAULT_FALLBACK_METHODS: list[str] = ["POST", "PUT", "PATCH", "DELETE"]
+    RATE_LIMIT_DEFAULT_FALLBACK_FAIL_CLOSED: bool | None = None
+    # Configurable overrides (JSON-compatible structures via env/settings):
+    # exact: {"/path": {"limit":..,"window_seconds":..,"methods":[..], ...}}
+    # prefix: [{"pattern":"/prefix","match":"prefix","limit":..,"window_seconds":..,"methods":[..], ...}]
+    RATE_LIMIT_EXACT_OVERRIDES: dict = {}
+    RATE_LIMIT_PREFIX_OVERRIDES: list = []
+    # Category default policy values (centralized, configurable).
+    RATE_LIMIT_CATEGORY_DEFAULTS: dict[str, dict[str, int]] = {
+        "authenticated_api": {"limit": 120, "window_seconds": 60},
+        "anonymous_api": {"limit": 60, "window_seconds": 60},
+        "public_catalogue": {"limit": 60, "window_seconds": 60},
+        "authentication": {"limit": 20, "window_seconds": 60},
+        "student_operations": {"limit": 60, "window_seconds": 60},
+        "mock_test_operations": {"limit": 60, "window_seconds": 60},
+        # P6 — AI endpoints are cost-bearing. The route-level limit is a second
+        # ceiling behind the per-identity/daily dimensions below; the identity
+        # limits are the primary control because they follow the verified user
+        # across IPs. These values are applied to write rules for the categories
+        # listed in ``RATE_LIMIT_WRITE_LIMIT_CONFIG_CATEGORIES``.
+        "ai_operations": {"limit": 10, "window_seconds": 60},
+        "ai_question_generation": {"limit": 3, "window_seconds": 60},
+        "ai_predictor": {"limit": 10, "window_seconds": 60},
+        "file_uploads": {"limit": 30, "window_seconds": 60},
+        "enquiries_crm": {"limit": 5, "window_seconds": 3600},
+        "admin_operations": {"limit": 120, "window_seconds": 60},
+    }
+    # Initial named endpoint-category defaults (P2 requirements).
+    RATE_LIMIT_NAMED_DEFAULTS: dict[str, dict[str, int]] = {
+        "college_search": {"limit": 30, "window_seconds": 60},
+        "course_search": {"limit": 30, "window_seconds": 60},
+        "catalogue_statistics": {"limit": 10, "window_seconds": 60},
+        "dashboard_analytics": {"limit": 30, "window_seconds": 60},
+    }
+    # --- P4 read-route limits (GET/HEAD only) ----------------------------
+    # Centralized starting limits for explicitly classified read routes. These
+    # are applied by `app.middleware.rate_limit_policy.build_runtime_rules`, so
+    # changing a value here takes effect without touching code. Routes not
+    # listed/classified remain unthrottled (no blanket GET rule).
+    RATE_LIMIT_READ_CATEGORY_LIMITS: dict[str, dict[str, int]] = {
+        "anonymous_api": {"limit": 60, "window_seconds": 60},
+        "public_catalogue": {"limit": 60, "window_seconds": 60},
+        "college_search": {"limit": 30, "window_seconds": 60},
+        "course_search": {"limit": 30, "window_seconds": 60},
+        "catalogue_statistics": {"limit": 10, "window_seconds": 60},
+        "catalogue_listings": {"limit": 60, "window_seconds": 60},
+        "media_access": {"limit": 30, "window_seconds": 60},
+        "dashboard_analytics": {"limit": 30, "window_seconds": 60},
+    }
+
+    # Write-route categories whose route-level limit/window is read from
+    # ``RATE_LIMIT_CATEGORY_DEFAULTS`` at request time. Deliberately opt-in: the
+    # existing auth/enquiry/predictor write rules have hand-tuned limits that are
+    # not the category default, and applying the category default to them would
+    # change P2/P3 behaviour. P6 adds only the AI categories here so operators
+    # can tune the cost-bearing ceilings without editing code.
+    RATE_LIMIT_WRITE_LIMIT_CONFIG_CATEGORIES: list[str] = [
+        "ai_operations",
+        "ai_question_generation",
+        "ai_predictor",
+    ]
+
+    # --- Multi-dimensional rate limiting (P3) ----------------------------
+    # Additive identity/identifier/daily dimensions layered on top of existing
+    # endpoint-specific route policies. Existing route limits/namespaces remain
+    # the primary enforcement to preserve behavior and scheduled phases.
+    RATE_LIMIT_P3_ENABLED: bool = True
+    # Initial P3 identity-based limits by category (IP/user). These are applied
+    # as additional dimensions where safe/applicable; existing endpoint-specific
+    # policies are preserved until their scheduled implementation phases.
+    RATE_LIMIT_P3_CATEGORY_IDENTITY_LIMITS: dict[str, dict[str, int | None]] = {
+        "authenticated_api": {"ip_limit": 60, "ip_window": 60, "user_limit": 120, "user_window": 60},
+        "anonymous_api": {"ip_limit": 60, "ip_window": 60, "user_limit": None, "user_window": 60},
+        # P7 student operations are already keyed by the verified user (IP only
+        # as the anonymous fallback). A second shared-IP counter here would let
+        # one student on a campus NAT exhaust another's quota, so it is off.
+        "student_operations": {"ip_limit": None, "ip_window": 60, "user_limit": None, "user_window": 60},
+        "admin_operations": {"ip_limit": 120, "ip_window": 60, "user_limit": 120, "user_window": 60},
+        "ai_operations": {"ip_limit": 10, "ip_window": 60, "user_limit": 10, "user_window": 60},
+        # P6 — PDF/Gemini import: 3/min per identity; the extra 5/10min ceiling
+        # is added by ``RATE_LIMIT_P3_CATEGORY_EXTRA_LIMITS`` below.
+        "ai_question_generation": {"ip_limit": 3, "ip_window": 60, "user_limit": 3, "user_window": 60},
+        # Predictor is deterministic and calls no paid provider; it is limited
+        # for capacity/abuse reasons, not spend, and stays fail-open.
+        "ai_predictor": {"ip_limit": 10, "ip_window": 60, "user_limit": 10, "user_window": 60},
+        "file_uploads": {"ip_limit": 5, "ip_window": 600, "user_limit": 5, "user_window": 600},
+        # Safe defaults for other categories (additive dimensions may be enabled later).
+        "authentication": {"ip_limit": 60, "ip_window": 60, "user_limit": None, "user_window": 60},
+        "public_catalogue": {"ip_limit": 60, "ip_window": 60, "user_limit": None, "user_window": 60},
+        "mock_test_operations": {"ip_limit": 60, "ip_window": 60, "user_limit": 120, "user_window": 60},
+        "enquiries_crm": {"ip_limit": 60, "ip_window": 60, "user_limit": None, "user_window": 60},
+        # P4: dashboard reads are primarily user-keyed (30/min); this IP ceiling
+        # is an anti-abuse guard for one address fanning out across accounts.
+        "dashboard_analytics": {"ip_limit": 120, "ip_window": 60, "user_limit": None, "user_window": 60},
+    }
+    # Route categories/prefixes where P3 category user/IP dimensions are applied
+    # now (without replacing existing endpoint-specific route policies). P3.1
+    # activates the configured identity limits for every category that has
+    # explicitly classified write routes (see
+    # `app.middleware.rate_limit_policy.default_policy_rules`). Categories
+    # without an explicit classification here intentionally receive no
+    # category-level dimensions.
+    RATE_LIMIT_P3_APPLY_IDENTITY_FOR_CATEGORIES: list[str] = [
+        "authentication",
+        "authenticated_api",
+        "anonymous_api",
+        "student_operations",
+        "admin_operations",
+        "ai_operations",
+        "ai_question_generation",
+        "ai_predictor",
+        "file_uploads",
+        "dashboard_analytics",
+    ]
+    RATE_LIMIT_P3_APPLY_IDENTITY_FOR_PREFIXES: list[str] = [
+        "/api/v1/auth",
+    ]
+    # Identifier+IP protection for login/register/OTP/password reset flows.
+    RATE_LIMIT_P3_IDENTIFIER_LIMITS: dict[str, dict[str, int]] = {
+        "auth:login:email": {"limit": 10, "window_seconds": 600},
+        "auth:login:ip": {"limit": 20, "window_seconds": 600},
+        "auth:register:email": {"limit": 5, "window_seconds": 3600},
+        "auth:register:phone": {"limit": 5, "window_seconds": 3600},
+        "auth:register:ip": {"limit": 10, "window_seconds": 3600},
+        "auth:otp_send:phone": {"limit": 5, "window_seconds": 600},
+        "auth:otp_send:email": {"limit": 5, "window_seconds": 600},
+        "auth:otp_send:ip": {"limit": 20, "window_seconds": 600},
+        "auth:otp_verify:phone": {"limit": 10, "window_seconds": 600},
+        "auth:otp_verify:ip": {"limit": 30, "window_seconds": 600},
+        "auth:password_reset:email": {"limit": 5, "window_seconds": 3600},
+        "auth:password_reset:ip": {"limit": 10, "window_seconds": 3600},
+    }
+    # Daily usage identity limits (applied where explicitly configured).
+    # Example key: "ai_operations:user" -> {"limit": 100, "window_seconds": 86400}
+    # P6: UTC calendar-day buckets. The user key is shared across every IP, so a
+    # signed-in caller cannot reset their quota by changing network. The ``:ip``
+    # key is applied only when there is no verified user (anonymous requests),
+    # which protects NAT/shared addresses without making a campus IP cap an
+    # authenticated student's limit.
+    RATE_LIMIT_P3_DAILY_LIMITS: dict[str, dict[str, int]] = {
+        "ai_operations:user": {"limit": 100, "window_seconds": 86400},
+        "ai_operations:ip": {"limit": 100, "window_seconds": 86400},
+        "ai_question_generation:user": {"limit": 10, "window_seconds": 86400},
+        "ai_question_generation:ip": {"limit": 10, "window_seconds": 86400},
+        "ai_predictor:user": {"limit": 50, "window_seconds": 86400},
+        "ai_predictor:ip": {"limit": 50, "window_seconds": 86400},
+    }
+    # Additional per-identity windows for a category, on top of the single
+    # ip/user pair in ``RATE_LIMIT_P3_CATEGORY_IDENTITY_LIMITS``. P6 uses this
+    # for the PDF/Gemini import's 5-per-10-minutes ceiling.
+    RATE_LIMIT_P3_CATEGORY_EXTRA_LIMITS: dict[str, list[dict]] = {
+        "ai_question_generation": [
+            {"dimension": "ip", "limit": 5, "window_seconds": 600},
+            {"dimension": "user", "limit": 5, "window_seconds": 600},
+        ],
+    }
+
+    # --- P7 student operations & mock-test limits -------------------------
+    # Endpoint-specific limits for the student-facing write/read surfaces. The
+    # keys are stable operation names mapped to explicit route templates in
+    # `app.middleware.rate_limit_policy.default_policy_rules`; an operator can
+    # tune any number here (or set it to 0 to disable that operation) without
+    # touching code. These are *per-operation primary buckets keyed by the
+    # verified JWT subject*, with the trusted client IP used only as the
+    # fallback for an unauthenticated/invalid-token caller (whose request is
+    # then rejected by the endpoint's auth dependency).
+    #
+    # No additional shared-IP counter is applied to these operations: a student
+    # on a campus NAT must not consume another student's quota. See
+    # ``RATE_LIMIT_P3_CATEGORY_IDENTITY_LIMITS`` ("student_operations").
+    RATE_LIMIT_P7_STUDENT_LIMITS: dict[str, dict[str, int]] = {
+        "mock_test_start": {"limit": 10, "window_seconds": 60},
+        "mock_test_answer": {"limit": 60, "window_seconds": 60},
+        "mock_test_submit": {"limit": 5, "window_seconds": 600},
+        "mock_test_review": {"limit": 5, "window_seconds": 3600},
+        "saved_college_write": {"limit": 30, "window_seconds": 60},
+        "profile_update": {"limit": 10, "window_seconds": 60},
+        "consent_write": {"limit": 5, "window_seconds": 3600},
+        "student_notifications": {"limit": 30, "window_seconds": 60},
+    }
+
+    # --- P8 CRM, enquiry and lead-generation limits ------------------------
+    # The public site has one intake endpoint (`POST /api/v1/enquiries`) that
+    # serves the admission, counselling and contact forms, so those three
+    # operations share the stricter `public_enquiry` ceiling. Admin/counsellor
+    # "add lead" uses the same route: the verified access-token role selects
+    # `lead_create` instead, so staff are not held to the public form limit.
+    #
+    # A non-positive or malformed value leaves the centralized default in place
+    # rather than silently unthrottling a route that can trigger paid
+    # notifications or CRM writes. Lead writes are keyed by the verified JWT
+    # subject; public submissions are keyed by the same subject when signed in
+    # and by the trusted client IP otherwise. No shared-IP category counter is
+    # applied, so students behind one NAT stay independent.
+    RATE_LIMIT_P8_CRM_LIMITS: dict[str, dict[str, int]] = {
+        "public_enquiry": {"limit": 3, "window_seconds": 600},
+        "lead_create": {"limit": 10, "window_seconds": 60},
+        "lead_update": {"limit": 30, "window_seconds": 60},
+        "blog_view": {"limit": 10, "window_seconds": 3600},
+    }
+    # Identifier windows for the public intake form. Values are normalized with
+    # the same helpers OTP/auth use and SHA-256 hashed before they become Redis
+    # key material; raw email/mobile never reaches a key or a log line. They are
+    # additive to the primary request ceiling and are what make "rotate the IP,
+    # resend the same phone" expensive.
+    RATE_LIMIT_P8_IDENTIFIER_LIMITS: dict[str, dict[str, int]] = {
+        "enquiry:phone": {"limit": 3, "window_seconds": 600},
+        "enquiry:email": {"limit": 3, "window_seconds": 600},
+    }
+
+    # --- P9 admin operations, role-based limits and sensitive actions ------
+    # General admin ceilings, selected from the *verified* access-token role
+    # claim. These are throttling tiers only; the endpoint's own
+    # ``require_role`` guard still performs the authoritative DB-backed
+    # authorization check. A token carrying several roles receives the
+    # highest-ranked tier it holds (``app.roles.PRIVILEGE_ORDER``), so it can
+    # never combine two tiers or choose one from the request.
+    #
+    # The base value applies to every caller with no recognised admin role --
+    # including anonymous, student and forged-token callers. That is what keeps
+    # an unauthenticated caller from receiving an administrator's quota even if
+    # it reaches an admin route (where the endpoint then rejects it).
+    RATE_LIMIT_P9_ROLE_LIMITS: dict[str, dict[str, int]] = {
+        "super_admin": {"limit": 180, "window_seconds": 60},
+        "admin": {"limit": 120, "window_seconds": 60},
+        "content_manager": {"limit": 120, "window_seconds": 60},
+        "seo_manager": {"limit": 90, "window_seconds": 60},
+        "counsellor": {"limit": 90, "window_seconds": 60},
+    }
+    RATE_LIMIT_P9_UNAUTHENTICATED_ADMIN: dict[str, int] = {
+        "limit": 10,
+        "window_seconds": 60,
+    }
+    # Sensitive operations keep their own fixed ceiling regardless of role:
+    # promotion is not a reason to allow a super_admin to bulk-import, upload or
+    # rewrite settings faster. Every entry is a per-user bucket (trusted IP only
+    # when there is no verified token), and every mutation fails closed on a
+    # Redis outage.
+    #
+    # ``bulk_import`` deliberately does not replace the stricter P6
+    # ``POST /question-imports/pdf`` ceiling (3/min), which remains the paid
+    # Gemini import's limit; the 5/min bulk ceiling covers the review-all bulk
+    # action on the same router.
+    RATE_LIMIT_P9_SENSITIVE_LIMITS: dict[str, dict[str, int]] = {
+        "bulk_import": {"limit": 5, "window_seconds": 60},
+        "media_upload": {"limit": 10, "window_seconds": 600},
+        "settings_update": {"limit": 10, "window_seconds": 60},
+        "ai_settings": {"limit": 3, "window_seconds": 60},
+        "role_change": {"limit": 5, "window_seconds": 60},
+        "user_mutation": {"limit": 20, "window_seconds": 60},
+        "audit_read": {"limit": 30, "window_seconds": 60},
+    }
 
     JWT_SECRET_KEY: str = "change-me"
     JWT_REFRESH_SECRET_KEY: str = "change-me"
@@ -285,6 +823,10 @@ class Settings(BaseSettings):
                 "REDIS_SOCKET_TIMEOUT_SECONDS and REDIS_HEALTH_TIMEOUT_SECONDS "
                 "must both be > 0"
             )
+        # --- P10 rate-limit configuration ---------------------------------
+        # Runs in every environment. Production additionally refuses a
+        # disabled limiter/engine, a data-method exemption and a non-Redis URL.
+        _validate_rate_limit_config(self, production=self.APP_ENV == "production")
         # --- Phase 9 sanity, in every environment --------------------------
         # A negative consent window would make every consent instantly expired
         # and block every minor; a zero one would make consent permanent, which

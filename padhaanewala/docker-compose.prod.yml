@@ -80,6 +80,14 @@ services:
     # which are worthless a second later; an AOF or RDB would add a disk write
     # per authenticated write request and a recovery step that restores nothing
     # useful. Note the consequence: a restart resets every rate-limit bucket.
+    #
+    # `noeviction` rather than `allkeys-lru` (P10). Every key this instance holds
+    # is an active counter with a TTL, so any eviction policy silently resets
+    # somebody's quota — an eviction is a rate-limit bypass. At 256 MB a counter
+    # set is thousands of times larger than this workload produces; if the bound
+    # is ever reached, Redis returns an OOM error instead, and the middleware
+    # applies its documented fail-open/fail-closed decision for the route. A
+    # visible 503 on auth is strictly better than an invisible unlimited login.
     command:
       - redis-server
       - --save
@@ -89,7 +97,7 @@ services:
       - --maxmemory
       - 256mb
       - --maxmemory-policy
-      - allkeys-lru
+      - noeviction
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s

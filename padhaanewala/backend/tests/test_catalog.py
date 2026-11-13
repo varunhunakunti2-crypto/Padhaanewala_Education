@@ -1,10 +1,11 @@
 import uuid
 
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from app.database import SessionLocal
 from app.main import app
-from app.models import Role, User
+from app.models import College, CollegeCourse, Role, User
 
 client = TestClient(app)
 
@@ -144,8 +145,28 @@ def test_search_courses():
 
 
 def test_get_college_courses():
-    colleges = client.get("/api/v1/colleges").json()
-    response = client.get(f"/api/v1/colleges/{colleges[0]['id']}/courses")
+    """The courses endpoint returns the links for a college that has them.
+
+    The test used to read `GET /colleges`, take the first row (ordered by
+    name) and assume it had courses. That is an ordering assumption, not a
+    catalogue invariant: a college created by an earlier test sorts first and
+    has no `college_courses`, so the suite failed depending on what previous
+    runs left in the shared test schema. Selecting a college that actually has
+    an active course keeps the endpoint under test without depending on list
+    order or accumulated rows.
+    """
+    with SessionLocal() as db:
+        college_id = db.scalar(
+            select(CollegeCourse.college_id)
+            .join(College, College.id == CollegeCourse.college_id)
+            .where(College.is_active, CollegeCourse.is_active.is_(True))
+            .limit(1)
+        )
+    assert college_id is not None, (
+        "the catalogue seed must contain at least one active college course"
+    )
+
+    response = client.get(f"/api/v1/colleges/{college_id}/courses")
     assert response.status_code == 200
     assert len(response.json()) >= 1
 
