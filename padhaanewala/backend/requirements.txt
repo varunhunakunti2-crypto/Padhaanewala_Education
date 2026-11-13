@@ -21,7 +21,7 @@ pycparser==3.0
 pydantic==2.13.5
 pydantic-settings==2.15.0
 pydantic_core==2.46.5
-pypdf==6.21.1  # question-paper PDF text extraction, imported lazily in app/services/question_generation.py. Was 6.4.0, which pip-audit reports 77 advisories against (PYSEC-2026-*, all fixed by 6.19.0); it parses admin-uploaded PDFs, i.e. untrusted input.
+pypdf==6.21.4  # question-paper PDF text extraction, imported lazily in app/services/question_generation.py. Was 6.4.0, which pip-audit reports 77 advisories against (PYSEC-2026-*, all fixed by 6.19.0); it parses admin-uploaded PDFs, i.e. untrusted input. 6.21.1 then drew 11 CVE-2026-* advisories (all fixed by 6.21.4), so this pin is the audit-clean one.
 python-dotenv==1.2.3
 python-multipart==0.0.32
 PyYAML==6.0.3
@@ -34,5 +34,5 @@ uvicorn==0.52.4
 watchfiles==1.2.0
 websockets==17.1
 email-validator==2.3.0
-dnspython==2.8.0
+dnspython==2.9.2  # email-validator's MX lookup; 2.8.0 drew CVE-2026-114605, fixed in 2.9.0.
 redis==8.1.0
