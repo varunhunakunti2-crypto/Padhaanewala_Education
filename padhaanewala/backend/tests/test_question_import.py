@@ -819,13 +819,22 @@ def test_an_unexpected_generation_error_does_not_leak_its_text(monkeypatch):
 
 
 def test_a_missing_stored_pdf_says_to_upload_again(admin_headers, monkeypatch):
+    """A job whose upload is gone fails with "upload it again", not "corrupt PDF".
+
+    The absence of the file is arranged rather than assumed. `MEDIA_ROOT` is not
+    scoped to the test schema, so a PDF left behind by an earlier run for the same
+    job id outlives the row that owned it. Reading that stale file takes the
+    "could not be read as a PDF" branch and the test then fails for a reason that
+    has nothing to do with the behaviour under test.
+    """
     monkeypatch.setattr(qg, "generation_is_configured", lambda api_key=None: True)
 
-    from app.routers.question_imports import _generate
+    from app.routers.question_imports import _generate, _source_pdf_path
 
     paper = _paper()
     try:
         job = _job(paper.id, status="processing")
+        _source_pdf_path(job.id).unlink(missing_ok=True)
         _generate(job.id, None, None)
 
         with SessionLocal() as db:
