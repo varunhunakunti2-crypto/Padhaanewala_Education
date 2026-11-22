@@ -1159,6 +1159,7 @@ export interface AdminUser {
   mobile: string | null;
   is_active: boolean;
   is_email_verified: boolean;
+  is_mobile_verified: boolean;
   created_at: string;
   last_login_at: string | null;
   roles: string[];
@@ -1809,6 +1810,10 @@ export interface AdminRole {
 export interface AdminUpdateUserPayload {
   is_active?: boolean;
   role_ids?: number[];
+  /** Profile name (`student_profiles.name`), not a `users` column. */
+  display_name?: string;
+  email?: string;
+  mobile?: string;
 }
 
 /** A page of users plus the unpaged, filtered total. */
@@ -2236,6 +2241,25 @@ export const adminApi = {
 
   updateUser: (id: number, payload: AdminUpdateUserPayload) =>
     apiFetch<AdminUser>(`/users/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+
+  /**
+   * `GET /users/{id}` — one account, for the console's View dialog.
+   *
+   * The list response already carries the same fields, so the dialog could read
+   * from the page it was opened on. It calls the endpoint anyway because a page
+   * is a snapshot taken when it loaded, and a role change made in another tab
+   * would otherwise be shown as current.
+   */
+  user: (id: number) => apiFetch<AdminUser>(`/users/${id}`),
+
+  /**
+   * `DELETE /users/{id}` — permanent, and role-gated server-side.
+   *
+   * No `signal`: a delete is not superseded by a later keystroke, and aborting
+   * one mid-flight would leave the caller unable to tell whether it happened.
+   */
+  deleteUser: (id: number) =>
+    apiFetch<{ success: boolean; message: string }>(`/users/${id}`, { method: "DELETE" }),
 
   /**
    * The moderation queue, or another explicitly named scope.

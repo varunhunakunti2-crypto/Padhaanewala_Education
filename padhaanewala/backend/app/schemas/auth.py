@@ -210,8 +210,51 @@ class UserRolesResponse(BaseModel):
 
 
 class AdminUpdateUserRequest(BaseModel):
+    """Partial update from the admin console's Students panel.
+
+    Every field is optional so a one-field save stays a one-field save: the
+    router writes only the keys that were sent, which is what lets the same
+    payload serve the role editor, the active toggle and the Edit dialog.
+
+    The three identity fields were added because the console's Edit button was a
+    toast stub — an admin could see an account but not correct a misspelled name,
+    a dead address or a mistyped number. ``display_name`` is the profile name
+    (``student_profiles.name``), not a column on ``users``; ``users`` has no name
+    column of its own.
+    """
+
     is_active: bool | None = None
     role_ids: list[int] | None = None
+    email: EmailStr | None = None
+    mobile: str | None = Field(None, min_length=10, max_length=15)
+    display_name: str | None = Field(None, min_length=2, max_length=255)
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_admin_email(cls, value: str) -> str:
+        return value.strip().lower() if isinstance(value, str) else value
+
+    @field_validator("mobile")
+    @classmethod
+    def validate_admin_mobile(cls, value: str | None) -> str | None:
+        # Shared rule with registration/OTP: an admin edit must not be able to
+        # put a number on an account that the OTP flow would then refuse.
+        if value is None:
+            return value
+        digits = "".join(ch for ch in value if ch.isdigit())
+        if not digits.startswith(("6", "7", "8", "9")) or len(digits) != 10:
+            raise ValueError("Mobile must be a valid 10-digit Indian number")
+        return digits
+
+    @field_validator("display_name")
+    @classmethod
+    def validate_display_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        trimmed = value.strip()
+        if len(trimmed) < 2:
+            raise ValueError("Name must be at least 2 characters")
+        return trimmed
 
 
 class UserAdminResponse(BaseModel):
