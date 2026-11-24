@@ -204,7 +204,7 @@ describe("ImageField — picking from the Media library", () => {
     expect(input).not.toBeNull();
     if (!input) return;
     // The panel copies an absolute URL, possibly with a cache-busting query.
-    type(input, "https://padhaanewala.in/api/v1/media/files/2?rev=1");
+    type(input, "https://padhaanewala.com/api/v1/media/files/2?rev=1");
     act(() => buttonByText("Use link")?.click());
 
     expect(container.querySelector('[data-testid="value"]')?.textContent).toBe(

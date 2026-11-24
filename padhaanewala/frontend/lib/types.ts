@@ -165,6 +165,8 @@ export interface SearchSuggestion {
   label: string;
   sub?: string;
   value: string;
+  /** Direct destination for an unambiguous suggestion (e.g. a college's own page). */
+  href?: string;
 }
 
 export type AdmissionStatus = "open" | "closed" | "upcoming";

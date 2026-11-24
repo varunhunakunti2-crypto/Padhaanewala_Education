@@ -842,27 +842,6 @@ def start_mock_test(
         if expired:
             db.commit()
 
-    used = db.scalar(
-        select(func.count(TestAttempt.id)).where(
-            TestAttempt.mock_test_id == mock_test.id,
-            TestAttempt.user_id == user.id,
-            TestAttempt.status.in_(["in_progress", "submitted"]),
-        )
-    )
-    if mock_test.attempts_allowed > 0 and used >= mock_test.attempts_allowed:
-        raise HTTPException(
-            status_code=400,
-            detail="Attempt limit reached for this mock test",
-        )
-
-    attempt = TestAttempt(
-        mock_test_id=mock_test.id,
-        user_id=user.id,
-        status="in_progress",
-        expires_at=datetime.now(UTC)
-        + timedelta(minutes=mock_test.duration_minutes),
-    )
-
     questions = _active_questions(db, mock_test.id)
     if not questions:
         # Nothing to sit. This is reachable, not hypothetical: a paper whose every
@@ -879,15 +858,52 @@ def start_mock_test(
             ),
         )
 
-    db.add(attempt)
-    db.flush()
+    # A still-running attempt is a resume, not a second attempt. Without this,
+    # `used` below counts the student's own unfinished attempt against
+    # `attempts_allowed` and "start" answers "Attempt limit reached" -- so a
+    # single allowed attempt permanently locks a student out after one visit.
+    resumable = next(
+        (
+            a
+            for a in existing
+            if a.status == "in_progress" and a.time_remaining_seconds > 0
+        ),
+        None,
+    )
+    if resumable is not None:
+        attempt = resumable
+        answers = _answers_by_question(db, attempt)
+    else:
+        used = db.scalar(
+            select(func.count(TestAttempt.id)).where(
+                TestAttempt.mock_test_id == mock_test.id,
+                TestAttempt.user_id == user.id,
+                TestAttempt.status.in_(["in_progress", "submitted"]),
+            )
+        )
+        if mock_test.attempts_allowed > 0 and used >= mock_test.attempts_allowed:
+            raise HTTPException(
+                status_code=400,
+                detail="Attempt limit reached for this mock test",
+            )
+
+        attempt = TestAttempt(
+            mock_test_id=mock_test.id,
+            user_id=user.id,
+            status="in_progress",
+            expires_at=datetime.now(UTC)
+            + timedelta(minutes=mock_test.duration_minutes),
+        )
+        db.add(attempt)
+        db.flush()
+        answers = {}
+
+        if mock_test.question_randomization:
+            randomized = list(questions)
+            random.shuffle(randomized)
+            questions = randomized
+
     attempt.mock_test = mock_test
-
-    if mock_test.question_randomization:
-        randomized = list(questions)
-        random.shuffle(randomized)
-        questions = randomized
-
     db.commit()
     db.refresh(attempt)
 
@@ -902,7 +918,10 @@ def start_mock_test(
                             if mock_test.option_randomization
                             else None
                         ),
-                    )
+                    ),
+                    selected_answer=answers[q.id].selected_answer
+                    if q.id in answers
+                    else None,
                 )
                 for q in questions
             ],

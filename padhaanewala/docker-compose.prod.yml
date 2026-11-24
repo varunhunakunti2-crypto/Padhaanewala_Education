@@ -286,7 +286,7 @@ services:
         APP_ENV: production
         NEXT_PUBLIC_GRIEVANCE_OFFICER_NAME: ${NEXT_PUBLIC_GRIEVANCE_OFFICER_NAME:?NEXT_PUBLIC_GRIEVANCE_OFFICER_NAME is required}
         NEXT_PUBLIC_GRIEVANCE_OFFICER_PHONE: ${NEXT_PUBLIC_GRIEVANCE_OFFICER_PHONE:-}
-        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-https://padhaanewala.in}
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-https://padhaanewala.com}
     image: padhaanewala-frontend:prod
     restart: unless-stopped
     # No `ports:`. Caddy is the only ingress.

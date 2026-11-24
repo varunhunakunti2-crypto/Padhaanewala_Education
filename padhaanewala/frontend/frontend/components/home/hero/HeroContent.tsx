@@ -2,6 +2,7 @@
 
 import { Flame, MessagesSquare } from "lucide-react";
 import Link from "next/link";
+import type { College } from "@/lib/types";
 import { HeroSearch } from "@/components/home/hero/HeroSearch";
 import { HeroStats } from "@/components/home/hero/HeroStats";
 
@@ -15,9 +16,11 @@ import { HeroStats } from "@/components/home/hero/HeroStats";
 export function HeroContent({
   collegeCount = 0,
   courseCount = 0,
+  colleges,
 }: {
   collegeCount?: number;
   courseCount?: number;
+  colleges?: College[];
 }) {
   return (
     <div className="relative z-10">
@@ -60,7 +63,7 @@ export function HeroContent({
         className="animate-fade-up relative z-30 mt-7 max-w-2xl"
         style={{ animationDelay: "0.42s" }}
       >
-        <HeroSearch />
+        <HeroSearch colleges={colleges} />
         {/* Secondary CTA. The floating 3D assistant already links here from
             every page, so this is the in-hero entry point rather than the only
             one. */}

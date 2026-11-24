@@ -1,6 +1,7 @@
 "use client";
 
 import type { HeroCard } from "@/lib/content";
+import type { College } from "@/lib/types";
 import { HeroBackground } from "@/components/home/hero/HeroBackground";
 import { HeroContent } from "@/components/home/hero/HeroContent";
 import { HeroVisualPanel } from "@/components/home/hero/HeroVisualPanel";
@@ -9,9 +10,12 @@ export function HeroSection({
   collegeCount = 0,
   courseCount = 0,
   cards,
+  colleges,
 }: {
   collegeCount?: number;
   courseCount?: number;
+  /** The resolved catalogue, so hero autocomplete suggests real backend colleges. */
+  colleges?: College[];
   /**
    * Admin-editable floating cards, resolved server-side by
    * `resolveHeroCards`. Optional so the section renders standalone with the
@@ -28,7 +32,11 @@ export function HeroSection({
 
       <div className="relative z-10 mx-auto flex w-full max-w-7xl flex-1 flex-col justify-center px-4 pt-24 sm:px-6 lg:px-8 lg:pt-28 lg:pb-10">
         <div className="grid items-center gap-12 lg:grid-cols-[1.05fr_0.95fr] lg:gap-10">
-          <HeroContent collegeCount={collegeCount} courseCount={courseCount} />
+          <HeroContent
+            collegeCount={collegeCount}
+            courseCount={courseCount}
+            colleges={colleges}
+          />
           <HeroVisualPanel cards={cards} />
         </div>
       </div>

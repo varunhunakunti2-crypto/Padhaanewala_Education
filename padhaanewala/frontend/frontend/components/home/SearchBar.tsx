@@ -126,7 +126,10 @@ export function SearchBar({
     addRecentSearch(s.label);
     if (s.type === "city") addRecentLocation(s.label);
     setFocused(false);
-    router.push(`/colleges?q=${encodeURIComponent(s.label)}`);
+    // College suggestions carry the exact catalogue slug, so go straight to
+    // that college's detail page. Generic suggestions still fall back to a
+    // filtered results page.
+    router.push(s.href ?? `/colleges?q=${encodeURIComponent(s.label)}`);
     onSearch?.();
   };
 

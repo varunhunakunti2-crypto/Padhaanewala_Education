@@ -150,7 +150,7 @@ class Settings(BaseSettings):
     EMAIL_SMTP_PORT: int = 2525
     EMAIL_SMTP_USER: str = "change-me"
     EMAIL_SMTP_PASSWORD: str = "change-me"
-    EMAIL_FROM_EMAIL: str = "no-reply@padhaanewala.in"
+    EMAIL_FROM_EMAIL: str = "no-reply@padhaanewala.com"
     EMAIL_FROM_NAME: str = "Padhaanewala"
     #: When true, `POST /auth/login` refuses an unverified account with 403.
     EMAIL_VERIFICATION_REQUIRED: bool = False
@@ -274,7 +274,7 @@ class Settings(BaseSettings):
                 "CORS_ORIGINS must not contain '*' outside development. "
                 "allow_credentials=True with a wildcard origin lets any site "
                 "read authenticated API responses cross-origin. List the exact "
-                "origins instead, e.g. CORS_ORIGINS=https://padhaanewala.in"
+                "origins instead, e.g. CORS_ORIGINS=https://padhaanewala.com"
             )
         if self.TRUSTED_PROXY_HOPS < 0:
             raise ValueError("TRUSTED_PROXY_HOPS must be >= 0")

@@ -758,10 +758,10 @@ export function SeoSection() {
                   </div>
                   <div>
                     <span className="block text-xs font-medium text-slate-800 dark:text-slate-200">
-                      padhaanewala.in
+                      padhaanewala.com
                     </span>
                     <span className="block text-[11px] text-slate-400">
-                      https://padhaanewala.in{selectedPath}
+                      https://padhaanewala.com{selectedPath}
                     </span>
                   </div>
                 </div>

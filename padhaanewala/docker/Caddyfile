@@ -52,7 +52,22 @@
 	}
 }
 
-{$SITE_ADDRESS:padhaanewala.in} {
+# The original domain is kept only as a permanent redirect. Both schemes are
+# declared so Caddy provisions certificates for .in as well; the ACME path is
+# answered here because this host block is more specific than the :80 catch-all
+# above, which normally handles challenges. Remove this block if .in lapses.
+http://padhaanewala.in, https://padhaanewala.in, http://www.padhaanewala.in, https://www.padhaanewala.in {
+	@acme path /.well-known/acme-challenge/*
+	handle @acme {
+		respond 200
+	}
+
+	handle {
+		redir https://padhaanewala.com{uri} permanent
+	}
+}
+
+{$SITE_ADDRESS:padhaanewala.com} {
 	encode zstd gzip
 
 	# --- Security headers -------------------------------------------------

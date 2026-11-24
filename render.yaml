@@ -155,7 +155,7 @@ services:
         value: console
 
       - key: EMAIL_FROM_EMAIL
-        value: no-reply@padhaanewala.in
+        value: no-reply@padhaanewala.com
 
       - key: SMS_PROVIDER
         value: console

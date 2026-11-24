@@ -120,6 +120,33 @@ export function adoptAccessToken(token: string | null): void {
   else accessToken = null;
 }
 
+/**
+ * Resolve `promise` with `fallback` if it has not settled within `ms`.
+ *
+ * Auth bootstrap is the one place where an unbounded wait is worse than a wrong
+ * answer: `authReady`, `rolesReady` and the login form's `loading` flag are all
+ * terminal states for the UI. A browser that never delivers a lock callback, a
+ * frozen tab holding the refresh mutex, or a request that stalls before its own
+ * abort signal fires would otherwise leave guards spinning forever. Deadlines
+ * here turn those cases into an ordinary signed-out result.
+ *
+ * The underlying promise is not cancelled; it is simply ignored once the
+ * deadline wins. Callers must therefore treat the fallback as authoritative.
+ */
+export function withDeadline<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise<T>((resolve) => {
+    let done = false;
+    const finish = (value: T) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      resolve(value);
+    };
+    const timer = setTimeout(() => finish(fallback), ms);
+    promise.then(finish, () => finish(fallback));
+  });
+}
+
 export class ApiError extends Error {
   status: number;
   /**
@@ -327,8 +354,15 @@ export function clearAuth(): void {
   }
 }
 
+const DEFAULT_API_TIMEOUT_MS = 15_000;
+
+function withRequestTimeout(init: RequestInit, ms = DEFAULT_API_TIMEOUT_MS): RequestInit {
+  if (init.signal) return init;
+  return { ...init, signal: AbortSignal.timeout(ms) };
+}
+
 export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  return apiFetchImpl<T>(path, init, 1);
+  return apiFetchImpl<T>(path, withRequestTimeout(init), 1);
 }
 
 /**
@@ -485,7 +519,12 @@ export async function refreshAccessToken(options: { force?: boolean } = {}): Pro
   if (refreshPromise) return refreshPromise;
   refreshPromise = (async () => {
     try {
-      return await withRefreshLock(async (): Promise<string | null> => {
+      // The deadline covers the *whole* chain, not just the fetch: Web Locks and
+      // the cross-tab BroadcastChannel wait can stall independently of any
+      // AbortSignal we attach to fetch. Without it `authReady` can stay false
+      // forever and every guarded page hangs on its loading state.
+      return await withDeadline(
+        withRefreshLock(async (): Promise<string | null> => {
         // Another tab may have rotated while we waited for the lock. Adopting
         // its broadcast is free; rotating again would be a reuse. Skipped when
         // `force` is set, because then the token we hold is the one that was
@@ -520,11 +559,14 @@ export async function refreshAccessToken(options: { force?: boolean } = {}): Pro
         if (!data.access_token) return null;
         setAccessToken(data.access_token);
         return data.access_token;
-      });
+        }),
+        4_000,
+        null,
+      );
     } catch {
-      // Network error or the 10s timeout. Treated as "no token", which surfaces
-      // as signed-out. A transient network blip signing someone out is a lesser
-      // evil than a page that never finishes hydrating.
+      // Network error, aborted fetch or the deadline above. Treated as "no
+      // token", which surfaces as signed-out. A transient network blip signing
+      // someone out is a lesser evil than a page that never finishes hydrating.
       return null;
     } finally {
       refreshPromise = null;
@@ -866,7 +908,10 @@ export function hasAdminRole(roles: readonly string[]): boolean {
 
 export async function fetchMyRoles(): Promise<string[]> {
   try {
-    const res = await authApi.myRoles();
+    // `rolesReady` is a terminal state for the admin guard. An unbounded role
+    // request would leave `/admin` stuck on "Checking your access…" even after
+    // the session itself had resolved, so cap it here as well.
+    const res = await withDeadline(authApi.myRoles(), 4_000, null);
     return Array.isArray(res?.roles) ? res.roles : [];
   } catch {
     // A failed role lookup must never be read as "is admin".

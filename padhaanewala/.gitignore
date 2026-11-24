@@ -76,3 +76,5 @@ Thumbs.db
 .pnp.*
 .yarn/*
 !.yarn/patches
+testsprite_tests/tmp/
+testsprite_tests/tmp/config.json

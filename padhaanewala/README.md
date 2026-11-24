@@ -1,6 +1,6 @@
 # Padhaanewala Education Technology Platform
 
-India-wide education discovery, AI assistance, examination, counselling and lead-management platform for **padhaanewala.in**.
+India-wide education discovery, AI assistance, examination, counselling and lead-management platform for **padhaanewala.com**.
 
 | Field | Detail |
 |---|---|
@@ -222,8 +222,8 @@ not in `ADMIN_EMAIL_ALLOWLIST`, never re-hashes an existing account without
 
 ```bash
 # PowerShell — ADMIN_PASSWORD is required, the script refuses to run without it
-$env:ADMIN_EMAIL="contact@padhaanewala.in"
-$env:ADMIN_EMAIL_ALLOWLIST="contact@padhaanewala.in"
+$env:ADMIN_EMAIL="contact@padhaanewala.com"
+$env:ADMIN_EMAIL_ALLOWLIST="contact@padhaanewala.com"
 $env:ADMIN_PASSWORD="<strong-password>"
 python scripts/seed_roles.py     # must run first: creates the roles
 python scripts/seed_admin.py
@@ -277,5 +277,5 @@ all four — see `.github/workflows/` at the repository root.
 
 ## References
 
-- Website: https://padhaanewala.in
+- Website: https://padhaanewala.com
 - Company: Padhaanewala Edutech Services, Bengaluru - 560100

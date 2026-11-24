@@ -249,6 +249,63 @@ def test_attempt_limit_enforced():
         _cleanup(mock_test.id)
 
 
+def test_start_resumes_live_attempt_instead_of_spending_the_limit():
+    """A single-attempt paper must not lock a student out after one visit.
+
+    `start` used to finalise only expired attempts and then count the still-open
+    one towards `attempts_allowed`, so the second call answered "Attempt limit
+    reached" even though the student had never finished the paper.
+    """
+    mock_test = _create_mock_test(attempts_allowed=1)
+    try:
+        user = _register_user()
+        headers = _auth_headers(user["access_token"])
+
+        first = client.post(
+            f"/api/v1/mock-tests/{mock_test.slug}/start",
+            headers=headers,
+        )
+        assert first.status_code == 200
+        first_attempt_id = first.json()["attempt"]["id"]
+        q1 = first.json()["questions"][0]["id"]
+
+        saved = client.put(
+            f"/api/v1/mock-tests/{mock_test.slug}/attempts/{first_attempt_id}"
+            f"/answers/{q1}",
+            json={"selected_answer": "A"},
+            headers=headers,
+        )
+        assert saved.status_code == 200
+
+        resumed = client.post(
+            f"/api/v1/mock-tests/{mock_test.slug}/start",
+            headers=headers,
+        )
+        assert resumed.status_code == 200, resumed.text
+        body = resumed.json()
+        assert body["attempt"]["id"] == first_attempt_id
+        assert body["attempt"]["status"] == "in_progress"
+        assert next(q for q in body["questions"] if q["id"] == q1)[
+            "selected_answer"
+        ] == "A"
+
+        submitted = client.post(
+            f"/api/v1/mock-tests/{mock_test.slug}/attempts/{first_attempt_id}/submit",
+            headers=headers,
+        )
+        assert submitted.status_code == 200
+
+        # The allowance is still spent once the attempt is actually finished.
+        after_submit = client.post(
+            f"/api/v1/mock-tests/{mock_test.slug}/start",
+            headers=headers,
+        )
+        assert after_submit.status_code == 400
+        assert "Attempt limit" in after_submit.json()["detail"]
+    finally:
+        _cleanup(mock_test.id)
+
+
 def test_attempt_ownership_enforced():
     mock_test = _create_mock_test()
     try:

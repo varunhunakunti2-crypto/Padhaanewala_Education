@@ -15,7 +15,7 @@ import { changedFields, draftFrom, validateSettings } from "@/lib/settings-form"
 
 const SERVER: SiteSettings = {
   site_name: "padhaanewala",
-  support_email: "hello@padhaanewala.in",
+  support_email: "hello@padhaanewala.com",
   contact_phone: "+91 98765 43210",
   counselling_hours: "Mon\u2013Sat, 9 AM \u2013 8 PM IST",
   default_timezone: "Asia/Kolkata",

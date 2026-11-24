@@ -55,7 +55,7 @@ ARG APP_ENV=production
 ARG NEXT_PUBLIC_GRIEVANCE_OFFICER_NAME
 ARG NEXT_PUBLIC_GRIEVANCE_OFFICER_PHONE
 # The canonical origin, used by metadataBase, JSON-LD and the sitemap. Left empty
-# in the builder it falls back to https://padhaanewala.in, which is correct for
+# in the builder it falls back to https://padhaanewala.com, which is correct for
 # this deployment and wrong for a staging host — hence the build arg.
 ARG NEXT_PUBLIC_SITE_URL
 ENV APP_ENV=${APP_ENV} \

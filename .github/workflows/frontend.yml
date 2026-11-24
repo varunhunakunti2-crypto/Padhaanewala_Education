@@ -79,7 +79,7 @@ jobs:
         env:
           APP_ENV: production
           NEXT_PUBLIC_GRIEVANCE_OFFICER_NAME: CI Placeholder
-          NEXT_PUBLIC_SITE_URL: https://padhaanewala.in
+          NEXT_PUBLIC_SITE_URL: https://padhaanewala.com
         run: npm run build
 
       # --- 7.2 -----------------------------------------------------------

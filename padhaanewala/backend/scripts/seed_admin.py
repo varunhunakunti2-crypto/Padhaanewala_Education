@@ -17,7 +17,7 @@ R8.1 safety rules enforced here:
 * The password is only read from the environment and is never printed.
 
 Environment:
-    ADMIN_EMAIL              target account (default contact@padhaanewala.in)
+    ADMIN_EMAIL              target account (default contact@padhaanewala.com)
     ADMIN_PASSWORD           required, no default
     ADMIN_EMAIL_ALLOWLIST    comma-separated emails this script may touch
     ADMIN_NAME               display name for the admins row
@@ -65,7 +65,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
 
-    email = os.environ.get("ADMIN_EMAIL", "contact@padhaanewala.in").strip().lower()
+    email = os.environ.get("ADMIN_EMAIL", "contact@padhaanewala.com").strip().lower()
     password = os.environ.get("ADMIN_PASSWORD", "")
     name = os.environ.get("ADMIN_NAME", "Padhaanewala Admin")
     mobile = os.environ.get("ADMIN_MOBILE", "9999999999")

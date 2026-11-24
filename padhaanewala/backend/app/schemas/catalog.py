@@ -905,6 +905,18 @@ class EnquiryCreate(BaseModel):
     # was placed under.
     guardian_contact: str | None = Field(default=None, max_length=255)
 
+    @field_validator("email")
+    @classmethod
+    def _validate_email(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        candidate = value.strip()
+        if not candidate:
+            return None
+        if candidate.count("@") != 1 or "." not in candidate.split("@", 1)[1]:
+            raise ValueError("Enter a valid email address")
+        return candidate
+
     @model_validator(mode="after")
     def require_guardian_for_minors(self) -> "EnquiryCreate":
         if self.age_band == "under_18" and not (self.guardian_contact or "").strip():

@@ -17,12 +17,12 @@ export const metadata: Metadata = pageMetadata({
 /**
  * Read from `SITE` rather than retyped.
  *
- * This page published `support@padhaanewala.com` while the site is
- * `padhaanewala.in` and every legal document names `hello@padhaanewala.in`. Mail
- * to the `.com` address is delivered to a domain we may not even control, so the
- * address a customer is told to use for support was not the address that
- * reaches support. Three contact points for one small company is the same defect
- * in a different guise, so there is now one.
+ * This page used to publish `support@padhaanewala.com` while the site lived on
+ * `.in` and every legal document named `hello@padhaanewala.in`. Mail to the
+ * advertised address could land at a domain we did not control, so a customer
+ * was not necessarily writing to support. `.com` is now the canonical domain;
+ * the single contact identity below keeps this page, the legal documents and
+ * the footer from drifting apart again.
  */
 interface Channel {
   readonly icon: React.ReactNode;

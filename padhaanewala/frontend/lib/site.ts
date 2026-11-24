@@ -10,7 +10,7 @@
 export const SITE = {
   name: "padhaanewala",
   legalName: "Padhaanewala Edutech Services",
-  domain: "padhaanewala.in",
+  domain: "padhaanewala.com",
   tagline: "Find the College That Fits Your Future",
   description:
     "India-wide college discovery, admissions guidance, exam updates and AI-assisted shortlisting for students across every state.",
@@ -21,7 +21,7 @@ export const SITE = {
    * It was not, and the site carried four different contact points: this file
    * and `/contact` said `+91 98765 43210`, `/about` said `+91 90000 00000`,
    * `/contact` and `/admission` published `support@` and `counsellor@` addresses
-   * on the `.com` domain while the site is `.in`, and the footer linked to the
+   * on a domain that did not match the site's, and the footer linked to the
    * bare `https://instagram.com` home pages. A grievance notice served on one
    * number and a footer pointing at someone else's Instagram are both
    * consumer-protection problems, not cosmetic ones.
@@ -29,7 +29,7 @@ export const SITE = {
    * `phoneRaw`/`whatsapp` are the same digits without formatting, for `tel:` and
    * `wa.me` links.
    */
-  email: "hello@padhaanewala.in",
+  email: "hello@padhaanewala.com",
   phone: "+91 98765 43210",
   phoneRaw: "919876543210",
   whatsapp: "919876543210",

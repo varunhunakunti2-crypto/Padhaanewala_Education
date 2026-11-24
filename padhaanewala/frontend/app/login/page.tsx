@@ -28,6 +28,7 @@ import {
   storeAuth,
   storeUser,
   toStudentProfile,
+  withDeadline,
   type AgeBand,
   type AuthTokens,
 } from "@/lib/api";
@@ -133,9 +134,14 @@ function LoginFormContent() {
 
   const completeSession = async () => {
     try {
-      const profile = await authApi.myProfile();
-      storeUser(profile);
-      setProfile(toStudentProfile(profile));
+      // The profile is optional, but `finishLogin` awaits this before it
+      // navigates. An unbounded request here kept the submit button on
+      // "Please wait…" and stranded the user on the sign-in page.
+      const profile = await withDeadline(authApi.myProfile(), 4_000, null);
+      if (profile) {
+        storeUser(profile);
+        setProfile(toStudentProfile(profile));
+      }
     } catch {
       /* profile optional — session works without persisted preferences */
     }

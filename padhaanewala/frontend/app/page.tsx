@@ -66,6 +66,7 @@ export default async function HomePage() {
         collegeCount={colleges.data.length}
         courseCount={courses.data.length}
         cards={heroCards.data}
+        colleges={colleges.data}
       />
       <QuickActions />
       <PopularCourses />

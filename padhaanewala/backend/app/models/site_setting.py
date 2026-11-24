@@ -38,7 +38,7 @@ class SiteSetting(Base):
 
     site_name: Mapped[str] = mapped_column(String(120), default="padhaanewala")
     support_email: Mapped[str] = mapped_column(
-        String(254), default="hello@padhaanewala.in"
+        String(254), default="hello@padhaanewala.com"
     )
     contact_phone: Mapped[str] = mapped_column(String(30), default="+91 98765 43210")
     counselling_hours: Mapped[str] = mapped_column(

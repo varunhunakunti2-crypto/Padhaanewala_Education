@@ -127,7 +127,7 @@ def test_update_is_partial_and_leaves_other_fields_alone(admin_headers):
         SETTINGS,
         json={
             "site_name": "Baseline Site",
-            "support_email": "baseline@padhaanewala.in",
+            "support_email": "baseline@padhaanewala.com",
             "contact_phone": "+91 90000 00001",
         },
         headers=admin_headers,
@@ -143,7 +143,7 @@ def test_update_is_partial_and_leaves_other_fields_alone(admin_headers):
     body = changed.json()
     assert body["counselling_hours"] == "Mon-Fri, 10 AM - 6 PM IST"
     assert body["site_name"] == "Baseline Site"
-    assert body["support_email"] == "baseline@padhaanewala.in"
+    assert body["support_email"] == "baseline@padhaanewala.com"
     assert body["contact_phone"] == "+91 90000 00001"
 
 

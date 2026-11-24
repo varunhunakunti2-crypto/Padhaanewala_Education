@@ -283,14 +283,21 @@ export function getSuggestions(
 
   for (const c of dataset) {
     if (contains(c.name) || contains(c.shortName) || contains(c.initials)) {
-      const label = c.shortName;
+      // Show the full catalogue name. `shortName` drops words like "of" (e.g.
+      // "RV College of Engineering" became "RV College Engineering"), so an
+      // autocomplete built from it did not contain the text the visitor typed
+      // and the chosen option could not be recognised as the college they meant.
+      const label = c.name;
       if (!seen.has(label)) {
         seen.add(label);
         suggestions.push({
           type: "college",
           label,
           sub: `${c.city}, ${c.state}`,
-          value: c.shortName,
+          value: c.name,
+          // A college suggestion names one specific institution, so choosing it
+          // should open that college's page rather than a results list.
+          href: `/colleges/${c.slug}`,
         });
       }
     }
