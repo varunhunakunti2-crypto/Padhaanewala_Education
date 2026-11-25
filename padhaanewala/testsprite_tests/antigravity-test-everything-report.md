@@ -1,6 +1,7 @@
 # Padhaanewala Full Regression Report
 
 **Generated:** 2026-11-25 23:58 IST  
+**Backend re-verified from live result file:** 2026-11-26 00:05 IST (10/10)  
 **Environment:** Frontend (`http://localhost:3000`) | Backend (`http://localhost:8000`)  
 **Browser Engine:** Google Chrome via Chrome DevTools MCP (Remote Debugging active on port 9222)  
 **Test Account:** `testsprite.student@example.com`
@@ -12,8 +13,8 @@
 | Category | Total Executed | Passed | Failed | Blocked | Pass Rate |
 |---|---|---|---|---|---|
 | **Frontend E2E (`/browser`)** | 31 | 31 | 0 | 0 | **100%** |
-| **Backend API (Pytest)** | 10 | 7 | 3 | 0 | **70%** |
-| **Overall** | **41** | **38** | **3** | **0** | **92.7%** |
+| **Backend API (Pytest)** | 10 | 10 | 0 | 0 | **100%** |
+| **Overall** | **41** | **41** | **0** | **0** | **100%** |
 
 ---
 
@@ -72,10 +73,10 @@ All executed browser cases passed cleanly with zero breaking errors.
 | **TC004** | `POST /api/v1/enquiries` | **PASS** | Enquiry lead created in database. |
 | **TC005** | `POST /api/v1/college-submissions` | **PASS** | College suggestion submitted successfully. |
 | **TC006** | `POST /api/v1/saved-colleges` | **PASS** | College saved to student account. |
-| **TC007** | `PUT /api/v1/notifications/{id}/read` | **FAIL** | Returned `422 Unprocessable Entity` when passing UUID string because route expects integer ID. |
-| **TC008** | `POST /api/v1/mock-tests/{ref}/submit` | **FAIL** | Response payload structure has nested `attempt.id` instead of root `attempt_id`. |
+| **TC007** | `PUT /api/v1/notifications/{id}/read` | **PASS** | Malformed/UUID id returns `404`, anonymous returns `401`, valid id marks read. |
+| **TC008** | `POST /api/v1/mock-tests/{ref}/submit` | **PASS** | Start/submit responses expose root-level `attempt_id`; nested `attempt` retained. |
 | **TC009** | `POST /api/ai` | **PASS** | AI assistant answered prompt. |
-| **TC010** | `POST /api/v1/compliance/requests` | **FAIL** | Duplicate compliance request returned `201` instead of `400/409/422`. |
+| **TC010** | `POST /api/v1/compliance/requests` | **PASS** | Identical open request returns `409`; unique details make reruns safe. |
 
 ---
 
@@ -83,7 +84,9 @@ All executed browser cases passed cleanly with zero breaking errors.
 
 1. **Frontend Experience (100% Pass across 31 E2E Cases)**:
    - All end-user journeys—student auth, dashboard, saved colleges, notifications, live mock test taking, question palette states, blog pagination, college comparison caps, forms with DPDP validation, and the college recommendation wizard—are executing reliably.
-2. **Backend API Fixes**:
-   - `TC007`: Ensure `PUT /api/v1/notifications/{id}/read` path parameter gracefully handles both integer IDs and UUID strings, or returns `404` instead of failing with `422`.
-   - `TC008`: Add top-level alias `attempt_id` to `POST /api/v1/mock-tests/{ref}/start` response for backwards compatibility.
-   - `TC010`: Implement check in `POST /api/v1/compliance/requests` to return `409 Conflict` when a duplicate request is already open.
+2. **Backend API fixes applied and verified (10/10)**:
+   - `TC007`: the id is parsed in the handler, so a malformed/UUID id returns `404` and an anonymous request returns `401` instead of a pre-auth `422`.
+   - `TC008`: start/submit responses now include a top-level `attempt_id` while keeping the nested `attempt` object used by the UI.
+   - `TC010`: an identical open request returns `409 Conflict`; the missing `DELETE /requests/{id}` was added so cleanup succeeds.
+   - `run-backend-cases.ps1` restores the shared account and TC007's notifications before pytest; TC010 uses unique details so repeat runs stay green.
+3. **Current failures: none.** Counts are derived from the live result files, not earlier conversation text.
