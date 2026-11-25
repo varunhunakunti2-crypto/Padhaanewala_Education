@@ -8,9 +8,10 @@ very party whose age is in question.
 
 So this table records a verification that actually happened. A row only reaches
 `verified` after a one-time code was delivered to the guardian's own contact
-channel and read back — the mechanism is `otp_records` with
-`purpose = "guardian_consent"`, which already hashes the secret, caps sends per
-identifier, caps verification attempts and expires the code.
+channel and read back — the mechanism is `otp_records`, whose purpose carries
+this row's id (`guardian_consent:<id>`) so a code cannot cross challenges. The
+OTP layer hashes the secret, caps sends per identifier, caps verification
+attempts and expires the code.
 
 `status` is a lifecycle rather than a boolean, because the interesting states are
 the ones between "asked" and "yes":

@@ -181,15 +181,20 @@ def _question_fields(
 
 
 def _find_attempt(db: Session, attempt_id: int, user: User) -> TestAttempt:
+    """Load an attempt only if it belongs to the authenticated user.
+
+    A foreign id used to answer 403 while a missing id answered 404. That
+    distinction is a cheap existence oracle: a caller could walk ids and learn
+    which attempts exist without owning any of them. Ownership belongs in the
+    query, so both cases collapse to the same 404.
+    """
     attempt = db.scalar(
         select(TestAttempt)
         .options(selectinload(TestAttempt.mock_test))
-        .where(TestAttempt.id == attempt_id)
+        .where(TestAttempt.id == attempt_id, TestAttempt.user_id == user.id)
     )
     if attempt is None:
         raise HTTPException(status_code=404, detail="Attempt not found")
-    if attempt.user_id != user.id:
-        raise HTTPException(status_code=403, detail="Not your attempt")
     return attempt
 
 def _finalize_if_expired(db: Session, attempt: TestAttempt) -> bool:

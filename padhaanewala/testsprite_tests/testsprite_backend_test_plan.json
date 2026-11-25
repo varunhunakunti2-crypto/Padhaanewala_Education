@@ -1,0 +1,52 @@
+[
+  {
+    "id": "TC001",
+    "title": "browse colleges with filters",
+    "description": "Test GET /api/v1/colleges with default and valid filter, sort, search, and pagination parameters. Verify returned college data and pagination metadata match the request, and that restrictive filters return an empty result without an error."
+  },
+  {
+    "id": "TC002",
+    "title": "retrieve college details",
+    "description": "Test GET /api/v1/colleges/{college_ref} with a valid college reference and verify the response contains the expected detail data. Use an unknown reference and verify the API returns the appropriate not found response."
+  },
+  {
+    "id": "TC003",
+    "title": "browse course catalog",
+    "description": "Test GET /api/v1/courses with valid search and filter parameters, then verify the matching courses and response structure. Confirm an unmatched query returns an empty result."
+  },
+  {
+    "id": "TC004",
+    "title": "submit enquiry form",
+    "description": "Test POST /api/v1/enquiries with valid name, email, mobile number, message, and consent data and verify successful enquiry creation. Submit malformed contact data or missing required fields and verify validation errors without creating an enquiry."
+  },
+  {
+    "id": "TC005",
+    "title": "submit college suggestion",
+    "description": "Test authenticated POST /api/v1/college-submissions with complete valid college data and verify the submission is recorded for the current user. Verify missing required fields are rejected and unauthenticated requests are denied."
+  },
+  {
+    "id": "TC006",
+    "title": "save college to student account",
+    "description": "Test authenticated POST /api/v1/saved-colleges with a valid college identifier and verify it is saved to the current user's account. Verify invalid identifiers are rejected and unauthenticated requests are denied."
+  },
+  {
+    "id": "TC007",
+    "title": "mark notification as read",
+    "description": "Test authenticated PUT /api/v1/notifications/{id}/read for an unread notification and verify its read state updates. Verify unknown notification identifiers are handled appropriately and users cannot update another user's notification."
+  },
+  {
+    "id": "TC008",
+    "title": "submit mock test attempt",
+    "description": "Test authenticated POST /api/v1/mock-tests/{ref}/submit with a valid attempt and answers, verifying the submission and result data. Verify invalid or expired attempts are rejected and unauthenticated requests are denied."
+  },
+  {
+    "id": "TC009",
+    "title": "send ai assistant question",
+    "description": "Test POST /api/ai with a nonempty question and verify the response has the expected assistant reply structure. Verify empty input is rejected and provider failures return a controlled error response."
+  },
+  {
+    "id": "TC010",
+    "title": "create compliance data request",
+    "description": "Test authenticated POST /api/v1/compliance/requests with a valid data access or deletion request and verify it is recorded. Verify invalid request types and duplicate requests are handled appropriately, and unauthenticated requests are denied."
+  }
+]

@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { DataTable } from "@/components/ui/DataTable";
 import { Modal } from "@/components/ui/Modal";
+import { SafeExternalLink } from "@/components/ui/SafeExternalLink";
 import { useApp } from "@/lib/context/AppContext";
 import { adminApi, type CollegeSubmission, type CollegeSubmissionStatus } from "@/lib/api";
 import {
@@ -299,14 +300,12 @@ export function CollegeSubmissionsSection() {
                 label="Website"
                 value={
                   open.proposed_website ? (
-                    <a
+                    <SafeExternalLink
                       href={open.proposed_website}
-                      target="_blank"
-                      rel="noreferrer"
                       className="inline-flex items-center gap-1 break-all text-purple-700 hover:text-purple-800"
                     >
                       {open.proposed_website} <ExternalLink className="h-3 w-3 shrink-0" />
-                    </a>
+                    </SafeExternalLink>
                   ) : null
                 }
               />

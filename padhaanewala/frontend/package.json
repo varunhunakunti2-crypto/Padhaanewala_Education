@@ -12,6 +12,7 @@
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
+    "test:antigravity": "node tools/antigravity-test-proxy.mjs",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage"
   },

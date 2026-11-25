@@ -467,6 +467,15 @@ class TestAttemptResponse(BaseModel):
 class StartAttemptResponse(BaseModel):
     attempt: TestAttemptResponse
     questions: list[AttemptQuestionResponse]
+    #: Convenience copy of `attempt.id`. Clients that only need to correlate a
+    #: start with a later submit should not have to reach into a nested object;
+    #: the nested attempt stays the authoritative shape for the UI.
+    attempt_id: int | None = None
+
+    @model_validator(mode="after")
+    def _expose_attempt_id(self) -> "StartAttemptResponse":
+        self.attempt_id = self.attempt.id
+        return self
 
 
 class SaveAnswerRequest(BaseModel):
@@ -494,6 +503,14 @@ class AttemptDetailResponse(BaseModel):
 class TestResultResponse(BaseModel):
     attempt: TestAttemptResponse
     questions: list[ResultQuestionResponse]
+    #: Same top-level correlation id as `StartAttemptResponse`, so a submission
+    #: response can be matched to the start response without unwrapping either.
+    attempt_id: int | None = None
+
+    @model_validator(mode="after")
+    def _expose_attempt_id(self) -> "TestResultResponse":
+        self.attempt_id = self.attempt.id
+        return self
 
 
 #: Longest grader note the API accepts. The column is unbounded `TEXT`, so the

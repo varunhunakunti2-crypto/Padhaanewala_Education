@@ -166,13 +166,23 @@ def _dispatch_mobile_verification(
 
 
 
-@router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/register",
+    response_model=TokenResponse | StandardResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 def register(
     payload: RegisterRequest,
     request: Request,
     response: Response,
     db: Session = Depends(get_db),
 ):
+    if not settings.REGISTRATION_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Registration is closed",
+        )
+
     existing = db.scalar(
         select(User).where((User.email == payload.email) | (User.mobile == payload.mobile))
     )
@@ -247,12 +257,18 @@ def register(
     _dispatch_email_verification(db, user, request=None)
     _dispatch_mobile_verification(db, user, request=None)
 
-    # NOTE: this still returns tokens even when EMAIL_VERIFICATION_REQUIRED is
-    # on, because `register` predates Phase 3 and its 201+TokenResponse contract
-    # is depended on by the existing suite and client. The gate is applied at
-    # `login`. If the intent is that unverified accounts hold no usable session
-    # at all, `register` must also withhold tokens — that is a breaking change
-    # and a deliberate decision, not something to slip in here.
+    # Phase 3 gate: when a confirmed address is required, signup must not hand
+    # out a session. Creating a refresh token here would open a second, ungated
+    # route to the account via `/refresh`, because that endpoint has no email
+    # check. The 201 status is kept for the client's existing success handling;
+    # only the body shape changes, and only for this policy configuration.
+    if settings.EMAIL_VERIFICATION_REQUIRED:
+        return StandardResponse(
+            success=True,
+            message="Account created. Confirm your email address before signing in.",
+            data={"email": user.email, "is_email_verified": False},
+        )
+
     body = _issue_session(db, user, request=None, response=response)
     db.commit()
     return body
@@ -631,6 +647,18 @@ def verify_login_otp(
         logger.info("login OTP rejected for user_id=%s: %s", user.id, exc)
         raise invalid from exc
 
+    # The email gate belongs here, not on `send`. Reaching this line requires a
+    # valid code that was delivered to this mobile, so the 403 cannot be used to
+    # probe for registrations — a prober never gets the code. Applying it on
+    # `send` instead (where it used to live) both leaked existence and was
+    # trivially bypassed by calling this endpoint directly.
+    #
+    # It must run *before* `_issue_session`: issuing first left a live refresh
+    # cookie and ledger row behind a 403, which could then be rotated at
+    # `/refresh` — an ungated route straight into an unverified account.
+    if settings.EMAIL_VERIFICATION_REQUIRED and not user.is_email_verified:
+        raise _email_not_verified(user)
+
     # Possession of a code sent to this mobile is proof of control, so this is
     # the natural moment to settle the flag rather than asking for it twice.
     if not user.is_mobile_verified:
@@ -639,20 +667,8 @@ def verify_login_otp(
     body = _issue_session(db, user, request, response)
     db.commit()
 
-    # The email gate belongs here, not on `send`. Reaching this line requires a
-    # valid code that was delivered to this mobile, so the 403 cannot be used to
-    # probe for registrations — a prober never gets the code. Applying it on
-    # `send` instead (where it used to live) both leaked existence and was
-    # trivially bypassed by calling this endpoint directly, because nothing here
-    # checked the flag at all.
-    if settings.EMAIL_VERIFICATION_REQUIRED and not user.is_email_verified:
-        raise _email_not_verified(user)
-
-    # Recorded after the gate, unlike the password path where the gate runs
-    # before the session is issued. Reaching this line is a sign-in that
-    # returned tokens; a 403 for an unverified address is not, and an audit row
-    # for it would show a login that never happened. The row is committed
-    # separately because the session above already was.
+    # Only a sign-in that actually returned tokens is recorded; a 403 for an
+    # unverified address is not a login and must not appear in account history.
     audit.record(
         db,
         request=request,

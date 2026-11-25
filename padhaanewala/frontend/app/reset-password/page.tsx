@@ -1,7 +1,7 @@
-import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 
 import { ResetPasswordForm } from "@/components/auth/ResetPasswordForm";
+import { TokenUrlCleanup } from "@/components/auth/TokenUrlCleanup";
 import { pageMetadata } from "@/lib/seo";
 
 // A one-shot credential must not be indexed or archived.
@@ -19,11 +19,12 @@ export default async function ResetPasswordPage({
   const raw = params.token;
   const token = typeof raw === "string" && raw.length > 0 ? raw : null;
 
-  // Without a token there is nothing to submit, so send the visitor somewhere
-  // useful rather than rendering a form that can only fail.
-  if (!token) {
-    redirect("/forgot-password");
-  }
-
-  return <ResetPasswordForm token={token} />;
+  // A missing token is an invalid-token state, not a reason to navigate away:
+  // visitors who open this URL directly must still see the error on this page.
+  return (
+    <>
+      <TokenUrlCleanup />
+      <ResetPasswordForm token={token} />
+    </>
+  );
 }

@@ -21,6 +21,7 @@ changing which rows a page contained. `_visibility_predicate` is the SQL form of
 `_is_visible`; the last test in this file holds the two to each other.
 """
 
+import uuid
 from contextlib import contextmanager
 from datetime import date, timedelta
 
@@ -29,7 +30,17 @@ from fastapi.testclient import TestClient
 
 from app.database import SessionLocal
 from app.main import app
-from app.models import FAQ, Banner, BlogCategory, University
+from app.models import (
+    FAQ,
+    Banner,
+    BlogCategory,
+    College,
+    Cutoff,
+    Role,
+    StudentProfile,
+    University,
+    User,
+)
 from app.routers.banners import _is_visible, _visibility_predicate
 
 client = TestClient(app)
@@ -412,3 +423,308 @@ def test_sql_visibility_predicate_agrees_with_the_python_one():
     with SessionLocal() as db:
         db.query(Banner).delete()
         db.commit()
+
+
+# ---------------------------------------------------------------------------
+# M3: the remaining list endpoints share one bounded policy.
+#
+# The Phase 1.6 work above closed four public catalogue routes, but the
+# enrichment/catalog-data routes and the authenticated account lists still either
+# had no bound or hand-rolled their own cap. A caller could ask an enrichment
+# route for the entire table, and every new hand-rolled `Query(50, le=200)` was a
+# fresh place for the policy to drift. `app/utils/pagination.py` now owns the
+# contract: default 100, hard cap 500, non-negative offset, enforced in the
+# FastAPI signature so it appears in OpenAPI.
+# ---------------------------------------------------------------------------
+
+PUBLIC_SHARED_LIMIT_HANDLERS = [
+    "list_cutoffs",
+    "list_fees",
+    "list_placements",
+    "list_rankings",
+    "list_nirf_rankings",
+    "list_other_rankings",
+    "list_seat_matrix",
+    "list_admissions",
+    "catalog_cutoffs",
+    "catalog_fees",
+    "catalog_placements",
+    "catalog_rankings",
+    "catalog_seat_matrix",
+    "catalog_admissions",
+]
+
+AUTH_SHARED_LIMIT_HANDLERS = [
+    "list_saved_colleges",
+    "list_my_consents",
+    "list_my_requests",
+    "list_all_requests",
+    "list_notifications",
+    "list_notification_sends",
+    "my_notifications",
+]
+
+
+def _shared_limit_handlers():
+    """Resolve handler objects by name so this file need not import every router."""
+    from app.routers import (
+        compliance as compliance_mod,
+        consent as consent_mod,
+        enrichment as enrichment_mod,
+        notifications as notifications_mod,
+        saved_colleges as saved_colleges_mod,
+    )
+
+    modules = (
+        enrichment_mod,
+        saved_colleges_mod,
+        consent_mod,
+        compliance_mod,
+        notifications_mod,
+    )
+    handlers = {}
+    for module in modules:
+        for name in PUBLIC_SHARED_LIMIT_HANDLERS + AUTH_SHARED_LIMIT_HANDLERS:
+            handler = getattr(module, name, None)
+            if handler is not None:
+                handlers[name] = handler
+    missing = set(PUBLIC_SHARED_LIMIT_HANDLERS + AUTH_SHARED_LIMIT_HANDLERS) - handlers.keys()
+    assert not missing, f"shared-limit handlers not found: {sorted(missing)}"
+    return handlers
+
+
+SHARED_LIMIT_HANDLERS = _shared_limit_handlers()
+
+
+def _declared_int_bounds(param):
+    """Read default/le/ge from a FastAPI `Query` parameter, Pydantic v2 style.
+
+    `Query` does not expose `.le` directly in Pydantic v2; the bound lives in
+    `.metadata` as an `annotated_types.Le` instance. Reading it through the
+    signature keeps this a contract test rather than a response-shape test that
+    happens to pass when the table is empty.
+    """
+    default, ge, le = getattr(param.default, "default", None), [], []
+    for marker in getattr(param.default, "metadata", ()):
+        if hasattr(marker, "ge"):
+            ge.append(marker.ge)
+        if hasattr(marker, "le"):
+            le.append(marker.le)
+    return default, ge, le
+
+
+@pytest.mark.parametrize(
+    "name",
+    PUBLIC_SHARED_LIMIT_HANDLERS + AUTH_SHARED_LIMIT_HANDLERS,
+)
+def test_shared_list_limit_defaults_to_100_and_caps_at_500(name):
+    """Every selected list handler must use the shared 100/500 contract."""
+    import inspect
+
+    params = inspect.signature(SHARED_LIMIT_HANDLERS[name]).parameters
+    default, ge, le = _declared_int_bounds(params["limit"])
+    assert default == 100, f"{name}: default limit is {default}, expected 100"
+    assert ge == [1], f"{name}: limit must be >= 1, got {ge}"
+    assert le == [500], f"{name}: limit must be <= 500, got {le}"
+
+    offset_default, offset_ge, _ = _declared_int_bounds(params["offset"])
+    assert offset_default == 0, f"{name}: default offset is {offset_default}"
+    assert offset_ge == [0], f"{name}: offset must be >= 0, got {offset_ge}"
+
+
+PUBLIC_SHARED_LIMIT_ROUTES = [
+    "/api/v1/cutoffs",
+    "/api/v1/fees",
+    "/api/v1/placements",
+    "/api/v1/rankings",
+    "/api/v1/seat-matrix",
+    "/api/v1/admissions",
+]
+
+
+@pytest.mark.parametrize("path", PUBLIC_SHARED_LIMIT_ROUTES)
+def test_public_enrichment_routes_accept_500_and_refuse_501(path):
+    assert client.get(path).status_code == 200
+    assert client.get(path, params={"limit": 500}).status_code == 200
+
+    over_cap = client.get(path, params={"limit": 501})
+    assert over_cap.status_code == 422, f"{path} accepted limit=501: {over_cap.text}"
+
+    negative_offset = client.get(path, params={"offset": -1})
+    assert negative_offset.status_code == 422, (
+        f"{path} accepted offset=-1: {negative_offset.text}"
+    )
+
+
+def test_colleges_route_keeps_its_50_default_but_uses_the_shared_cap():
+    """`?limit=200` is a valid page request, not an abuse attempt.
+
+    `test_catalog.py` walks up to 200 colleges to find one with courses. The
+    hand-rolled Phase 1.6 cap of 100 turned that into a 422, and the caller then
+    tried to iterate over the error object. The shared helper keeps the existing
+    default of 50 while moving the ceiling to the policy's 500.
+    """
+    import inspect
+
+    from app.routers import colleges as colleges_mod
+
+    params = inspect.signature(colleges_mod.list_colleges).parameters
+    default, ge, le = _declared_int_bounds(params["limit"])
+    assert default == 50
+    assert ge == [1]
+    assert le == [500]
+    assert client.get("/api/v1/colleges?limit=200").status_code == 200
+    assert client.get("/api/v1/colleges?limit=500").status_code == 200
+    assert client.get("/api/v1/colleges?limit=501").status_code == 422
+
+
+def _active_college():
+    with SessionLocal() as db:
+        college = (
+            db.query(College)
+            .filter(College.is_active.is_(True))
+            .order_by(College.id)
+            .first()
+        )
+        assert college is not None, "seed data must contain an active college"
+        return college.id, college.slug
+
+
+def test_college_scoped_enrichment_route_uses_the_shared_cap():
+    """The prefix-routed enrichment lists must be bounded too, not just catalog."""
+    _, slug = _active_college()
+    url = f"/api/v1/colleges/{slug}/cutoffs"
+    assert client.get(url, params={"limit": 500}).status_code == 200
+    assert client.get(url, params={"limit": 501}).status_code == 422
+
+
+def test_public_enrichment_offset_walks_pages_without_overlap():
+    college_id, _ = _active_college()
+    exam = f"pagination-cap-{uuid.uuid4().hex[:8]}"
+    rows = [
+        Cutoff(
+            college_id=college_id,
+            exam_name=exam,
+            year=2030,
+            category="General",
+            # Distinct quota values keep the functional unique index happy while
+            # leaving the caller's ORDER BY tied, which is where paging breaks.
+            quota=f"q{i}",
+            opening_rank=i + 1,
+            closing_rank=100 + i,
+        )
+        for i in range(5)
+    ]
+
+    with _isolated(Cutoff, rows):
+        pages = []
+        for offset in (0, 2, 4):
+            response = client.get(
+                "/api/v1/cutoffs",
+                params={
+                    "college_id": college_id,
+                    "exam_name": exam,
+                    "limit": 2,
+                    "offset": offset,
+                },
+            )
+            assert response.status_code == 200, response.text
+            pages.append(response.json())
+
+        assert [len(page) for page in pages] == [2, 2, 1]
+        id_sets = [{row["id"] for row in page} for page in pages]
+        for i, first in enumerate(id_sets):
+            for second in id_sets[i + 1 :]:
+                assert first.isdisjoint(second), "enrichment pages overlap"
+        assert len(set().union(*id_sets)) == 5, "the walk missed or duplicated a row"
+
+
+@pytest.fixture
+def authenticated_headers_with_admin_role():
+    """One fresh account with the profile and role the account lists need.
+
+    A fresh user keeps the consent paging test from seeing rows left behind by
+    another test; the admin role unlocks the staff queue and notification log.
+    """
+    email = f"pagination.{uuid.uuid4().hex[:8]}@example.com"
+    password = "SecurePass123!"
+    registered = client.post(
+        "/api/v1/auth/register",
+        json={
+            "name": "Pagination Tester",
+            "email": email,
+            "mobile": f"9{uuid.uuid4().int % 1_000_000_000:09d}",
+            "password": password,
+            "age_band": "18_plus",
+        },
+    )
+    assert registered.status_code == 201, registered.text
+
+    with SessionLocal() as db:
+        user = db.query(User).filter(User.email == email).one()
+        if not db.query(StudentProfile).filter(StudentProfile.user_id == user.id).first():
+            db.add(StudentProfile(user_id=user.id, target_exam="jee-main"))
+        admin = db.query(Role).filter(Role.name == "admin").one()
+        if admin not in user.roles:
+            user.roles.append(admin)
+        db.commit()
+
+    login = client.post(
+        "/api/v1/auth/login", json={"email": email, "password": password}
+    )
+    assert login.status_code == 200, login.text
+    return {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+
+AUTH_SHARED_LIMIT_ROUTES = [
+    "/api/v1/saved-colleges",
+    "/api/v1/consent",
+    "/api/v1/compliance/requests",
+    "/api/v1/compliance/admin/requests",
+    "/api/v1/notifications",
+    "/api/v1/notifications/sends",
+    "/api/v1/notifications/my",
+]
+
+
+@pytest.mark.parametrize("path", AUTH_SHARED_LIMIT_ROUTES)
+def test_authenticated_lists_accept_500_and_refuse_501(
+    path, authenticated_headers_with_admin_role
+):
+    headers = authenticated_headers_with_admin_role
+    assert client.get(path, headers=headers).status_code == 200
+    assert client.get(path, params={"limit": 500}, headers=headers).status_code == 200
+
+    over_cap = client.get(path, params={"limit": 501}, headers=headers)
+    assert over_cap.status_code == 422, f"{path} accepted limit=501: {over_cap.text}"
+
+
+def test_authenticated_list_offset_does_not_overlap(
+    authenticated_headers_with_admin_role,
+):
+    headers = authenticated_headers_with_admin_role
+    created_ids = []
+    for i in range(3):
+        response = client.post(
+            "/api/v1/consent",
+            json={
+                "consent_type": "marketing",
+                "consent_version": "v1",
+                "consent_text": f"pagination consent {i}",
+                "granted": True,
+            },
+            headers=headers,
+        )
+        assert response.status_code == 201, response.text
+        created_ids.append(response.json()["id"])
+
+    pages = [
+        client.get(
+            "/api/v1/consent", params={"limit": 1, "offset": offset}, headers=headers
+        )
+        for offset in range(3)
+    ]
+    assert [page.status_code for page in pages] == [200, 200, 200]
+    walked = [page.json()[0]["id"] for page in pages]
+    assert all(len(page.json()) == 1 for page in pages)
+    assert sorted(walked) == sorted(created_ids), "consent pages overlap or skip rows"

@@ -24,6 +24,7 @@ export function ForgotPasswordForm() {
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    if (loading || sent) return;
     setError("");
 
     if (!email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
@@ -54,7 +55,7 @@ export function ForgotPasswordForm() {
 
       <div className="w-full rounded-2xl bg-white p-8 ring-1 ring-purple-100/60 card-shadow sm:p-10">
         {sent ? (
-          <div className="text-center">
+          <div role="status" aria-live="polite" className="text-center">
             <CheckCircle2 className="mx-auto h-10 w-10 text-emerald-500" aria-hidden="true" />
             <h1 className="font-display mt-5 text-2xl font-extrabold tracking-tight text-purple-950">
               Check your inbox

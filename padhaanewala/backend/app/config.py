@@ -126,14 +126,18 @@ class Settings(BaseSettings):
     MAX_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
     # ---------------------------------------------------------------- Phase 3
-    # Session ledger. The refresh token is delivered as an HttpOnly cookie scoped
-    # to the auth path, never in a response body that any script in the origin
-    # can read. `MAX_ACTIVE_REFRESH_TOKENS` bounds *concurrent sessions*
-    # (rotation families), not token rows — one device refreshing every 25
-    # minutes writes ~1,700 rows over its 30-day life and must never be treated
-    # as 1,700 sessions.
+    # Session ledger. The refresh token is delivered as an HttpOnly cookie,
+    # never in a response body that any script in the origin can read. Its path
+    # is the whole origin so the Next.js proxy can perform its optimistic page
+    # guard: a signed-in browser attaches the cookie to `/dashboard`, `/admin`
+    # and `/mock-tests` as well as the auth API. The cookie is not a role or
+    # session proof for page content — every protected API still re-checks the
+    # token and role server-side. `MAX_ACTIVE_REFRESH_TOKENS` bounds *concurrent
+    # sessions* (rotation families), not token rows — one device refreshing
+    # every 25 minutes writes ~1,700 rows over its 30-day life and must never
+    # be treated as 1,700 sessions.
     REFRESH_COOKIE_NAME: str = "pdw_refresh"
-    REFRESH_COOKIE_PATH: str = "/api/v1/auth"
+    REFRESH_COOKIE_PATH: str = "/"
     MAX_ACTIVE_REFRESH_TOKENS: int = 8
 
     # ---------------------------------------------------------------- Phase 3
@@ -152,8 +156,14 @@ class Settings(BaseSettings):
     EMAIL_SMTP_PASSWORD: str = "change-me"
     EMAIL_FROM_EMAIL: str = "no-reply@padhaanewala.com"
     EMAIL_FROM_NAME: str = "Padhaanewala"
-    #: When true, `POST /auth/login` refuses an unverified account with 403.
+    #: When true, `POST /auth/login` refuses an unverified account with 403,
+    #: `POST /auth/register` withholds the session, and production refuses to
+    #: boot unless verification is actually configured.
     EMAIL_VERIFICATION_REQUIRED: bool = False
+    #: Emergency kill switch for signup. Production still requires email
+    #: verification while registration is open; a deployment that closes signup
+    #: may turn this off without having to leave a second gate disabled.
+    REGISTRATION_ENABLED: bool = True
     #: Link lifetimes. Email links are long-lived because they are only usable
     #: once and are the sole recovery path; a password-reset link is short-lived
     #: because it is a bearer credential for the account itself.
@@ -446,6 +456,25 @@ class Settings(BaseSettings):
                 raise ValueError(
                     f"MEDIA_URL_PREFIX must be an absolute path with no trailing "
                     f"slash and no '..', got {self.MEDIA_URL_PREFIX!r}"
+                )
+            # Rate limiting is one of the few controls that still works before a
+            # user is authenticated. Turning it off in production makes OTP,
+            # password and signup endpoints answerable at attacker speed, so a
+            # disabled flag is a deployment error rather than a preference.
+            if not self.RATE_LIMIT_ENABLED:
+                raise ValueError(
+                    "RATE_LIMIT_ENABLED must not be false in production; "
+                    "unauthenticated auth and signup endpoints would be unlimited"
+                )
+            # An unverified signup would otherwise hold no usable session, but
+            # leaving the flag off in production means nobody can sign in at all
+            # and makes the gate look optional in the deployed configuration.
+            # Fail at boot with an actionable message instead.
+            if self.REGISTRATION_ENABLED and not self.EMAIL_VERIFICATION_REQUIRED:
+                raise ValueError(
+                    "EMAIL_VERIFICATION_REQUIRED must be true in production while "
+                    "registration is enabled; set it explicitly, or set "
+                    "REGISTRATION_ENABLED=false if signup is intentionally closed"
                 )
         return self
 

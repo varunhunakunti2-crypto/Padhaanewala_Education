@@ -258,43 +258,47 @@ export function SearchBar({
                 const Icon = TYPE_ICON[s.type];
                 const active = i === highlight;
                 return (
-                  <li
-                    key={`${s.type}-${s.label}`}
-                    role="option"
-                    aria-selected={active}
-                    onMouseEnter={() => setHighlight(i)}
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      applySuggestion(s);
-                    }}
-                    className={cn(
-                      "flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 transition-colors",
-                      active
-                        ? "bg-purple-50 dark:bg-purple-950/60"
-                        : "hover:bg-gray-50 dark:hover:bg-slate-800/60",
-                    )}
-                  >
-                    <span
+                  <li key={`${s.type}-${s.label}`} role="presentation">
+                    <button
+                      type="button"
+                      aria-label={s.label}
+                      aria-pressed={active}
+                      onMouseEnter={() => setHighlight(i)}
+                      // Keep focus on the input: preventDefault stops the
+                      // mousedown from blurring it before the route change.
+                      // The click handler is the single navigation path, so a
+                      // keyboard activation and a pointer click behave alike.
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => applySuggestion(s)}
                       className={cn(
-                        "grid h-8 w-8 shrink-0 place-items-center rounded-lg",
-                        s.type === "college"
-                          ? "bg-purple-100 text-purple-600 dark:bg-purple-950 dark:text-purple-300"
-                          : s.type === "course"
-                            ? "bg-blue-100 text-blue-600 dark:bg-blue-950 dark:text-blue-300"
-                            : s.type === "city"
-                              ? "bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-300"
-                              : "bg-orange-100 text-orange-600 dark:bg-orange-950 dark:text-orange-300",
+                        "flex w-full cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-400",
+                        active
+                          ? "bg-purple-50 dark:bg-purple-950/60"
+                          : "hover:bg-gray-50 dark:hover:bg-slate-800/60",
                       )}
                     >
-                      <Icon className="h-4 w-4" />
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-medium text-gray-900 dark:text-white">{s.label}</span>
-                      {s.sub && <span className="block text-xs text-gray-400 dark:text-slate-400">{s.sub}</span>}
-                    </span>
-                    <span className="ml-auto shrink-0 text-[11px] uppercase tracking-wide text-gray-300 dark:text-slate-500">
-                      {s.type}
-                    </span>
+                      <span
+                        className={cn(
+                          "grid h-8 w-8 shrink-0 place-items-center rounded-lg",
+                          s.type === "college"
+                            ? "bg-purple-100 text-purple-600 dark:bg-purple-950 dark:text-purple-300"
+                            : s.type === "course"
+                              ? "bg-blue-100 text-blue-600 dark:bg-blue-950 dark:text-blue-300"
+                              : s.type === "city"
+                                ? "bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-300"
+                                : "bg-orange-100 text-orange-600 dark:bg-orange-950 dark:text-orange-300",
+                        )}
+                      >
+                        <Icon className="h-4 w-4" />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-medium text-gray-900 dark:text-white">{s.label}</span>
+                        {s.sub && <span className="block text-xs text-gray-400 dark:text-slate-400">{s.sub}</span>}
+                      </span>
+                      <span className="ml-auto shrink-0 text-[11px] uppercase tracking-wide text-gray-300 dark:text-slate-500">
+                        {s.type}
+                      </span>
+                    </button>
                   </li>
                 );
               })}

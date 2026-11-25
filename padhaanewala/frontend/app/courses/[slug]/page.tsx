@@ -60,6 +60,14 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   });
 }
 
+function proseParagraphs(value: string | undefined): string[] {
+  if (!value) return [];
+  return value
+    .split(/\n+|(?<=[.!?])\s+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
 function FaqList({ faqs }: { faqs: { q: string; a: string }[] }) {
   return (
     <div className="space-y-2">
@@ -87,6 +95,18 @@ export default async function CourseDetailPage({ params }: PageProps) {
   const detail = getCourseDetail(slug);
   const colleges = collegesOffering(slug, collegeDataset, catalog).slice(0, 6);
   const related = getRelatedCourses(slug, catalog);
+
+  // Curated detail wins when it exists; the API's long-form copy is the
+  // fallback, and an honest empty state is the last resort.
+  const collegeCount = course.collegeCount ?? colleges.length;
+  const eligibilityPoints = detail?.eligibility?.length
+    ? detail.eligibility
+    : course.eligibility
+      ? [course.eligibility]
+      : [];
+  const careerPoints = detail?.careerOpportunities?.length
+    ? detail.careerOpportunities
+    : proseParagraphs(course.careerInformation);
 
   /**
    * Breadcrumb only. `courseLd()` takes a `Course` — the record embedded in a
@@ -137,7 +157,9 @@ export default async function CourseDetailPage({ params }: PageProps) {
               </div>
               <div className="rounded-2xl bg-white/10 px-4 py-2.5 text-center backdrop-blur">
                 <p className="flex items-center justify-center gap-1 text-xs text-white/60"><Building2 className="h-3.5 w-3.5" /> Colleges</p>
-                <p className="text-sm font-bold">{colleges.length}+ on platform</p>
+                <p className="text-sm font-bold">
+                  {collegeCount} {collegeCount === 1 ? "college" : "colleges"} on platform
+                </p>
               </div>
             </div>
           </div>
@@ -186,25 +208,31 @@ export default async function CourseDetailPage({ params }: PageProps) {
       </div>
 
       {/* Eligibility + Admission */}
-      {detail && (
-        <div className="mt-6 grid grid-cols-1 gap-5 lg:grid-cols-2">
-          <div className="rounded-2xl border border-slate-100 bg-white p-6">
-            <h2 className="flex items-center gap-2 font-bold text-gray-900">
-              <Users className="h-4 w-4 text-purple-600" /> Eligibility
-            </h2>
+      <div className="mt-6 grid grid-cols-1 gap-5 lg:grid-cols-2">
+        <div className="rounded-2xl border border-slate-100 bg-white p-6">
+          <h2 className="flex items-center gap-2 font-bold text-gray-900">
+            <Users className="h-4 w-4 text-purple-600" /> Eligibility
+          </h2>
+          {eligibilityPoints.length ? (
             <ul className="mt-3 space-y-2">
-              {detail.eligibility.map((e) => (
-                <li key={e} className="flex items-start gap-2 text-sm text-slate-600">
+              {eligibilityPoints.map((e, i) => (
+                <li key={`${e}-${i}`} className="flex items-start gap-2 text-sm text-slate-600">
                   <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-green-500" />
                   {e}
                 </li>
               ))}
             </ul>
-          </div>
-          <div className="rounded-2xl border border-slate-100 bg-white p-6">
-            <h2 className="flex items-center gap-2 font-bold text-gray-900">
-              <FileText className="h-4 w-4 text-purple-600" /> Admission procedure
-            </h2>
+          ) : (
+            <p className="mt-3 text-sm leading-relaxed text-slate-500">
+              Eligibility criteria have not been published for this course yet. Check the individual college admission pages for current requirements.
+            </p>
+          )}
+        </div>
+        <div className="rounded-2xl border border-slate-100 bg-white p-6">
+          <h2 className="flex items-center gap-2 font-bold text-gray-900">
+            <FileText className="h-4 w-4 text-purple-600" /> Admission procedure
+          </h2>
+          {detail?.admissionProcedure?.length ? (
             <ol className="mt-3 space-y-2">
               {detail.admissionProcedure.map((s, i) => (
                 <li key={i} className="flex items-start gap-2.5 text-sm text-slate-600">
@@ -213,31 +241,53 @@ export default async function CourseDetailPage({ params }: PageProps) {
                 </li>
               ))}
             </ol>
-          </div>
+          ) : (
+            <p className="mt-3 text-sm leading-relaxed text-slate-500">
+              Admission steps have not been published for this course yet. Refer to the college&apos;s admission page for the current process.
+            </p>
+          )}
         </div>
-      )}
+      </div>
 
       {/* Careers */}
-      {detail && (
-        <div className="mt-6 rounded-2xl border border-slate-100 bg-white p-6">
-          <h2 className="flex items-center gap-2 font-bold text-gray-900">
-            <Briefcase className="h-4 w-4 text-purple-600" /> Career opportunities
-          </h2>
-          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {detail.careerOpportunities.map((c) => (
-              <div key={c} className="flex items-center gap-2.5 rounded-xl bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700">
-                <span className="h-2 w-2 rounded-full bg-purple-500" /> {c}
+      <div className="mt-6 rounded-2xl border border-slate-100 bg-white p-6">
+        <h2 className="flex items-center gap-2 font-bold text-gray-900">
+          <Briefcase className="h-4 w-4 text-purple-600" /> Career information
+        </h2>
+        {careerPoints.length ? (
+          <>
+            {detail?.careerOpportunities?.length ? (
+              <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {careerPoints.map((c, i) => (
+                  <div key={`${c}-${i}`} className="flex items-center gap-2.5 rounded-xl bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700">
+                    <span className="h-2 w-2 rounded-full bg-purple-500" /> {c}
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-          <div className="mt-4 flex flex-wrap gap-2">
-            {detail.careerSectors.map((s) => (
-              <Badge key={s} variant="gray">{s}</Badge>
-            ))}
-          </div>
-          <p className="mt-3 text-xs text-slate-400">{detail.entranceExamNote}</p>
-        </div>
-      )}
+            ) : (
+              <div className="mt-3 space-y-2">
+                {careerPoints.map((paragraph, i) => (
+                  <p key={i} className="text-sm leading-relaxed text-slate-600">{paragraph}</p>
+                ))}
+              </div>
+            )}
+            {detail?.careerSectors?.length ? (
+              <div className="mt-4 flex flex-wrap gap-2">
+                {detail.careerSectors.map((s) => (
+                  <Badge key={s} variant="gray">{s}</Badge>
+                ))}
+              </div>
+            ) : null}
+            {detail?.entranceExamNote ? (
+              <p className="mt-3 text-xs text-slate-400">{detail.entranceExamNote}</p>
+            ) : null}
+          </>
+        ) : (
+          <p className="mt-3 text-sm leading-relaxed text-slate-500">
+            Career information has not been published for this course yet.
+          </p>
+        )}
+      </div>
 
       {/* Colleges offering */}
       <div className="mt-10">

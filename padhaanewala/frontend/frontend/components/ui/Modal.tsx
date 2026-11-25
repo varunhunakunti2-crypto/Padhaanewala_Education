@@ -32,16 +32,61 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
 
   useEffect(() => {
     if (!open) return;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const panel = panelRef.current;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
+
+    // Keep Tab inside the dialog. The panel itself carries tabIndex=-1 so it
+    // can take initial focus; it is deliberately not in the cycle.
+    const focusable = () =>
+      panel
+        ? Array.from(
+            panel.querySelectorAll<HTMLElement>(
+              'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+            ),
+          )
+        : [];
+
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCloseRef.current();
+      if (e.key === "Escape") {
+        onCloseRef.current();
+        return;
+      }
+      if (e.key !== "Tab" || !panel) return;
+
+      const items = focusable();
+      const active = document.activeElement as HTMLElement | null;
+      if (items.length === 0) {
+        e.preventDefault();
+        panel.focus();
+        return;
+      }
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (!active || !panel.contains(active)) {
+        e.preventDefault();
+        (e.shiftKey ? last : first).focus();
+      } else if (e.shiftKey && (active === first || active === panel)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === panel) {
+        e.preventDefault();
+        first.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
+
     window.addEventListener("keydown", onKey);
-    panelRef.current?.focus();
+    panel?.focus();
     return () => {
       document.body.style.overflow = prev;
       window.removeEventListener("keydown", onKey);
+      // Focus belongs to the trigger again once the dialog is gone. Guard the
+      // node: the trigger may have been removed while the dialog was open.
+      if (previouslyFocused?.isConnected) previouslyFocused.focus();
     };
   }, [open]);
 

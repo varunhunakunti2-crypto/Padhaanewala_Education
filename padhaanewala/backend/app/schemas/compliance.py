@@ -53,9 +53,11 @@ class AgeDeclareResponse(StrictModel):
 class GuardianConsentRequest(StrictModel):
     """Ask a guardian to confirm. The minor may submit this themselves.
 
-    Both a name and at least one contact channel are required. The channel is
-    what makes the consent verifiable, so a request that omits both is refused
-    rather than queued in a state that can never be verified.
+    A name and a **mobile** number are required. Email alone is refused until
+    there is an email OTP delivery path: `otp_service` can mint link tokens, but
+    the guardian-consent router only knows how to send a code by SMS, so an
+    email-only request would sit pending forever while looking like verifiable
+    consent. An email address may still be recorded alongside the mobile.
     """
 
     guardian_name: str = Field(..., min_length=2, max_length=255)
@@ -75,11 +77,11 @@ class GuardianConsentRequest(StrictModel):
         return digits
 
     @model_validator(mode="after")
-    def require_a_channel(self) -> "GuardianConsentRequest":
-        if not self.guardian_mobile and not self.guardian_email:
+    def require_a_verifiable_channel(self) -> "GuardianConsentRequest":
+        if not self.guardian_mobile:
             raise ValueError(
-                "A parent or guardian's mobile number or email address is required, "
-                "so that we can verify they agreed"
+                "A guardian mobile number is required: parental consent is "
+                "verified by SMS, and an email-only request cannot be verified"
             )
         return self
 

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Phone, Mail, MapPin, Clock, MessageCircle, HelpCircle, Headset } from "lucide-react";
 import { SectionHeading } from "@/components/ui/SectionHeading";
 import { AdmissionHelpButton } from "@/components/admission/AdmissionForm";
+import { ContactForm } from "@/components/contact/ContactForm";
 import { JsonLd } from "@/components/seo/JsonLd";
 import { breadcrumbLd, ldGraph, pageMetadata } from "@/lib/seo";
 import { SITE } from "@/lib/site";
@@ -40,9 +41,6 @@ const CHANNELS: readonly Channel[] = [
   { icon: <MapPin className="h-5 w-5" />, title: "Office", value: `${SITE.address.locality}, ${SITE.address.region}`, sub: "Online counselling pan-India" },
 ];
 
-const CHANNEL_CARD =
-  "rounded-2xl border border-slate-100 bg-white p-6 text-center transition hover:-translate-y-0.5 hover:border-purple-200 hover:shadow-lg hover:shadow-purple-900/5";
-
 function ChannelBody({ channel }: { channel: Channel }) {
   return (
     <>
@@ -71,24 +69,39 @@ export default function ContactPage() {
         description="Questions about college admissions, scholarships or the platform? Reach out — our team is happy to help."
       />
 
-      <div className="mt-10 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-        {CHANNELS.map((c) =>
-          c.href ? (
-            <a
-              key={c.title}
-              href={c.href}
-              target={c.href.startsWith("http") ? "_blank" : undefined}
-              rel={c.href.startsWith("http") ? "noreferrer" : undefined}
-              className={CHANNEL_CARD}
-            >
-              <ChannelBody channel={c} />
-            </a>
-          ) : (
-            <div key={c.title} className={CHANNEL_CARD}>
-              <ChannelBody channel={c} />
-            </div>
-          ),
-        )}
+      <div className="mt-10 grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+        <div className="rounded-3xl border border-purple-100 bg-white p-6 shadow-sm shadow-purple-900/5 sm:p-8">
+          <h2 className="font-display text-xl font-extrabold text-gray-900">Send us a message</h2>
+          <p className="mb-6 mt-1 text-sm text-gray-500">
+            Tell us what you need and a counsellor will get back to you.
+          </p>
+          <ContactForm />
+        </div>
+        <div className="rounded-3xl border border-slate-100 bg-slate-50/70 p-6 sm:p-8">
+          <h2 className="font-display text-xl font-extrabold text-gray-900">Other ways to reach us</h2>
+          <p className="mt-1 text-sm text-gray-500">
+            Prefer a call, WhatsApp or email? These channels reach the same team.
+          </p>
+          <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {CHANNELS.map((c) =>
+              c.href ? (
+                <a
+                  key={c.title}
+                  href={c.href}
+                  target={c.href.startsWith("http") ? "_blank" : undefined}
+                  rel={c.href.startsWith("http") ? "noreferrer" : undefined}
+                  className="rounded-2xl border border-slate-100 bg-white p-5 transition hover:-translate-y-0.5 hover:border-purple-200 hover:shadow-lg hover:shadow-purple-900/5"
+                >
+                  <ChannelBody channel={c} />
+                </a>
+              ) : (
+                <div key={c.title} className="rounded-2xl border border-slate-100 bg-white p-5">
+                  <ChannelBody channel={c} />
+                </div>
+              ),
+            )}
+          </div>
+        </div>
       </div>
 
       <div className="mt-10 grid grid-cols-1 gap-5 lg:grid-cols-3">

@@ -48,22 +48,62 @@ const MAX_FIELD = 8000;
 const str = (value: unknown, max = MAX_FIELD): string | null =>
   typeof value === "string" ? value.slice(0, max) : null;
 
+/**
+ * Read at most `MAX_BODY_BYTES` from the request stream, counting bytes as they
+ * arrive. `Request.text()` buffers the whole body first, so a chunked upload
+ * with no Content-Length (or a lying one) could grow without bound before the
+ * old slice-to-32KB check ever ran. Returning `null` here means the cap was
+ * crossed; the reader is cancelled at that point rather than drained.
+ */
+async function readBoundedBody(request: Request): Promise<string | null> {
+  if (!request.body) return "";
+  const reader = request.body.getReader();
+  const decoder = new TextDecoder();
+  let bytes = 0;
+  let text = "";
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > MAX_BODY_BYTES) {
+        await reader.cancel();
+        return null;
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+    text += decoder.decode();
+    return text;
+  } finally {
+    // `cancel()` above has already released the stream in the overflow case.
+    try {
+      reader.releaseLock();
+    } catch {
+      /* nothing to release */
+    }
+  }
+}
+
 export async function POST(request: Request) {
   if (overRateLimit()) {
     return new NextResponse(null, { status: 429 });
   }
 
-  // Read the declared length first so an oversized upload is refused without
-  // being buffered. A missing or lying Content-Length falls through to the
-  // buffered read below, which is bounded by the slice.
-  const declared = Number(request.headers.get("content-length") ?? "0");
-  if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
+  // Content-Length is a hint at best: it is client-controlled and absent on
+  // chunked uploads. The stream counter below is the only enforced cap.
+  let raw: string | null;
+  try {
+    raw = await readBoundedBody(request);
+  } catch {
+    // A broken/destroyed stream is a malformed request, not an oversized one.
+    return new NextResponse(null, { status: 400 });
+  }
+  if (raw === null) {
     return new NextResponse(null, { status: 413 });
   }
 
   let body: Record<string, unknown>;
   try {
-    const raw = (await request.text()).slice(0, MAX_BODY_BYTES);
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
       return new NextResponse(null, { status: 400 });

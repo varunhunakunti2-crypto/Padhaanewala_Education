@@ -3,7 +3,7 @@
 # Padhaanewala API.
 #
 # Pinned by digest, not tag. `python:3.14-slim` is a moving target, and an
-# unpinned base is how the same commit produces two different images — which
+# unpinned base is how the same commit prowwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwduces two different images — which
 # makes "it worked in staging" unreproducible. The tag is kept in the comment so
 # a human can tell what the digest is.
 #
@@ -68,7 +68,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 # or a shell to escalate from.
 RUN groupadd --system --gid 1001 appuser \
     && useradd --system --uid 1001 --gid 1001 \
-       --home-dir /nonexistent --no-create-home --shell /usr/sbin/nologin appuser
+    --home-dir /nonexistent --no-create-home --shell /usr/sbin/nologin appuser
 
 # Application code is owned by root and only *readable* by appuser. An
 # attacker who gains code execution cannot rewrite the application to persist
@@ -107,11 +107,11 @@ RUN chmod 0755 /usr/local/bin/docker-entrypoint.sh
 # minute diagnosis and a five hour one.
 RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh \
     && if head -c 2 /usr/local/bin/docker-entrypoint.sh | od -An -c | grep -q '\\r'; then \
-         echo "FATAL: docker-entrypoint.sh still has CRLF after normalisation." >&2; \
-         exit 1; \
-       fi \
+    echo "FATAL: docker-entrypoint.sh still has CRLF after normalisation." >&2; \
+    exit 1; \
+    fi \
     && head -n 1 /usr/local/bin/docker-entrypoint.sh | grep -q '^#!.*[^[:space:]]$' \
-       || { echo "FATAL: docker-entrypoint.sh has no usable shebang." >&2; exit 1; }
+    || { echo "FATAL: docker-entrypoint.sh has no usable shebang." >&2; exit 1; }
 
 # `/tmp` is world-writable by necessity, but made sticky so one process cannot
 # read another's files through it.
@@ -171,8 +171,8 @@ ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 # is inert. If something ever does depend on the scheme, re-add `--proxy-headers`
 # but pin `--forwarded-allow-ips` to the proxy's own range, never "*".
 CMD ["uvicorn", "app.main:app", \
-     "--host", "0.0.0.0", \
-     "--port", "8000", \
-     "--no-proxy-headers", \
-     "--no-server-header", \
-     "--workers", "1"]
+    "--host", "0.0.0.0", \
+    "--port", "8000", \
+    "--no-proxy-headers", \
+    "--no-server-header", \
+    "--workers", "1"]

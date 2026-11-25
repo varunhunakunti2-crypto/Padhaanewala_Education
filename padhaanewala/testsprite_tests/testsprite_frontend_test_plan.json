@@ -1,0 +1,1652 @@
+[
+  {
+    "id": "TC001",
+    "title": "Log in with valid credentials and access the dashboard",
+    "description": "An authenticated student can log in and reach the protected dashboard successfully.",
+    "category": "Authentication and session management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the user lands on the dashboard"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify protected student content is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC002",
+    "title": "Start a mock test attempt from the catalog",
+    "description": "This verifies that a signed-in student can open the mock test catalog, review a paper's setup information, and start an attempt successfully.",
+    "category": "Mock tests",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /mock-tests"
+      },
+      {
+        "type": "action",
+        "description": "Select a mock test paper"
+      },
+      {
+        "type": "action",
+        "description": "Start the attempt"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the mock test attempt interface is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC003",
+    "title": "Find a college from the homepage search",
+    "description": "This test verifies that a user can search from the homepage and reach the matching college detail page.",
+    "category": "Home search and quick actions",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /"
+      },
+      {
+        "type": "action",
+        "description": "Type a college name into the homepage search field"
+      },
+      {
+        "type": "action",
+        "description": "Select a matching suggestion"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the college detail page is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify college overview information is visible"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC004",
+    "title": "Complete and submit a mock test attempt",
+    "description": "This verifies that a signed-in student can answer questions, move through the attempt, and submit to see results breakdown.",
+    "category": "Mock tests",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /mock-tests"
+      },
+      {
+        "type": "action",
+        "description": "Select a mock test paper"
+      },
+      {
+        "type": "action",
+        "description": "Start the attempt"
+      },
+      {
+        "type": "action",
+        "description": "Answer a question"
+      },
+      {
+        "type": "action",
+        "description": "Move to another question using the question palette"
+      },
+      {
+        "type": "action",
+        "description": "Flag a question for review"
+      },
+      {
+        "type": "action",
+        "description": "Submit the attempt"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the result breakdown is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the attempt outcome is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC005",
+    "title": "Block access to a protected route while signed out",
+    "description": "An unauthenticated user is redirected away from a protected page to the login screen.",
+    "category": "Authentication and session management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /dashboard"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the user is redirected to the login page"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify protected dashboard content is not displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC006",
+    "title": "Submit a contact enquiry successfully",
+    "description": "A prospective student can submit a complete contact enquiry and see a success confirmation.",
+    "category": "Enquiry and admission lead submission",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /contact"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the name field with a valid full name"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with a valid email address"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the mobile number field with a valid mobile number"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the message field with an enquiry message"
+      },
+      {
+        "type": "action",
+        "description": "Accept the consent checkbox"
+      },
+      {
+        "type": "action",
+        "description": "Submit the form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a success confirmation is visible"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC007",
+    "title": "Block unauthenticated access to the admin console",
+    "description": "An unauthenticated user is redirected away from the admin console before protected content loads.",
+    "category": "Admin console role-gated operations",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /admin"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the login page is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify admin content is not displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC008",
+    "title": "Filter and sort colleges before opening a detail page",
+    "description": "This test verifies that a user can narrow the college list, sort results, and open a college detail page from the explorer.",
+    "category": "College discovery and detail",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /colleges"
+      },
+      {
+        "type": "action",
+        "description": "Apply a college filter"
+      },
+      {
+        "type": "action",
+        "description": "Sort the results"
+      },
+      {
+        "type": "action",
+        "description": "Open a college card"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the college detail page is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify college overview information is visible"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC009",
+    "title": "Auto-submit a mock test when time runs out",
+    "description": "This verifies that a signed-in student sees automatic submission and results when the timer expires during an active mock test.",
+    "category": "Mock tests",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /mock-tests"
+      },
+      {
+        "type": "action",
+        "description": "Select a mock test paper"
+      },
+      {
+        "type": "action",
+        "description": "Start the attempt"
+      },
+      {
+        "type": "action",
+        "description": "Wait for the timer to expire"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the attempt is submitted automatically"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the results screen is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC010",
+    "title": "Save a college to the dashboard",
+    "description": "An authenticated student can open a college detail page, save it, and later see it in the dashboard saved list.",
+    "category": "Student dashboard, saved colleges, and notifications",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the form"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /colleges"
+      },
+      {
+        "type": "action",
+        "description": "Open a college detail page"
+      },
+      {
+        "type": "action",
+        "description": "Save the college"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /dashboard"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the saved colleges list is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC011",
+    "title": "Inspect college detail sections",
+    "description": "This test verifies that a user can open a college detail page and view the key informational sections.",
+    "category": "College discovery and detail",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /colleges"
+      },
+      {
+        "type": "action",
+        "description": "Open a college card"
+      },
+      {
+        "type": "action",
+        "description": "Switch between detail sections"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify rankings, fees, placements, cutoffs, seat matrix, and FAQ content are visible"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC012",
+    "title": "Log out and block revisiting protected content",
+    "description": "A signed-in user can log out and is then prevented from reopening a protected route without signing in again.",
+    "category": "Authentication and session management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Log out of the account"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /dashboard"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the user is redirected to the login page"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the protected route is no longer accessible"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC013",
+    "title": "Use a homepage quick action to open a discovery page",
+    "description": "This test verifies that a homepage quick action takes the user to the related exploration page.",
+    "category": "Home search and quick actions",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /"
+      },
+      {
+        "type": "action",
+        "description": "Click a quick action tile that opens a discovery page"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the matching exploration page is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify listing content is visible"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC014",
+    "title": "Protect the dashboard from unauthenticated access",
+    "description": "A visitor who is not logged in is redirected away from the dashboard to the login page.",
+    "category": "Student dashboard, saved colleges, and notifications",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /dashboard"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the user is redirected to the login page"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC015",
+    "title": "Submit a mock test early and view results",
+    "description": "This verifies that a signed-in student can end an attempt before time expires and still reach the results breakdown.",
+    "category": "Mock tests",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /mock-tests"
+      },
+      {
+        "type": "action",
+        "description": "Select a mock test paper"
+      },
+      {
+        "type": "action",
+        "description": "Start the attempt"
+      },
+      {
+        "type": "action",
+        "description": "Submit the attempt"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the result breakdown is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC016",
+    "title": "Submit an admission enquiry successfully",
+    "description": "A prospective student can submit a complete admission enquiry and see a success confirmation.",
+    "category": "Enquiry and admission lead submission",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /admission"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the name field with a valid full name"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with a valid email address"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the mobile number field with a valid mobile number"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the message field with an admission enquiry message"
+      },
+      {
+        "type": "action",
+        "description": "Accept the consent checkbox"
+      },
+      {
+        "type": "action",
+        "description": "Submit the form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a success confirmation is visible"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC017",
+    "title": "Redirect unauthenticated users away from mock tests",
+    "description": "This verifies that users without an active session are redirected to sign in when they try to access mock tests.",
+    "category": "Mock tests",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /mock-tests"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the login page is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC018",
+    "title": "Prevent a student from opening admin content",
+    "description": "A signed-in student user cannot access the admin console and is kept out of admin content.",
+    "category": "Admin console role-gated operations",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /admin"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify access denied or redirect behavior is shown"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify admin content is not displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC019",
+    "title": "Browse an exam and review its details",
+    "description": "This test verifies that a user can browse exams, open an exam detail page, and review dates, eligibility, syllabus, and FAQs.",
+    "category": "Course, exam, and scholarship browsing",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /exams"
+      },
+      {
+        "type": "action",
+        "description": "Filter the exam catalog"
+      },
+      {
+        "type": "action",
+        "description": "Open an exam detail page"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify exam dates and eligibility information are visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify syllabus and FAQ content are visible"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC020",
+    "title": "Submit a complete college suggestion",
+    "description": "An authenticated student can submit a new college suggestion and see confirmation that it was created.",
+    "category": "Add college submission",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the form"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /add-college"
+      },
+      {
+        "type": "action",
+        "description": "Fill in all required college suggestion fields with valid details"
+      },
+      {
+        "type": "action",
+        "description": "Submit the form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a submission confirmation is visible"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC021",
+    "title": "Compare multiple colleges side by side",
+    "description": "A user can add colleges to the comparison set and review fees, rankings, placements, and courses in a side-by-side view.",
+    "category": "Compare colleges",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /compare"
+      },
+      {
+        "type": "action",
+        "description": "Add a college to the comparison set"
+      },
+      {
+        "type": "action",
+        "description": "Add a second college to the comparison set"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a side-by-side comparison table is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify multiple colleges are included in the comparison view"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC022",
+    "title": "Read dashboard notifications",
+    "description": "An authenticated student can open the dashboard and view their notification list.",
+    "category": "Student dashboard, saved colleges, and notifications",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the form"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /dashboard"
+      },
+      {
+        "type": "action",
+        "description": "Open the notifications section"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify notifications are displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC023",
+    "title": "Preserve unanswered review state during a mock test",
+    "description": "This verifies that a signed-in student can flag a question and see that review state reflected while working through an attempt.",
+    "category": "Mock tests",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /mock-tests"
+      },
+      {
+        "type": "action",
+        "description": "Select a mock test paper"
+      },
+      {
+        "type": "action",
+        "description": "Start the attempt"
+      },
+      {
+        "type": "action",
+        "description": "Flag a question for review"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the flagged question state is visible"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC024",
+    "title": "Browse a course and review its details",
+    "description": "This test verifies that a user can browse courses, open a course detail page, and review eligibility and career information.",
+    "category": "Course, exam, and scholarship browsing",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /courses"
+      },
+      {
+        "type": "action",
+        "description": "Search or filter the course catalog"
+      },
+      {
+        "type": "action",
+        "description": "Open a course detail page"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify course eligibility information is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify career information is visible"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC025",
+    "title": "Show an error for incorrect login credentials",
+    "description": "A user sees an inline authentication error when the password does not match an existing account.",
+    "category": "Authentication and session management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with an incorrect password"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify an authentication error is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the user is not signed in"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC026",
+    "title": "Browse a scholarship and review matching information",
+    "description": "This test verifies that a user can filter scholarships and open a scholarship view that shows relevant eligibility information.",
+    "category": "Course, exam, and scholarship browsing",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /scholarships"
+      },
+      {
+        "type": "action",
+        "description": "Apply a scholarship filter"
+      },
+      {
+        "type": "action",
+        "description": "Open a scholarship detail page"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify scholarship eligibility information is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify matching scholarship details are visible"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC027",
+    "title": "Show validation for malformed login input",
+    "description": "A user sees inline validation when submitting a malformed email on the login form.",
+    "category": "Authentication and session management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with an invalid email format"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with a non-empty password"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify email validation feedback is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the user remains on the login page"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC028",
+    "title": "Show validation for an invalid contact email",
+    "description": "A user sees field-level validation when the contact form is submitted with an invalid email address.",
+    "category": "Enquiry and admission lead submission",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /contact"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the name field with a valid full name"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with an invalid email address"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the mobile number field with a valid mobile number"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the message field with an enquiry message"
+      },
+      {
+        "type": "action",
+        "description": "Accept the consent checkbox"
+      },
+      {
+        "type": "action",
+        "description": "Submit the form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify an email validation error is visible"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC029",
+    "title": "Request a password reset link",
+    "description": "A user can submit the password recovery form with a valid email and receive confirmation that the reset request was accepted.",
+    "category": "Password recovery and email verification",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /forgot-password"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the password reset request form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a reset request confirmation is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the recovery form is no longer prompting for action"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC030",
+    "title": "Show validation for an invalid contact mobile number",
+    "description": "A user sees field-level validation when the contact form is submitted with an invalid mobile number.",
+    "category": "Enquiry and admission lead submission",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /contact"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the name field with a valid full name"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with a valid email address"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the mobile number field with an invalid mobile number"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the message field with an enquiry message"
+      },
+      {
+        "type": "action",
+        "description": "Accept the consent checkbox"
+      },
+      {
+        "type": "action",
+        "description": "Submit the form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a mobile number validation error is visible"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC031",
+    "title": "Read a blog article from the listing",
+    "description": "This verifies that a user can open a blog article from the listing and view the article detail page.",
+    "category": "Reviews, blog, and comparison content",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /blog"
+      },
+      {
+        "type": "action",
+        "description": "Open a blog article"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the blog article detail page is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the article content is visible"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC032",
+    "title": "Browse reviews with a filter applied",
+    "description": "This verifies that a user can filter the reviews listing and see the list update accordingly.",
+    "category": "Reviews, blog, and comparison content",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /reviews"
+      },
+      {
+        "type": "action",
+        "description": "Apply a rating filter"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the filtered review list is displayed"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC033",
+    "title": "Find predicted colleges from the predictor form",
+    "description": "A prospective student can submit the college predictor form and see matching college suggestions returned.",
+    "category": "Predictor, planner, and static content pages",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /college-predictor"
+      },
+      {
+        "type": "action",
+        "description": "Fill a valid rank into the rank field"
+      },
+      {
+        "type": "action",
+        "description": "Select a category from the category field"
+      },
+      {
+        "type": "action",
+        "description": "Fill preferences into the preference field"
+      },
+      {
+        "type": "action",
+        "description": "Submit the predictor form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify predicted college suggestions are displayed"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC034",
+    "title": "Require consent before submitting an enquiry",
+    "description": "A user cannot submit the contact form without accepting consent and sees the required-consent error.",
+    "category": "Enquiry and admission lead submission",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /contact"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the name field with a valid full name"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with a valid email address"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the mobile number field with a valid mobile number"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the message field with an enquiry message"
+      },
+      {
+        "type": "action",
+        "description": "Leave the consent checkbox unchecked"
+      },
+      {
+        "type": "action",
+        "description": "Submit the form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a consent required validation error is visible"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC035",
+    "title": "Remove a college from comparison",
+    "description": "A user can remove one college from the comparison set and the comparison view updates accordingly.",
+    "category": "Compare colleges",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /compare"
+      },
+      {
+        "type": "action",
+        "description": "Add a college to the comparison set"
+      },
+      {
+        "type": "action",
+        "description": "Add a second college to the comparison set"
+      },
+      {
+        "type": "action",
+        "description": "Remove one college from the comparison set"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the comparison view updates after removal"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the remaining college comparison is still displayed"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC036",
+    "title": "Move through the blog listing pages",
+    "description": "This verifies that a user can paginate through the blog catalog and continue browsing more articles.",
+    "category": "Reviews, blog, and comparison content",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /blog"
+      },
+      {
+        "type": "action",
+        "description": "Move to the next blog page"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the blog listing updates to a different page"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify blog articles are still displayed"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC037",
+    "title": "Browse featured content on the homepage",
+    "description": "This test verifies that the homepage surfaces featured colleges, banners, and testimonials as the user scrolls.",
+    "category": "Home search and quick actions",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /"
+      },
+      {
+        "type": "action",
+        "description": "Scroll through the homepage content"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify featured content is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify testimonials or promotional content is visible"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC038",
+    "title": "Complete the college suggestion questionnaire",
+    "description": "A prospective student can finish the guided questionnaire and receive matching college suggestions.",
+    "category": "Predictor, planner, and static content pages",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /suggest-college"
+      },
+      {
+        "type": "action",
+        "description": "Fill the questionnaire with valid answers"
+      },
+      {
+        "type": "action",
+        "description": "Submit the questionnaire"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify matching college suggestions are displayed"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC039",
+    "title": "Clear the assistant conversation",
+    "description": "This verifies that a user can open the AI assistant page and reset the conversation transcript to an empty state.",
+    "category": "AI assistant",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /ask-ai"
+      },
+      {
+        "type": "action",
+        "description": "Type a question into the message field"
+      },
+      {
+        "type": "action",
+        "description": "Send the message"
+      },
+      {
+        "type": "action",
+        "description": "Clear the conversation"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the conversation transcript is reset"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the chat input is ready for a new message"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC040",
+    "title": "Show validation for missing college suggestion fields",
+    "description": "An authenticated student sees validation feedback when required college suggestion fields are left blank.",
+    "category": "Add college submission",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the form"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /add-college"
+      },
+      {
+        "type": "action",
+        "description": "Submit the form without filling the required fields"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify required field validation errors are visible"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC041",
+    "title": "Reject an empty assistant message",
+    "description": "This verifies that the AI assistant blocks sending an empty message and keeps the conversation unchanged.",
+    "category": "AI assistant",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /ask-ai"
+      },
+      {
+        "type": "action",
+        "description": "Send an empty message"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify an input validation message is shown"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify no assistant reply is added"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC042",
+    "title": "Show validation for invalid password recovery email",
+    "description": "A user sees validation feedback when submitting an invalid email address on the password recovery form.",
+    "category": "Password recovery and email verification",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /forgot-password"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with an invalid email format"
+      },
+      {
+        "type": "action",
+        "description": "Submit the password reset request form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify email validation feedback is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the reset request is not submitted"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC043",
+    "title": "See validation when predictor inputs are missing",
+    "description": "A prospective student sees validation feedback when submitting the predictor form without the required inputs.",
+    "category": "Predictor, planner, and static content pages",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /college-predictor"
+      },
+      {
+        "type": "action",
+        "description": "Submit the predictor form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify validation feedback is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify no predicted colleges are displayed"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC044",
+    "title": "Prevent adding too many colleges to comparison",
+    "description": "A user sees validation feedback when trying to add more colleges than the comparison tool supports.",
+    "category": "Compare colleges",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /compare"
+      },
+      {
+        "type": "action",
+        "description": "Add colleges to the comparison set until the supported limit is reached"
+      },
+      {
+        "type": "action",
+        "description": "Attempt to add one more college to the comparison set"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a validation message is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the comparison set remains within the supported limit"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC045",
+    "title": "Open informational pages from the planning and legal sections",
+    "description": "A user can open the planning, resources, about, and legal pages and see each page load its informational content.",
+    "category": "Predictor, planner, and static content pages",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /plan"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the planning page content is displayed"
+      },
+      {
+        "type": "action",
+        "description": "Click the link to the resources page"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the resources page content is displayed"
+      },
+      {
+        "type": "action",
+        "description": "Click the link to the about page"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the about page content is displayed"
+      },
+      {
+        "type": "action",
+        "description": "Click the link to a legal document"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the legal document content is displayed"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC046",
+    "title": "See an empty state when college filters return no results",
+    "description": "This test verifies that restrictive college filters produce a clear empty results state.",
+    "category": "College discovery and detail",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /colleges"
+      },
+      {
+        "type": "action",
+        "description": "Apply a restrictive college filter combination"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify an empty state message is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify no college results are shown"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC047",
+    "title": "Switch between admin sections after entering the console",
+    "description": "A user with admin access can move between admin sections and see the selected section render in the console.",
+    "category": "Admin console role-gated operations",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /admin"
+      },
+      {
+        "type": "action",
+        "description": "Click a different admin section"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the selected admin section content is displayed"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC048",
+    "title": "Show an error for an invalid reset token",
+    "description": "A user opening the reset password page with an invalid token sees an error state instead of the password form.",
+    "category": "Password recovery and email verification",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /reset-password"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify an invalid token error state is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the password reset form is not available"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC049",
+    "title": "Search and paginate admin users or leads",
+    "description": "A signed-in admin user can search and move through paginated admin tables and see the results update.",
+    "category": "Admin console role-gated operations",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /admin"
+      },
+      {
+        "type": "action",
+        "description": "Search within a users or leads table"
+      },
+      {
+        "type": "action",
+        "description": "Move to the next page of results"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify table results are updated"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC050",
+    "title": "See validation when an admin form is submitted with invalid values",
+    "description": "A signed-in admin user sees validation feedback when submitting a catalog form with invalid values.",
+    "category": "Admin console role-gated operations",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /admin"
+      },
+      {
+        "type": "action",
+        "description": "Open a catalog form"
+      },
+      {
+        "type": "action",
+        "description": "Submit the form with invalid values"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify validation feedback is displayed"
+      }
+    ],
+    "priority": "Low"
+  }
+]

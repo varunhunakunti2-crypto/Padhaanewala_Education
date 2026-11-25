@@ -38,6 +38,9 @@ def _production_baseline(monkeypatch, **overrides) -> None:
     first and the assertion would be testing the wrong thing.
     """
     monkeypatch.setattr(settings, "APP_ENV", "production")
+    # The suite disables both globally; production requires both explicitly.
+    monkeypatch.setattr(settings, "RATE_LIMIT_ENABLED", True)
+    monkeypatch.setattr(settings, "EMAIL_VERIFICATION_REQUIRED", True)
     monkeypatch.setattr(settings, "JWT_SECRET_KEY", "a-real-access-secret")
     monkeypatch.setattr(settings, "JWT_REFRESH_SECRET_KEY", "a-different-refresh-secret")
     monkeypatch.setattr(settings, "DB_PASSWORD", "a-real-db-password")

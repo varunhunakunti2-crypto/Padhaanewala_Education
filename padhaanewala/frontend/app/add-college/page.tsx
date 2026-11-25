@@ -9,11 +9,11 @@ import { breadcrumbLd, ldGraph, pageMetadata } from "@/lib/seo";
  * The college owner's "add your college" page.
  *
  * This is the entry point `ACCOUNT_NAV` points at — the one account-only link
- * in the dashboard sidebar. The heavy lifting is the same student submission
- * workflow behind `/suggest-college` (which now redirects here): a signed-in
- * owner files a `college-submission` row, a reviewer approves it, and only then
- * does the college reach the public catalogue. Students never write to
- * `colleges` directly; that endpoint is admin-gated on purpose.
+ * in the dashboard sidebar. A signed-in owner files a `college-submission`
+ * row, a reviewer approves it, and only then does the college reach the public
+ * catalogue. Students never write to `colleges` directly; that endpoint is
+ * admin-gated on purpose. `/suggest-college` is the separate student
+ * questionnaire that recommends colleges and does not submit one.
  *
  * Behind `RequireAuth` because a submission is tied to the account that made it
  * — it is the only way to edit or withdraw one, and the backend scopes the read

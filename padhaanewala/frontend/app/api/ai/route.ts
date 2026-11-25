@@ -39,13 +39,21 @@ const OPENAI_TIMEOUT_MS = 15_000;
  */
 const buckets = new Map<string, number[]>();
 
+/**
+ * The only address this route may use is the one the edge wrote itself.
+ *
+ * `X-Forwarded-For` and `X-Real-IP` are client-controlled: reading either let a
+ * caller mint a fresh rate-limit bucket per request (the Phase 1.5 bypass).
+ * `docker/Caddyfile` deletes those headers on the way in and sets `X-Client-IP`
+ * from the observed peer (`RemoteAddr`). A request that reaches Next directly —
+ * bypassing Caddy — has no trusted header, so it shares one conservative bucket
+ * rather than being allowed to choose its own.
+ */
+const TRUSTED_CLIENT_IP_HEADER = "x-client-ip";
+
 function clientIp(req: Request): string {
-  const forwarded = req.headers.get("x-forwarded-for");
-  if (forwarded) {
-    const first = forwarded.split(",")[0].trim();
-    if (first) return first;
-  }
-  return req.headers.get("x-real-ip") ?? "unknown";
+  const trusted = req.headers.get(TRUSTED_CLIENT_IP_HEADER)?.trim();
+  return trusted || "unknown";
 }
 
 function isThrottled(key: string): boolean {

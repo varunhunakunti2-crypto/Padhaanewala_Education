@@ -12,19 +12,24 @@ from app.schemas.engagement import (
     ConsentUpdate,
 )
 from app.utils.client_ip import client_ip
+from app.utils.pagination import list_limit, list_offset
 
 router = APIRouter(prefix="/api/v1/consent", tags=["consent"])
 
 
 @router.get("", response_model=list[ConsentResponse])
 def list_my_consents(
+    limit: int = list_limit(),
+    offset: int = list_offset(),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     return db.scalars(
         select(ConsentRecord)
         .where(ConsentRecord.user_id == user.id)
-        .order_by(ConsentRecord.created_at.desc())
+        .order_by(ConsentRecord.created_at.desc(), ConsentRecord.id.desc())
+        .limit(limit)
+        .offset(offset)
     ).all()
 
 

@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 
+import { TokenUrlCleanup } from "@/components/auth/TokenUrlCleanup";
 import { VerifyEmailPanel } from "@/components/auth/VerifyEmailPanel";
 import { pageMetadata } from "@/lib/seo";
 
@@ -25,5 +26,10 @@ export default async function VerifyEmailPage({
     redirect("/login");
   }
 
-  return <VerifyEmailPanel token={token} />;
+  return (
+    <>
+      <TokenUrlCleanup />
+      <VerifyEmailPanel token={token} />
+    </>
+  );
 }

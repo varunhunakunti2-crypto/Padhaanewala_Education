@@ -21,7 +21,7 @@ from fastapi.testclient import TestClient
 from app.config import settings
 from app.database import SessionLocal
 from app.main import app
-from app.models import AuditLog, OtpRecord, User
+from app.models import AuditLog, OtpRecord, RefreshToken, User
 from app.services import email_service, otp_service, sms_service
 
 client = TestClient(app)
@@ -127,6 +127,71 @@ def test_register_stores_no_plaintext_secret(outbox, user):
     email_record = _latest_record("email_verification", user["email"])
     assert email_record is not None
     assert token.split(".", 1)[1] not in email_record.code_hash
+
+
+def test_register_with_verification_required_issues_no_session(outbox, monkeypatch):
+    """A signup must not be a second, ungated route to a refresh token.
+
+    `/refresh` has no email check. Handing a refresh cookie to an unverified
+    account at registration would let the caller rotate straight past the gate
+    enforced at both login endpoints.
+    """
+    monkeypatch.setattr(settings, "EMAIL_VERIFICATION_REQUIRED", True)
+    email = _unique_email()
+    payload = {
+        "name": "Gate Student",
+        "email": email,
+        "mobile": _unique_mobile(),
+        "password": "SecurePass123!",
+        "age_band": "18_plus",
+    }
+
+    response = client.post("/api/v1/auth/register", json=payload)
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert "access_token" not in body and "refresh_token" not in body
+    assert body["data"]["is_email_verified"] is False
+    assert response.cookies.get(settings.REFRESH_COOKIE_NAME) is None
+
+    with SessionLocal() as db:
+        row = db.query(User).filter(User.email == email).one()
+        assert db.query(RefreshToken).filter(RefreshToken.user_id == row.id).count() == 0
+        assert (
+            db.query(AuditLog).filter(AuditLog.user_id == row.id, AuditLog.action == "login")
+            .count()
+            == 0
+        )
+
+    # Verification mails are still dispatched: the account must be usable once
+    # the owner confirms, and registration itself must not become a silent black
+    # hole when the flag is on.
+    assert any(mail["to"] == email for mail in outbox["emails"])
+
+
+def test_register_without_verification_requirement_keeps_token_contract(user):
+    """The flag-off path remains the existing 201+token contract."""
+    assert user["tokens"]["token_type"] == "bearer"
+    assert user["tokens"]["refresh_token"] is None
+    assert user["tokens"]["access_token"]
+
+
+def test_registration_can_be_closed(monkeypatch):
+    """The production guard's `REGISTRATION_ENABLED=false` escape hatch is real."""
+    monkeypatch.setattr(settings, "REGISTRATION_ENABLED", False)
+    email = _unique_email()
+    response = client.post(
+        "/api/v1/auth/register",
+        json={
+            "name": "Closed Student",
+            "email": email,
+            "mobile": _unique_mobile(),
+            "password": "SecurePass123!",
+            "age_band": "18_plus",
+        },
+    )
+    assert response.status_code == 403, response.text
+    with SessionLocal() as db:
+        assert db.query(User).filter(User.email == email).first() is None
 
 
 # ------------------------------------------------------------ verify-email
@@ -241,6 +306,13 @@ def test_otp_login_is_blocked_until_the_email_is_confirmed(user, outbox, monkeyp
     monkeypatch.setattr(settings, "EMAIL_VERIFICATION_REQUIRED", True)
     client.post("/api/v1/auth/login/otp/send", json={"mobile": user["mobile"]})
     otp = outbox["sms"][-1]["otp"]
+    # The fixture registered while the flag was off and therefore already owns
+    # a session; compare against that baseline instead of asserting zero.
+    with SessionLocal() as db:
+        row = db.query(User).filter(User.email == user["email"]).one()
+        baseline_sessions = (
+            db.query(RefreshToken).filter(RefreshToken.user_id == row.id).count()
+        )
 
     blocked = client.post(
         "/api/v1/auth/login/otp/verify", json={"mobile": user["mobile"], "otp": otp}
@@ -250,6 +322,9 @@ def test_otp_login_is_blocked_until_the_email_is_confirmed(user, outbox, monkeyp
     assert detail["code"] == "email_not_verified"
     assert detail["email"] == user["email"]
     assert "access_token" not in blocked.text
+    # The gate used to sit *after* `_issue_session`, so a 403 still left a live
+    # HttpOnly cookie and a ledger row that `/refresh` would happily rotate.
+    assert blocked.cookies.get(settings.REFRESH_COOKIE_NAME) is None
 
     # Same shape as the password path, so the frontend can treat them alike.
     password_path = client.post(
@@ -268,6 +343,10 @@ def test_otp_login_is_blocked_until_the_email_is_confirmed(user, outbox, monkeyp
             .count()
             == 0
         ), "an unverified-email 403 was recorded as a successful login"
+        assert (
+            db.query(RefreshToken).filter(RefreshToken.user_id == row.id).count()
+            == baseline_sessions
+        ), "an unverified-email 403 created a refresh token behind the gate"
 
     # Once confirmed, the same code path lets them straight in.
     _confirm_email(user, outbox)
@@ -662,6 +741,9 @@ def _production_baseline(monkeypatch, **overrides) -> None:
     assertion below would be testing the wrong thing.
     """
     monkeypatch.setattr(settings, "APP_ENV", "production")
+    # The suite disables both globally; production requires both explicitly.
+    monkeypatch.setattr(settings, "RATE_LIMIT_ENABLED", True)
+    monkeypatch.setattr(settings, "EMAIL_VERIFICATION_REQUIRED", True)
     monkeypatch.setattr(settings, "JWT_SECRET_KEY", "a-real-access-secret")
     monkeypatch.setattr(settings, "JWT_REFRESH_SECRET_KEY", "a-different-refresh-secret")
     monkeypatch.setattr(settings, "DB_PASSWORD", "a-real-db-password")
@@ -755,3 +837,22 @@ def test_production_requires_a_registered_dlt_template(monkeypatch):
     with pytest.raises(ValueError) as excinfo:
         settings._guard_production_defaults()
     assert "SMS_DLT_TEMPLATE_ID" in str(excinfo.value)
+
+
+def test_production_requires_rate_limiting_and_email_verification(monkeypatch):
+    """A deployed config must not silently opt out of either gate."""
+    _production_baseline(monkeypatch, RATE_LIMIT_ENABLED=False)
+    with pytest.raises(ValueError) as excinfo:
+        settings._guard_production_defaults()
+    assert "RATE_LIMIT_ENABLED" in str(excinfo.value)
+
+    _production_baseline(monkeypatch, EMAIL_VERIFICATION_REQUIRED=False)
+    with pytest.raises(ValueError) as excinfo:
+        settings._guard_production_defaults()
+    assert "EMAIL_VERIFICATION_REQUIRED" in str(excinfo.value)
+
+    # Closing signup is the documented way to run production without the gate.
+    _production_baseline(
+        monkeypatch, REGISTRATION_ENABLED=False, EMAIL_VERIFICATION_REQUIRED=False
+    )
+    settings._guard_production_defaults()  # must not raise

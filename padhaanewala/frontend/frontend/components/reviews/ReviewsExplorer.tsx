@@ -10,7 +10,7 @@ import { Input, Label, Select } from "@/components/ui/FormField";
 import { Modal } from "@/components/ui/Modal";
 import { cn, initialsOf, formatDate } from "@/lib/utils";
 import { COLLEGES, buildFacets } from "@/lib/data";
-import type { College, Review } from "@/lib/types";
+import type { College, CollegeReview, Review } from "@/lib/types";
 import { useApp } from "@/lib/context/AppContext";
 
 
@@ -20,14 +20,8 @@ const ROLE_ICON: Record<Review["role"], typeof Building2> = {
   Parent: UserRound,
 };
 
-interface ExtendedReview extends Review {
-  collegeId?: string;
-  collegeName?: string;
-  collegeSlug?: string;
-}
-
 /** Flattens college-embedded reviews into the shape the explorer renders. */
-function collectReviews(dataset: College[]): ExtendedReview[] {
+function collectReviews(dataset: College[]): CollegeReview[] {
   return dataset
     .flatMap((c) =>
       c.reviews.map((r) => ({
@@ -40,7 +34,7 @@ function collectReviews(dataset: College[]): ExtendedReview[] {
     .slice(0, 24);
 }
 
-export function ReviewCard({ review, showCollege = false }: { review: ExtendedReview; showCollege?: boolean }) {
+export function ReviewCard({ review, showCollege = false }: { review: CollegeReview; showCollege?: boolean }) {
   const [helpful, setHelpful] = useState(review.helpful);
   const [voted, setVoted] = useState(false);
   const Icon = ROLE_ICON[review.role] ?? UserRound;
@@ -250,31 +244,48 @@ export function ReviewForm({
   );
 }
 
-export function ReviewsExplorer({ colleges: dataset }: { colleges?: College[] }) {
+export function ReviewsExplorer({
+  colleges: dataset,
+  apiReviews,
+  useLocalReviews = true,
+}: {
+  colleges?: College[];
+  /** Approved reviews fetched from the backend's per-college endpoints. */
+  apiReviews?: CollegeReview[];
+  /** Local embedded reviews are only a fallback when the API is unavailable. */
+  useLocalReviews?: boolean;
+}) {
   const { reviews } = useApp();
   const [showForm, setShowForm] = useState(false);
   const [role, setRole] = useState("All");
   const [college, setCollege] = useState("All");
+  const [rating, setRating] = useState("All");
 
   const colleges = useMemo(
     () => (dataset?.length ? dataset : COLLEGES),
     [dataset],
   );
   const degrees = useMemo(() => buildFacets(colleges).degrees, [colleges]);
-  const collegeReviews = useMemo(() => collectReviews(colleges), [colleges]);
+  const localReviews = useMemo(
+    () => (useLocalReviews ? collectReviews(colleges) : []),
+    [useLocalReviews, colleges],
+  );
 
-  const all = useMemo<ExtendedReview[]>(() => {
-    const user: ExtendedReview[] = reviews.map((r) => ({
+  const all = useMemo<CollegeReview[]>(() => {
+    const user: CollegeReview[] = reviews.map((r) => ({
       ...r,
       collegeId: "",
       collegeName: undefined,
       collegeSlug: undefined,
     }));
-    return [...user, ...collegeReviews];
-  }, [reviews, collegeReviews]);
+    return [...user, ...(apiReviews ?? []), ...localReviews];
+  }, [reviews, apiReviews, localReviews]);
 
   const filtered = all.filter(
-    (r) => (role === "All" || r.role === role) && (college === "All" || r.collegeName === college),
+    (r) =>
+      (role === "All" || r.role === role) &&
+      (college === "All" || r.collegeName === college) &&
+      (rating === "All" || r.rating >= Number(rating)),
   );
 
   const avg = all.length ? all.reduce((s, r) => s + r.rating, 0) / all.length : 0;
@@ -288,7 +299,7 @@ export function ReviewsExplorer({ colleges: dataset }: { colleges?: College[] })
             <Rating value={Math.round(avg)} size={14} />
           </div>
           <div>
-            <p className="text-sm font-bold text-gray-900 dark:text-white">{all.length} verified reviews</p>
+            <p className="text-sm font-bold text-gray-900 dark:text-white">{all.length} reviews</p>
             <p className="text-xs text-slate-500 dark:text-gray-300">Across {colleges.length} colleges on Padhaanewala</p>
           </div>
         </div>
@@ -311,13 +322,36 @@ export function ReviewsExplorer({ colleges: dataset }: { colleges?: College[] })
             {r === "All" ? "All roles" : r}
           </button>
         ))}
-        <div className="ml-auto w-full sm:w-52">
-          <Select value={college} onChange={(e) => setCollege(e.target.value)}>
-            <option value="All">All colleges</option>
-            {colleges.map((c) => (
-              <option key={c.id} value={c.shortName}>{c.shortName}</option>
-            ))}
-          </Select>
+        <div className="ml-auto flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-end">
+          <div className="w-full sm:w-40">
+            <Label htmlFor="review-rating-filter" className="mb-1 text-xs text-slate-500">Rating</Label>
+            <Select
+              id="review-rating-filter"
+              aria-label="Rating"
+              value={rating}
+              onChange={(e) => setRating(e.target.value)}
+            >
+              <option value="All">All Ratings</option>
+              <option value="4">4★ &amp; above</option>
+              <option value="3">3★ &amp; above</option>
+              <option value="2">2★ &amp; above</option>
+              <option value="1">1★ &amp; above</option>
+            </Select>
+          </div>
+          <div className="w-full sm:w-52">
+            <Label htmlFor="review-college-filter" className="mb-1 text-xs text-slate-500">College</Label>
+            <Select
+              id="review-college-filter"
+              aria-label="College"
+              value={college}
+              onChange={(e) => setCollege(e.target.value)}
+            >
+              <option value="All">All colleges</option>
+              {colleges.map((c) => (
+                <option key={c.id} value={c.shortName}>{c.shortName}</option>
+              ))}
+            </Select>
+          </div>
         </div>
       </div>
 

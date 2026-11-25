@@ -60,6 +60,12 @@ const LEGACY_TOKEN_KEYS = ["cp_access_token", "cp_refresh_token"] as const;
 const ACCESS_TOKEN_CHANNEL = "cp-access-token";
 /** Cross-tab mutex name. Arbitrary, but must match across tabs of one origin. */
 const REFRESH_LOCK_NAME = "cp-refresh-token-rotation";
+/**
+ * Caller-side bound on auth bootstrap. The rotation itself keeps running (and
+ * keeps the single-flight slot) until it really settles; only the answer handed
+ * to the UI is capped.
+ */
+const REFRESH_DEADLINE_MS = 4_000;
 
 let accessToken: string | null = null;
 let accessChannel: BroadcastChannel | null = null;
@@ -416,6 +422,23 @@ export function broadcastSignOut(): void {
 }
 
 /**
+ * Tell other tabs this rotation did not yield a token.
+ *
+ * A sibling that sees the Web Lock held waits briefly for a broadcast before
+ * deciding what to do. Without this message, a stalled or failed rotation left
+ * it with no choice but to rotate again — presenting the same single-use cookie
+ * and revoking the whole session family. The message is deliberately distinct
+ * from `signed-out`: a slow request is not proof that the session is gone.
+ */
+function broadcastRefreshFailure(): void {
+  try {
+    ensureChannel()?.postMessage({ type: "refresh-failed" });
+  } catch {
+    /* channel closed; the local caller still gets the failure as its result */
+  }
+}
+
+/**
  * Serialise refresh across tabs, so rotation happens at most once at a time.
  *
  * ## Why this is not optional
@@ -435,56 +458,86 @@ export function broadcastSignOut(): void {
  * `ifAvailable: true` is deliberate. A queued lock could block indefinitely if
  * the holding tab is frozen or backgrounded, and a page that hangs at "checking
  * your session" is worse than one that refreshes and risks a rare re-login. If
- * another tab holds the lock we wait briefly for its broadcast instead, and only
- * then fall back to refreshing ourselves.
+ * another tab holds the lock we wait briefly for its broadcast instead. If it
+ * is *still* held after that wait, we keep listening until the caller deadline
+ * rather than rotating a second time; only a free lock justifies refreshing.
  */
-async function withRefreshLock<T>(fn: () => Promise<T>): Promise<T> {
+const LOCK_HELD_ELSEWHERE = Symbol("refresh-lock-held-elsewhere");
+
+async function withRefreshLock<T>(fn: () => Promise<T>, signal: AbortSignal): Promise<T | null> {
   const locks = typeof navigator !== "undefined" ? navigator.locks : undefined;
   if (!locks) return fn();
 
-  let result = await locks.request(REFRESH_LOCK_NAME, { ifAvailable: true }, async (lock) => {
-    // `lock` is null when another tab holds it.
-    return lock ? fn() : null;
-  });
+  // A separate sentinel: `null` is a legitimate refresh result, and treating it
+  // as "lock unavailable" would start a second rotation after a failed one.
+  const tryLock = () =>
+    locks.request(REFRESH_LOCK_NAME, { ifAvailable: true }, async (lock) =>
+      lock ? fn() : LOCK_HELD_ELSEWHERE,
+    ) as Promise<T | typeof LOCK_HELD_ELSEWHERE>;
 
-  if (result === null) {
+  let outcome = await tryLock();
+  if (outcome === LOCK_HELD_ELSEWHERE) {
     // Someone else is mid-rotation. Give their broadcast a moment to arrive.
-    const broadcast = await waitForCrossTabToken();
-    if (broadcast) return broadcast as T;
-    // No token arrived — the other tab may have failed, been closed, or the
-    // browser may not deliver broadcasts. Refreshing is the only way to learn
-    // whether the session is still live, so do it.
-    result = await fn();
+    const first = await waitForCrossTabToken(signal, 1500);
+    if (first.token) return first.token as T;
+    if (first.failed || signal.aborted) return null;
+
+    // The sibling may simply have finished in between. A free lock is safe to
+    // take; a lock that is still held is not — wait for its token or its
+    // failure broadcast up to the shared deadline instead of rotating.
+    outcome = await tryLock();
+    if (outcome === LOCK_HELD_ELSEWHERE) {
+      const second = await waitForCrossTabToken(signal);
+      if (second.token) return second.token as T;
+      if (second.failed || signal.aborted) return null;
+      // Neither a token nor a lock, and the deadline has not fired. Refreshing
+      // is the only way to learn whether the session is still live.
+      outcome = await fn();
+    }
   }
-  return result;
+  return outcome as T | null;
 }
 
-/** Resolve with a token another tab broadcasts, or `null` after `ms`. */
-function waitForCrossTabToken(ms = 1500): Promise<string | null> {
+type CrossTabSignal = { token: string | null; failed: boolean };
+
+/**
+ * Wait for a token from another tab, or for news that its rotation failed.
+ *
+ * With no `ms`, this waits until the shared refresh signal aborts. Either way
+ * a failure broadcast is as decisive as a token: it means a sibling is (or was
+ * just) rotating, and a second rotation here would be a reuse.
+ */
+function waitForCrossTabToken(signal: AbortSignal, ms?: number): Promise<CrossTabSignal> {
   return new Promise((resolve) => {
-    if (typeof BroadcastChannel === "undefined") {
-      resolve(null);
+    const failure = (): CrossTabSignal => ({ token: null, failed: true });
+    if (signal.aborted) {
+      resolve(failure());
       return;
     }
-    const channel = ensureChannel();
-    if (!channel) {
-      resolve(null);
-      return;
-    }
-    const finish = (value: string | null) => {
-      clearTimeout(timer);
-      channel.removeEventListener("message", handler);
+    // No channel means we cannot hear a sibling's token or failure, but it does
+    // not mean we may rotate: the Web Lock may still be held by that sibling.
+    // Keep waiting on the shared deadline instead of returning immediately.
+    const channel = typeof BroadcastChannel === "undefined" ? null : ensureChannel();
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const finish = (value: CrossTabSignal) => {
+      if (timer) clearTimeout(timer);
+      signal.removeEventListener("abort", onAbort);
+      channel?.removeEventListener("message", handler);
       resolve(value);
     };
+    const onAbort = () => finish(failure());
     const handler = (event: MessageEvent) => {
       const data = event.data as { type?: string; token?: string } | null;
       if (data?.type === "access-token" && typeof data.token === "string") {
         setAccessToken(data.token, false);
-        finish(data.token);
+        finish({ token: data.token, failed: false });
+      } else if (data?.type === "refresh-failed") {
+        finish(failure());
       }
     };
-    const timer = setTimeout(() => finish(null), ms);
-    channel.addEventListener("message", handler);
+    signal.addEventListener("abort", onAbort);
+    channel?.addEventListener("message", handler);
+    if (ms !== undefined) timer = setTimeout(() => finish({ token: null, failed: false }), ms);
   });
 }
 
@@ -514,64 +567,90 @@ function waitForCrossTabToken(ms = 1500): Promise<string | null> {
  */
 let refreshPromise: Promise<string | null> | null = null;
 
-export async function refreshAccessToken(options: { force?: boolean } = {}): Promise<string | null> {
+export function refreshAccessToken(options: { force?: boolean } = {}): Promise<string | null> {
   const { force = false } = options;
+  // Shared for the whole life of the underlying rotation, not just until the
+  // caller-side deadline. Clearing it on the deadline allowed a second caller to
+  // present the same single-use cookie while the first POST was still in flight.
   if (refreshPromise) return refreshPromise;
-  refreshPromise = (async () => {
-    try {
-      // The deadline covers the *whole* chain, not just the fetch: Web Locks and
-      // the cross-tab BroadcastChannel wait can stall independently of any
-      // AbortSignal we attach to fetch. Without it `authReady` can stay false
-      // forever and every guarded page hangs on its loading state.
-      return await withDeadline(
-        withRefreshLock(async (): Promise<string | null> => {
-        // Another tab may have rotated while we waited for the lock. Adopting
-        // its broadcast is free; rotating again would be a reuse. Skipped when
-        // `force` is set, because then the token we hold is the one that was
-        // just refused.
-        if (accessToken && !force) return accessToken;
 
-        const res = await fetch(`${API_BASE}/auth/refresh`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            // R3.7. SameSite=strict is the primary CSRF defence; stating the
-            // Origin satisfies the backend's secondary check and means a
-            // cross-site caller is refused before the token is even looked up.
-            Origin: window.location.origin,
-          },
-          body: JSON.stringify({}),
-          credentials: "same-origin",
-          // Without this a refresh on a slow connection hangs `authReady`
-          // forever and the whole app waits behind it.
-          signal: AbortSignal.timeout(10_000),
-        });
-        if (!res.ok) {
-          // 401/403 here means the session is genuinely gone — expired family,
-          // revoked, or signed out elsewhere. Other tabs are holding a token that
-          // no longer works, so tell them rather than leaving them to discover it
-          // one 401 at a time. This also drops *our* token; see
-          // `broadcastSignOut`.
-          if (res.status === 401 || res.status === 403) broadcastSignOut();
-          return null;
-        }
-        const data = (await res.json()) as AuthTokens;
-        if (!data.access_token) return null;
-        setAccessToken(data.access_token);
-        return data.access_token;
-        }),
-        4_000,
-        null,
-      );
+  // One controller for this rotation. Aborting it on the deadline cancels the
+  // fetch as well as ending any cross-tab wait; every caller joining this attempt
+  // shares the same signal.
+  const controller = new AbortController();
+  let settleDeadline: (value: string | null) => void = () => undefined;
+  const deadline = new Promise<string | null>((resolve) => {
+    settleDeadline = resolve;
+  });
+  const timer = setTimeout(() => {
+    settleDeadline(null);
+    controller.abort();
+    broadcastRefreshFailure();
+  }, REFRESH_DEADLINE_MS);
+
+  const rotate = async (): Promise<string | null> => {
+    // Another tab may have rotated while we waited for the lock. Adopting its
+    // broadcast is free; rotating again would be a reuse. Skipped when `force`
+    // is set, because then the token we hold is the one that was just refused.
+    if (accessToken && !force) return accessToken;
+    if (controller.signal.aborted) return null;
+    try {
+      const res = await fetch(`${API_BASE}/auth/refresh`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          // R3.7. SameSite=strict is the primary CSRF defence; stating the
+          // Origin satisfies the backend's secondary check and means a
+          // cross-site caller is refused before the token is even looked up.
+          Origin: window.location.origin,
+        },
+        body: JSON.stringify({}),
+        credentials: "same-origin",
+        // No separate 10s timeout: the shared deadline above already bounds
+        // this fetch, and a second controller could outlive the first.
+        signal: controller.signal,
+      });
+      if (controller.signal.aborted) return null;
+      if (!res.ok) {
+        // 401/403 here means the session is genuinely gone — expired family,
+        // revoked, or signed out elsewhere. Other tabs are holding a token that
+        // no longer works, so tell them rather than leaving them to discover it
+        // one 401 at a time. This also drops *our* token; see
+        // `broadcastSignOut`.
+        if (res.status === 401 || res.status === 403) broadcastSignOut();
+        broadcastRefreshFailure();
+        return null;
+      }
+      const data = (await res.json()) as AuthTokens;
+      if (!data.access_token || controller.signal.aborted) return null;
+      setAccessToken(data.access_token);
+      return data.access_token;
     } catch {
-      // Network error, aborted fetch or the deadline above. Treated as "no
-      // token", which surfaces as signed-out. A transient network blip signing
-      // someone out is a lesser evil than a page that never finishes hydrating.
+      // Network error or the deadline abort. Treated as "no token", which
+      // surfaces as signed-out. A transient blip signing someone out is a
+      // lesser evil than a page that never finishes hydrating.
+      broadcastRefreshFailure();
+      return null;
+    }
+  };
+
+  const chain = (async () => {
+    try {
+      // The deadline covers the *whole* chain, not just the fetch: Web Locks
+      // and the cross-tab BroadcastChannel wait can stall independently of any
+      // fetch signal. Without it `authReady` can stay false forever.
+      return await withRefreshLock(rotate, controller.signal);
+    } catch {
       return null;
     } finally {
+      clearTimeout(timer);
+      // Release the single-flight slot only when the rotation has really
+      // settled — never when the caller-side deadline won the race.
       refreshPromise = null;
     }
   })();
+
+  refreshPromise = Promise.race([chain, deadline]);
   return refreshPromise;
 }
 
@@ -1164,10 +1243,14 @@ export async function fetchSavedColleges(): Promise<SavedCollegesResult> {
 }
 
 export async function saveCollegeRemote(collegeId: number): Promise<void> {
-  await apiFetch<SavedCollegeRecord>("/saved-colleges", {
-    method: "POST",
-    body: JSON.stringify({ college_id: collegeId }),
-  });
+  // `POST /saved-colleges` takes `college_id` as a query parameter. Sending a
+  // JSON body used to produce a 422 here, so the optimistic save stayed on
+  // screen while the server list remained empty -- the dashboard then showed
+  // "1 Colleges saved" above an empty list.
+  await apiFetch<SavedCollegeRecord>(
+    `/saved-colleges?college_id=${encodeURIComponent(String(collegeId))}`,
+    { method: "POST" },
+  );
 }
 
 export async function unsaveCollegeRemote(collegeId: number): Promise<void> {

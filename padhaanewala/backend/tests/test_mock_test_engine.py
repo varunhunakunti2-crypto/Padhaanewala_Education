@@ -306,7 +306,14 @@ def test_start_resumes_live_attempt_instead_of_spending_the_limit():
         _cleanup(mock_test.id)
 
 
-def test_attempt_ownership_enforced():
+def test_attempt_ownership_is_not_an_existence_oracle():
+    """A foreign attempt and a missing attempt must look identical.
+
+    Returning 403 for someone else's id confirmed that the id existed. An
+    intruder could walk the sequence and build a list of live attempts without
+    owning any of them; ownership is now part of the lookup, so both cases are
+    the same 404 on every attempt route.
+    """
     mock_test = _create_mock_test()
     try:
         owner = _register_user()
@@ -318,18 +325,37 @@ def test_attempt_ownership_enforced():
         ).json()
         attempt_id = start["attempt"]["id"]
 
-        intruder_headers = _auth_headers(intruder["access_token"])
-        response = client.get(
-            f"/api/v1/mock-tests/{mock_test.slug}/attempts/{attempt_id}",
-            headers=intruder_headers,
-        )
-        assert response.status_code == 403
+        with SessionLocal() as db:
+            missing_id = (
+                db.scalar(
+                    select(TestAttempt.id).order_by(TestAttempt.id.desc()).limit(1)
+                )
+                + 1
+            )
 
-        submit = client.post(
-            f"/api/v1/mock-tests/{mock_test.slug}/attempts/{attempt_id}/submit",
-            headers=intruder_headers,
-        )
-        assert submit.status_code == 403
+        intruder_headers = _auth_headers(intruder["access_token"])
+
+        def get_attempt(attempt: int):
+            return client.get(
+                f"/api/v1/mock-tests/{mock_test.slug}/attempts/{attempt}",
+                headers=intruder_headers,
+            )
+
+        def submit_attempt(attempt: int):
+            return client.post(
+                f"/api/v1/mock-tests/{mock_test.slug}/attempts/{attempt}/submit",
+                headers=intruder_headers,
+            )
+
+        foreign_get = get_attempt(attempt_id)
+        missing_get = get_attempt(missing_id)
+        assert foreign_get.status_code == missing_get.status_code == 404
+        assert foreign_get.json() == missing_get.json()
+
+        foreign_submit = submit_attempt(attempt_id)
+        missing_submit = submit_attempt(missing_id)
+        assert foreign_submit.status_code == missing_submit.status_code == 404
+        assert foreign_submit.json() == missing_submit.json()
     finally:
         _cleanup(mock_test.id)
 

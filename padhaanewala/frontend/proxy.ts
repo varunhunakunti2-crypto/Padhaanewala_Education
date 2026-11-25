@@ -94,6 +94,15 @@ const extraImageHosts = [
  */
 const PROCTORING_PREFIX = "/mock-tests";
 
+/**
+ * Optimistic session check for page routes. The server can only see the
+ * HttpOnly refresh cookie the browser chooses to attach; this is a presence
+ * check, not validation, and never a role check. Roles are enforced at the
+ * data source, and the client-side admin guard handles the role-based UX.
+ */
+const REFRESH_COOKIE_NAME = "pdw_refresh";
+const PROTECTED_PREFIXES = ["/dashboard", "/admin", PROCTORING_PREFIX] as const;
+
 const DENIED_FEATURES = [
   "accelerometer",
   "ambient-light-sensor",
@@ -130,8 +139,12 @@ const csp = (isDev: boolean): string =>
     // list it in CSP_IMAGE_HOSTS rather than allowing https: wholesale.
     ["img-src 'self' data: blob:", ...extraImageHosts].join(" "),
     "font-src 'self' data: https://fonts.gstatic.com",
-    // Same-origin /api/v1/* plus configured backend API hosts (e.g. Render).
-    `connect-src 'self' ${[process.env.NEXT_PUBLIC_API_URL, process.env.BACKEND_URL, "https://*.onrender.com"].filter(Boolean).map((u) => (u?.startsWith("http") ? u : "")).filter(Boolean).join(" ")}`.trim(),
+    // Same-origin /api/v1/* plus the *public* API origin only. `BACKEND_URL` is
+    // a server-side rewrite target and must never be disclosed to the browser;
+    // a wildcard Render zone would also allow any other Render app to receive
+    // connections from a visitor. The real public host, if one is configured,
+    // is already named by NEXT_PUBLIC_API_URL.
+    `connect-src 'self' ${[process.env.NEXT_PUBLIC_API_URL].filter(Boolean).map((u) => (u?.startsWith("http") ? u : "")).filter(Boolean).join(" ")}`.trim(),
     "media-src 'self' blob:",
     // blob: is here for the object-URL worker path three.js and the WebGL
     // loader can take; nothing in the repo constructs a worker today, and the
@@ -155,12 +168,8 @@ const permissionsPolicy = (pathname: string): string => {
     : DENIED_FEATURES.map((f) => `${f}=()`).join(", ");
 };
 
-export function proxy(request: NextRequest) {
-  const isDev = process.env.NODE_ENV === "development";
-  const { pathname } = request.nextUrl;
-
-  const response = NextResponse.next();
-
+/** Apply the per-request security policy to both normal and redirect responses. */
+function withSecurityHeaders<T extends NextResponse>(response: T, pathname: string, isDev: boolean): T {
   response.headers.set("Content-Security-Policy", csp(isDev));
   response.headers.set("X-Content-Type-Options", "nosniff");
   // Redundant with `frame-ancestors` in the CSP, kept for the browsers that
@@ -186,6 +195,22 @@ export function proxy(request: NextRequest) {
   }
 
   return response;
+}
+
+export function proxy(request: NextRequest) {
+  const isDev = process.env.NODE_ENV === "development";
+  const { pathname } = request.nextUrl;
+
+  const isProtectedPage = PROTECTED_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  );
+  if (isProtectedPage && !request.cookies.has(REFRESH_COOKIE_NAME)) {
+    const loginUrl = new URL("/login", request.url);
+    loginUrl.searchParams.set("next", pathname);
+    return withSecurityHeaders(NextResponse.redirect(loginUrl), pathname, isDev);
+  }
+
+  return withSecurityHeaders(NextResponse.next(), pathname, isDev);
 }
 
 export const config = {

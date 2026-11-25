@@ -27,7 +27,7 @@ import secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -50,6 +50,47 @@ PASSWORD_RESET = "password_reset"
 GUARDIAN_CONSENT = "guardian_consent"
 
 OtpPurpose = str
+
+#: Guardian codes carry the consent id in the purpose string. There is no
+#: separate challenge column in `otp_records`, and adding a migration for one
+#: would be a much larger change than this binding needs. The suffix is opaque
+#: to callers: all send caps, supersession and pruning still key on the base
+#: purpose, so a caller cannot get a fresh rate-limit bucket by asking for a
+#: second consent row.
+_GUARDIAN_CONSENT_SEPARATOR = ":"
+
+
+def guardian_consent_purpose(consent_id: int) -> str:
+    """The row-specific purpose used for one guardian-consent challenge."""
+    return f"{GUARDIAN_CONSENT}{_GUARDIAN_CONSENT_SEPARATOR}{consent_id}"
+
+
+def base_purpose(purpose: OtpPurpose) -> OtpPurpose:
+    """Strip a challenge suffix for rate limiting, hashing setup and lookup."""
+    prefix = f"{GUARDIAN_CONSENT}{_GUARDIAN_CONSENT_SEPARATOR}"
+    return purpose.split(_GUARDIAN_CONSENT_SEPARATOR, 1)[0] if purpose.startswith(prefix) else purpose
+
+
+def is_sms_purpose(purpose: OtpPurpose) -> bool:
+    """Whether this purpose carries a numeric SMS code rather than a link token."""
+    return base_purpose(purpose) in SMS_PURPOSES
+
+
+def _family_condition(purpose: OtpPurpose):
+    """Match every challenge of a purpose family, including legacy plain rows.
+
+    Guardian codes are stored with a consent-id suffix, but the send cap,
+    supersession and prune rules are properties of the contact channel, not of
+    one challenge. A caller must not be able to obtain a fresh quota simply by
+    starting another consent request for the same number.
+    """
+    base = base_purpose(purpose)
+    if base != GUARDIAN_CONSENT:
+        return OtpRecord.purpose == base
+    return or_(
+        OtpRecord.purpose == GUARDIAN_CONSENT,
+        OtpRecord.purpose.startswith(f"{GUARDIAN_CONSENT}{_GUARDIAN_CONSENT_SEPARATOR}"),
+    )
 
 #: Purposes whose secret is a 6-digit number. The other two carry a random URL
 #: token inside a link instead.
@@ -134,7 +175,7 @@ def normalize_mobile(mobile: str) -> str:
 
 
 def normalize_identifier(purpose: OtpPurpose, value: str) -> str:
-    if purpose in SMS_PURPOSES:
+    if is_sms_purpose(purpose):
         return normalize_mobile(value)
     return normalize_email(value)
 
@@ -174,7 +215,7 @@ def sends_in_window(db: Session, purpose: OtpPurpose, identifier: str) -> int:
         select(func.count())
         .select_from(OtpRecord)
         .where(
-            OtpRecord.purpose == purpose,
+            _family_condition(purpose),
             OtpRecord.identifier == identifier,
             OtpRecord.created_at >= since,
         )
@@ -194,7 +235,7 @@ def _supersede_prior(db: Session, purpose: OtpPurpose, identifier: str) -> None:
     """
     for record in db.scalars(
         select(OtpRecord).where(
-            OtpRecord.purpose == purpose,
+            _family_condition(purpose),
             OtpRecord.identifier == identifier,
             OtpRecord.is_used.is_(False),
         )
@@ -212,7 +253,7 @@ def _prune(db: Session, purpose: OtpPurpose, identifier: str) -> None:
     """
     cutoff = _now() - timedelta(days=1)
     db.query(OtpRecord).filter(
-        OtpRecord.purpose == purpose,
+        _family_condition(purpose),
         OtpRecord.identifier == identifier,
         OtpRecord.is_used.is_(True),
         OtpRecord.expires_at < cutoff,
@@ -228,7 +269,7 @@ def _advisory_key(purpose: OtpPurpose, identifier: str) -> int:
     — silently restoring exactly the race this is here to close.
     """
     digest = hashlib.blake2b(
-        f"{purpose}:{identifier}".encode(), digest_size=8
+        f"{base_purpose(purpose)}:{identifier}".encode(), digest_size=8
     ).digest()
     key = int.from_bytes(digest, "big")
     # Postgres bigint is signed; fold the top half down so the value is
@@ -274,6 +315,7 @@ def issue(
     user_id: int | None = None,
     request_ip: str | None = None,
     ttl_seconds: int | None = None,
+    challenge_id: int | None = None,
 ) -> IssuedSecret:
     """Mint, hash and record a new secret for `identifier`.
 
@@ -281,10 +323,19 @@ def issue(
     count and the insert are made atomic by `_lock_identifier`, so concurrent
     requests for the same identifier cannot collectively exceed the cap; callers
     should catch `OtpRateLimited` and surface 429.
+
+    `challenge_id` is only meaningful for guardian consent. It is folded into
+    the stored purpose so a code issued for one consent row cannot verify a
+    different one; all quota and supersession rules still use the base purpose.
     """
     identifier = normalize_identifier(purpose, identifier)
+    stored_purpose = (
+        guardian_consent_purpose(challenge_id)
+        if purpose == GUARDIAN_CONSENT and challenge_id is not None
+        else purpose
+    )
 
-    if purpose in SMS_PURPOSES:
+    if is_sms_purpose(purpose):
         _lock_identifier(db, purpose, identifier)
         if is_rate_limited(db, purpose, identifier):
             raise OtpRateLimited(
@@ -292,10 +343,10 @@ def issue(
                 f"{settings.SMS_OTP_RATE_WINDOW_MINUTES} minutes."
             )
 
-    secret = generate_otp() if purpose in SMS_PURPOSES else generate_link_token()
+    secret = generate_otp() if is_sms_purpose(purpose) else generate_link_token()
     ttl = ttl_seconds or (
         settings.SMS_OTP_TTL_SECONDS
-        if purpose in SMS_PURPOSES
+        if is_sms_purpose(purpose)
         else settings.EMAIL_VERIFICATION_TOKEN_TTL_MINUTES * 60
     )
 
@@ -304,7 +355,7 @@ def issue(
 
     record = OtpRecord(
         user_id=user_id,
-        purpose=purpose,
+        purpose=stored_purpose,
         identifier=identifier,
         code_hash=_hash(secret),
         attempts=0,
@@ -323,7 +374,7 @@ def issue(
     # token itself is still required, and the id alone verifies nothing).
     db.flush()
 
-    if purpose not in SMS_PURPOSES:
+    if not is_sms_purpose(purpose):
         secret = f"{record.id}.{secret}"
 
     db.commit()
@@ -399,7 +450,12 @@ def _check_and_consume(db: Session, record: OtpRecord, secret: str) -> OtpRecord
 
 
 def verify(
-    db: Session, *, purpose: OtpPurpose, identifier: str, secret: str
+    db: Session,
+    *,
+    purpose: OtpPurpose,
+    identifier: str,
+    secret: str,
+    user_id: int | None = None,
 ) -> OtpRecord:
     """Check a submitted SMS OTP and consume it on success.
 
@@ -407,10 +463,25 @@ def verify(
     router can log precisely, but the router is responsible for collapsing
     them into one opaque message on any endpoint where the distinction would let
     an attacker probe for registered accounts.
+
+    `user_id`, when supplied, must match the account the code was issued to.
+    Without it a code delivered to a shared guardian handset could be used by a
+    different child to attest their own consent.
     """
     identifier = normalize_identifier(purpose, identifier)
     record = _latest_live(db, purpose, identifier)
     if record is None:
+        raise OtpNotFound("No active code. Request a new one.")
+    if user_id is not None and record.user_id != user_id:
+        # Same opaque failure as "no code at all", and no attempt is counted:
+        # a caller who somehow holds another account's code must not be able to
+        # burn it as a side effect of probing.
+        logger.info(
+            "OTP user mismatch for purpose=%s identifier=%s: "
+            "record belongs to a different account",
+            base_purpose(purpose),
+            identifier,
+        )
         raise OtpNotFound("No active code. Request a new one.")
     return _check_and_consume(db, record, secret)
 

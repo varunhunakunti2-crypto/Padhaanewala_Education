@@ -193,7 +193,6 @@ def delete_media(
         media_store.delete(stored_path)
 
 
-# 4.4 gap: audit coverage for this multipart upload path is not yet wired.
 @router.post(
     "/upload",
     response_model=MediaResponse,
@@ -201,6 +200,7 @@ def delete_media(
     dependencies=[Depends(require_role(*CONTENT_ROLES))],
 )
 async def upload_media(
+    request: Request,
     file: UploadFile = File(...),
     entity_type: str | None = Form(None),
     entity_id: int | None = Form(None),
@@ -208,6 +208,7 @@ async def upload_media(
     alt_text: str | None = Form(None),
     display_order: int = Form(0),
     db: Session = Depends(get_db),
+    user: User = Depends(require_role(*CONTENT_ROLES)),
 ):
     """Store an uploaded image, optionally attached to an entity.
 
@@ -290,6 +291,28 @@ async def upload_media(
     media.file_type = stored.content_type
     media.file_size = stored.size
     media.url = f"{settings.MEDIA_URL_PREFIX}/{media.id}"
+
+    # The multipart path was the one media mutation with no trail. Record the
+    # storage key (not just the public URL), what the bytes actually were, and
+    # the request id so a suspicious upload can be tied to a web log line.
+    # `audit.record` redacts the `authorization` header; a bearer token must
+    # never be copied into a two-year audit table.
+    audit.record(
+        db,
+        request=request,
+        action="upload_media",
+        entity_type="media",
+        entity_id=media.id,
+        actor=user,
+        new_value={
+            "storage_key": stored.relative_path,
+            "original_file_name": media.file_name,
+            "content_type": stored.content_type,
+            "size": stored.size,
+            "request_id": getattr(request.state, "request_id", None),
+            "authorization": request.headers.get("authorization"),
+        },
+    )
 
     try:
         db.commit()

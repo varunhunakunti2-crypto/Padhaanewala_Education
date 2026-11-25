@@ -422,10 +422,21 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
         fullscreenIssueRef.current = true;
         registerViolation("You exited full-screen mode");
       }
-      // Display-only. `submit` finalises an expired attempt server-side, so a
-      // countdown that drifted low still grades honestly -- this only makes the
-      // header catch up promptly, it does not enforce the deadline.
-      setTimeLeft((prev) => (prev > 0 ? prev - 1 : prev));
+      // The local countdown is the immediate trigger, not just a display: when
+      // it reaches zero the attempt is finished now, through the same guarded
+      // path as a manual submit. Waiting for the next server resync (or a second
+      // click) left an expired paper sitting on screen with no submission.
+      if (stageRef.current !== "running") return;
+      if (timeLeftRef.current <= 1) {
+        timeLeftRef.current = 0;
+        setTimeLeft(0);
+        // `finishTest` guards with `submittingRef`, so a resync or a click that
+        // lands in the same tick cannot submit twice.
+        finishTestRef.current();
+      } else {
+        timeLeftRef.current -= 1;
+        setTimeLeft(timeLeftRef.current);
+      }
     }, 1000);
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);

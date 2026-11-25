@@ -30,7 +30,7 @@ from app.media_store import (
     MediaRejected,
     sniff_image_type,
 )
-from app.models import College, Media, Role, User
+from app.models import AuditLog, College, Media, Role, User
 from app.routers.media import LIBRARY_ENTITY_ID, LIBRARY_ENTITY_TYPE
 
 client = TestClient(app)
@@ -342,6 +342,46 @@ class TestUploadRoundTrip:
         )
         assert response.status_code == 422, response.text
         assert "both entity_type and entity_id" in response.json()["detail"]
+
+    def test_upload_is_audited_without_copying_the_bearer_token(
+        self, content_admin, college_id
+    ):
+        """The multipart path must leave the same trail as the other media writes.
+
+        The trail needs the *storage key*, not just the public URL: when an asset
+        is misplaced or replaced, the operator has to know which object was
+        written. The request id ties it to the access log, and the authorization
+        header is redacted by `audit.record` rather than copied into a log table
+        with a much longer retention than the token's 30-minute lifetime.
+        """
+        response = _upload(
+            content_admin, college_id, PNG, filename="audited.png"
+        )
+        assert response.status_code == 201, response.text
+        body = response.json()
+        try:
+            with SessionLocal() as db:
+                entry = (
+                    db.query(AuditLog)
+                    .filter(
+                        AuditLog.action == "upload_media",
+                        AuditLog.entity_type == "media",
+                        AuditLog.entity_id == body["id"],
+                    )
+                    .one()
+                )
+                assert entry.user_id is not None
+                value = entry.new_value
+                assert value["original_file_name"] == "audited.png"
+                assert value["content_type"] == "image/png"
+                assert value["size"] == len(PNG)
+                assert value["storage_key"]
+                assert value["request_id"] == response.headers.get("x-request-id")
+                assert value["authorization"] == "[redacted]"
+                token = content_admin["Authorization"].split(" ", 1)[1]
+                assert token not in str(value)
+        finally:
+            _purge([body["id"]])
 
     def test_upload_registers_and_serves_the_same_bytes(self, content_admin, college_id):
         response = _upload(

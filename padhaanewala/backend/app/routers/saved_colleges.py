@@ -9,6 +9,7 @@ from app.database import get_db
 from app.dependencies import get_current_user, require_processing_consent
 from app.models import College, SavedCollege, StudentProfile, User
 from app.schemas.catalog import CollegeListItemResponse
+from app.utils.pagination import list_limit, list_offset
 
 router = APIRouter(prefix="/api/v1/saved-colleges", tags=["saved-colleges"])
 
@@ -55,6 +56,8 @@ def _to_college_item(college: College) -> CollegeListItemResponse:
 
 @router.get("", response_model=list[SavedCollegeResponse])
 def list_saved_colleges(
+    limit: int = list_limit(),
+    offset: int = list_offset(),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -68,7 +71,9 @@ def list_saved_colleges(
             .selectinload(College.university),
         )
         .where(SavedCollege.student_id == profile.id)
-        .order_by(SavedCollege.created_at.desc())
+        .order_by(SavedCollege.created_at.desc(), SavedCollege.id.desc())
+        .limit(limit)
+        .offset(offset)
     ).all()
     return [
         SavedCollegeResponse(

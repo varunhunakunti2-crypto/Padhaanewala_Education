@@ -13,9 +13,11 @@ import {
   ExternalLink,
   Users,
   IndianRupee,
+  ListChecks,
 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Input } from "@/components/ui/FormField";
+import { SafeExternalLink } from "@/components/ui/SafeExternalLink";
 import { cn, formatDate } from "@/lib/utils";
 import { searchExams, EXAM_STAGES, EXAMS } from "@/lib/data/exams";
 import type { Exam } from "@/lib/types";
@@ -174,10 +176,42 @@ export function ExamImportantDates({ exam }: { exam: Exam }) {
   );
 }
 
+export function ExamSyllabus({ exam }: { exam: Exam }) {
+  const topics = exam.syllabus ?? [];
+  return (
+    <div className="overflow-hidden rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900">
+      <div className="border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 px-5 py-3">
+        <h3 className="flex items-center gap-2 font-bold text-gray-900 dark:text-slate-100">
+          <ListChecks className="h-4 w-4 text-purple-600 dark:text-purple-400" /> Syllabus
+        </h3>
+      </div>
+      {topics.length ? (
+        <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+          {topics.map((topic, i) => (
+            <li key={`${topic}-${i}`} className="flex items-start gap-2 px-5 py-3 text-sm text-slate-600 dark:text-slate-300">
+              <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-purple-400" />
+              {topic}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="px-5 py-4 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
+          A detailed syllabus has not been published for this exam yet. Check the official notification for the latest topics.
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function ExamFaqs({ exam }: { exam: Exam }) {
   const [open, setOpen] = useState<number | null>(0);
   return (
     <div className="space-y-2">
+      {!exam.faqs.length && (
+        <div className="rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 px-5 py-4 text-sm text-slate-500 dark:text-slate-400">
+          FAQs have not been published for this exam yet.
+        </div>
+      )}
       {exam.faqs.map((f, i) => (
         <div key={i} className="overflow-hidden rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900">
           <button
@@ -228,16 +262,14 @@ export function ExamQuickFacts({ exam }: { exam: Exam }) {
 
 export function ExamOfficialLink({ exam, className }: { exam: Exam; className?: string }) {
   return (
-    <a
+    <SafeExternalLink
       href={exam.website}
-      target="_blank"
-      rel="noreferrer"
       className={cn(
         "inline-flex items-center gap-2 rounded-full bg-slate-900 dark:bg-purple-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-700 dark:hover:bg-purple-500",
         className,
       )}
     >
       Official website <ExternalLink className="h-4 w-4" />
-    </a>
+    </SafeExternalLink>
   );
 }

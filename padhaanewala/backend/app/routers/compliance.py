@@ -58,6 +58,7 @@ from app.services import compliance_service as compliance
 from app.services import otp_service, sms_service
 from app.utils import audit
 from app.utils.client_ip import client_ip
+from app.utils.pagination import list_limit, list_offset
 
 logger = logging.getLogger("padhaanewala.compliance")
 
@@ -217,10 +218,11 @@ def request_parental_consent(
     a form a child fills in asserting that their parent agrees is not that — so
     nothing about this request authorises anything until `verify` succeeds.
 
-    SMS is preferred over email when both are given: it proves control of a
-    handset, which is the only possession evidence available for someone who is
-    not the account holder, and it does not depend on the parent's address being
-    one the child controls.
+    SMS is mandatory. It proves control of a handset, which is the only
+    possession evidence available for someone who is not the account holder,
+    and it does not depend on the parent's address being one the child controls.
+    An email address may be recorded as context, but cannot carry the code until
+    an email delivery path exists for this flow.
     """
     if not user.is_minor:
         raise HTTPException(
@@ -228,8 +230,26 @@ def request_parental_consent(
             detail="Parental consent is only collected from users declared under 18",
         )
 
-    channel = "sms" if payload.guardian_mobile else "email"
-    target = payload.guardian_mobile or str(payload.guardian_email)
+    # A child who enters their own number as the "guardian's" would receive the
+    # code themselves, turning a verifiable consent into a self-declaration.
+    # Normalise both sides so formatting variants cannot slip past the check.
+    if payload.guardian_mobile and otp_service.normalize_mobile(
+        payload.guardian_mobile
+    ) == otp_service.normalize_mobile(user.mobile):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="The guardian contact must be different from the student's own",
+        )
+    if payload.guardian_email and otp_service.normalize_email(
+        str(payload.guardian_email)
+    ) == otp_service.normalize_email(user.email):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="The guardian contact must be different from the student's own",
+        )
+
+    channel = "sms"
+    target = otp_service.normalize_mobile(payload.guardian_mobile)
 
     # Supersede any earlier pending row for this user so the "latest" lookup the
     # gate uses cannot land on a dead request while a live one waits.
@@ -267,6 +287,7 @@ def request_parental_consent(
             identifier=target,
             user_id=user.id,
             request_ip=client_ip(request),
+            challenge_id=consent.id,
         )
     except otp_service.OtpRateLimited as exc:
         db.rollback()
@@ -313,8 +334,9 @@ def verify_parental_consent(
 
     `otp_service` owns every rule that makes this safe — the secret is hashed, a
     resend supersedes, sends are capped per identifier, attempts are capped per
-    code and it expires — so this function only has to decide what a correct code
-    *means*.
+    code and it expires. The lookup is also bound to *this* consent challenge
+    and *this* account, so a code sent for another child (possibly to a shared
+    guardian handset) cannot attest to this one.
     """
     consent = compliance.latest_consent(db, user.id)
     if consent is None or consent.status != "pending":
@@ -326,9 +348,10 @@ def verify_parental_consent(
     try:
         otp_service.verify(
             db,
-            purpose=otp_service.GUARDIAN_CONSENT,
+            purpose=otp_service.guardian_consent_purpose(consent.id),
             identifier=consent.verification_target,
             secret=payload.code,
+            user_id=user.id,
         )
     except otp_service.OtpError as exc:
         # The OTP layer distinguishes not-found / expired / locked / invalid on
@@ -438,6 +461,8 @@ def withdraw_parental_consent(
 
 @router.get("/requests", response_model=list[DataRequestResponse])
 def list_my_requests(
+    limit: int = list_limit(),
+    offset: int = list_offset(),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -445,6 +470,8 @@ def list_my_requests(
         select(DataRequest)
         .where(DataRequest.user_id == user.id)
         .order_by(DataRequest.id.desc())
+        .limit(limit)
+        .offset(offset)
     ).all()
     return [_request_response(row) for row in rows]
 
@@ -464,11 +491,40 @@ def create_data_request(
 
     `due_at` is fixed here, at intake. Deriving it on read would let the deadline
     move every time the row was touched, which is not a deadline.
+
+    An identical request that is still open is refused with 409. Two clicks on
+    "submit" used to open two files against the same 90-day SLA, and the staff
+    queue could not tell which one to answer. A *closed* request can be raised
+    again — asking twice after a rejection is a legitimate appeal, not a
+    duplicate.
     """
     if payload.request_type not in REQUEST_TYPES:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Unsupported request type. Allowed: {sorted(REQUEST_TYPES)}",
+        )
+
+    duplicate = db.scalar(
+        select(DataRequest.id).where(
+            DataRequest.user_id == user.id,
+            DataRequest.request_type == payload.request_type,
+            DataRequest.status.in_(OPEN_STATUSES),
+            (
+                DataRequest.subject.is_(None)
+                if payload.subject is None
+                else DataRequest.subject == payload.subject
+            ),
+            DataRequest.details == payload.details,
+        )
+    )
+    if duplicate is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"An identical {payload.request_type} request is already open "
+                f"(id={duplicate}). Wait for it to be resolved or raise a "
+                "different request."
+            ),
         )
 
     now = _now()
@@ -522,11 +578,54 @@ def get_data_request(
     return _request_response(row)
 
 
+@router.delete("/requests/{request_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_data_request(
+    request_id: int,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Withdraw one of the caller's own data-principal requests.
+
+    A data principal may change their mind. Without this route the only way to
+    remove an open request was for staff to close it, so a mistaken or repeated
+    submission stayed in the 90-day queue forever — and the automated suite's
+    own cleanup silently did nothing because it called a route that did not
+    exist. Scoping the lookup by `user_id` keeps one person from withdrawing
+    somebody else's request.
+    """
+    row = db.scalar(
+        select(DataRequest).where(
+            DataRequest.id == request_id,
+            DataRequest.user_id == user.id,
+        )
+    )
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Request not found",
+        )
+
+    audit.record(
+        db,
+        request=request,
+        action="delete_data_request",
+        entity_type="data_request",
+        entity_id=row.id,
+        actor=user,
+        old_value={"request_type": row.request_type, "status": row.status},
+    )
+    db.delete(row)
+    db.commit()
+
+
 # ---------------------------------------------------------------- staff queue
 
 
 @router.get("/admin/requests", response_model=list[DataRequestResponse])
 def list_all_requests(
+    limit: int = list_limit(),
+    offset: int = list_offset(),
     _: User = Depends(require_role(*ADMIN_ROLES)),
     db: Session = Depends(get_db),
 ):
@@ -538,7 +637,10 @@ def list_all_requests(
     recently.
     """
     rows = db.scalars(
-        select(DataRequest).order_by(DataRequest.due_at.asc(), DataRequest.id.asc())
+        select(DataRequest)
+        .order_by(DataRequest.due_at.asc(), DataRequest.id.asc())
+        .limit(limit)
+        .offset(offset)
     ).all()
     return [_request_response(row) for row in rows]
 

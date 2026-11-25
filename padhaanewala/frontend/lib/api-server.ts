@@ -278,6 +278,11 @@ export interface ApiCourse {
   is_active: boolean;
 }
 
+/** `GET /courses/{slug}` adds the long-form fields the list omits. */
+export interface ApiCourseDetail extends ApiCourse {
+  college_count: number;
+}
+
 export interface ApiCollegeListItem {
   id: number;
   college_id: string;
@@ -598,6 +603,9 @@ export const getUniversities = () =>
 
 export const getCourses = () =>
   serverGetAllPaged<ApiCourse>("/courses", REVALIDATE.catalogList);
+
+export const getCourseBySlug = (slug: string) =>
+  serverGet<ApiCourseDetail>(`/courses/${encodeURIComponent(slug)}`, REVALIDATE.catalogDetail);
 
 export const getColleges = (query = "") =>
   serverGetAllPaged<ApiCollegeListItem>(

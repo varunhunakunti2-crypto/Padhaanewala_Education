@@ -1,7 +1,7 @@
 "use client";
 
-import { Suspense, useEffect, useState, type FormEvent } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   Mail,
@@ -17,6 +17,7 @@ import {
   MailCheck,
 } from "lucide-react";
 import { useApp } from "@/lib/context/AppContext";
+import type { StudentProfile } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 import { Logo } from "@/components/layout/Header";
@@ -40,28 +41,45 @@ type OtpStage = "mobile" | "code";
 /** Matches the backend's `SMS_OTP_MAX_SENDS_PER_WINDOW` of 3 per 10 minutes. */
 const RESEND_COOLDOWN_SECONDS = 45;
 
+/**
+ * Read the query string from the browser rather than `useSearchParams`.
+ *
+ * A prerendered client component that calls `useSearchParams` is rendered on
+ * the client up to its nearest Suspense boundary, so the initial HTML for
+ * `/login` was only a skeleton. When chunk delivery is interrupted, the visitor
+ * sees a blank card and cannot sign in. Reading `window.location` after mount
+ * keeps the actual form in the server-rendered HTML while still honouring
+ * `?mode=` and `?next=` once JavaScript is available.
+ */
+const readLocationParams = () =>
+  typeof window === "undefined"
+    ? new URLSearchParams()
+    : new URLSearchParams(window.location.search);
+
+/**
+ * Local redirect target used by both the client flow and the native form POST.
+ *
+ * The rule mirrors `safeNext` in `app/api/auth/login/route.ts`: a single
+ * leading slash, no backslash (browsers normalise `/\host` to `//host`), and no
+ * line breaks. Keeping the two algorithms in step matters — the hidden input
+ * below carries this value into the no-JavaScript fallback, where the route
+ * handler validates it again.
+ */
+export function nextPathFromLocation() {
+  const next = readLocationParams().get("next");
+  if (!next || !/^\/(?!\/)/.test(next) || next.includes("\\") || /[\r\n]/.test(next)) {
+    return "/";
+  }
+  return next;
+}
+
 export default function LoginPage() {
-  return (
-    <Suspense
-      fallback={
-        <section className="mx-auto flex max-w-lg flex-col items-center px-4 pt-28 pb-16 sm:px-6 sm:pt-32 lg:px-8 lg:pt-36">
-          <div className="w-full rounded-2xl bg-white p-8 ring-1 ring-purple-100/60 card-shadow sm:p-10">
-            <div className="mx-auto h-8 w-48 animate-pulse rounded bg-purple-100 mb-4" />
-            <div className="mx-auto h-4 w-64 animate-pulse rounded bg-gray-100 mb-8" />
-            <div className="h-11 w-full animate-pulse rounded-xl bg-gray-100" />
-          </div>
-        </section>
-      }
-    >
-      <LoginFormContent />
-    </Suspense>
-  );
+  return <LoginFormContent />;
 }
 
 function LoginFormContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const modeParam = searchParams.get("mode");
+  const [modeParam, setModeParam] = useState<string | null>(null);
   const { setProfile, setAuthenticated, showToast } = useApp();
 
   const initialMode: Mode =
@@ -86,11 +104,19 @@ function LoginFormContent() {
     age?: string;
   }>({});
   const [serverError, setServerError] = useState("");
+  const [fallbackNext, setFallbackNext] = useState("/");
   const [loading, setLoading] = useState(false);
+  /**
+   * Synchronous submit guard. `loading` only exists after a React state update,
+   * so two clicks in the same tick both see `false` and start two sign-ins —
+   * two refresh rotations and two router pushes racing each other. The ref
+   * closes that window; `loading` keeps the button visibly disabled afterwards.
+   */
+  const submitGuardRef = useRef(false);
 
   // Re-sync the form when the URL's `?mode=` parameter changes.
-  // We compare the string primitive `modeParam` rather than the searchParams object instance
-  // to avoid infinite re-render resets on component state updates.
+  // Compare the string primitive rather than a URLSearchParams instance so a
+  // component re-render cannot reset the form repeatedly.
   const [lastModeParam, setLastModeParam] = useState<string | null>(modeParam);
   if (lastModeParam !== modeParam) {
     setLastModeParam(modeParam);
@@ -110,6 +136,19 @@ function LoginFormContent() {
   // UI can offer a resend instead of asking for the password again.
   const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
   const [resending, setResending] = useState(false);
+
+  useEffect(() => {
+    const params = readLocationParams();
+    setModeParam(params.get("mode"));
+    setFallbackNext(nextPathFromLocation());
+    // The no-JavaScript form posts to /api/auth/login and returns here with a
+    // generic code. Never echo submitted credentials back into the URL.
+    if (params.get("error") === "credentials") {
+      setServerError("Email or password is incorrect. Please try again.");
+    } else if (params.get("error") === "unverified") {
+      setServerError("Please confirm your email address before signing in.");
+    }
+  }, []);
 
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -132,26 +171,53 @@ function LoginFormContent() {
     return Object.keys(errs).length === 0;
   };
 
-  const completeSession = async () => {
-    try {
-      // The profile is optional, but `finishLogin` awaits this before it
-      // navigates. An unbounded request here kept the submit button on
-      // "Please wait…" and stranded the user on the sign-in page.
-      const profile = await withDeadline(authApi.myProfile(), 4_000, null);
-      if (profile) {
-        storeUser(profile);
-        setProfile(toStudentProfile(profile));
+  const completeSession = () => {
+    // Set an identity from the form values *synchronously*. A signed-in user
+    // must never land on the anonymous "Sign in" card, and waiting for the
+    // backend profile used to hold the browser on /login for up to 12 seconds
+    // behind a slow tunnel — long enough for an automated flow (or an impatient
+    // person) to press "Sign in" again. The session is already valid at this
+    // point; navigation must not depend on a best-effort profile fetch.
+    const emailLocalPart = email.split("@")[0]?.replace(/[._-]+/g, " ").trim() ?? "";
+    const displayName =
+      (mode === "signup" ? name.trim() : emailLocalPart) ||
+      (mobile.trim() ? "Student" : "Student");
+    const fallbackProfile: StudentProfile = {
+      name: displayName.replace(/\b\w/g, (c) => c.toUpperCase()),
+      email: email.trim() || (mobile.trim() ? `${mobile.trim()}@sms.local` : ""),
+      mobile: mobile.trim(),
+      city: "",
+      state: "",
+      education: [],
+      interests: [],
+      preferredState: "",
+      preferredCity: "",
+      budgetMin: null,
+      budgetMax: null,
+    };
+    setProfile(fallbackProfile, { silent: true });
+
+    // Hydrate the server profile in the background. AppContext outlives this
+    // route, so the update is safe after navigation; the bounded wait only
+    // protects the request itself, not the user's time.
+    void (async () => {
+      try {
+        const backendProfile = await withDeadline(authApi.myProfile(), 12_000, null);
+        if (backendProfile) {
+          storeUser(backendProfile);
+          setProfile(toStudentProfile(backendProfile), { silent: true });
+        }
+      } catch {
+        /* profile lookup is best-effort; the session itself is already valid */
       }
-    } catch {
-      /* profile optional — session works without persisted preferences */
-    }
+    })();
   };
 
-  const finishLogin = async (next: string | null, title: string, description: string) => {
+  const finishLogin = async (next: string, title: string, description: string) => {
     setAuthenticated(true);
-    await completeSession();
+    completeSession();
     showToast({ variant: "success", title, description });
-    router.push(next && next.startsWith("/") ? next : "/dashboard");
+    router.push(next);
   };
 
   const sendOtp = async () => {
@@ -184,7 +250,7 @@ function LoginFormContent() {
       const tokens = await otpApi.verifyLoginOtp(mobile, otpCode);
       storeAuth(tokens);
       await finishLogin(
-        searchParams.get("next"),
+        nextPathFromLocation(),
         "Welcome back!",
         "You are now logged in to Padhaanewala.",
       );
@@ -229,12 +295,20 @@ function LoginFormContent() {
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    if (submitGuardRef.current || loading) return;
     if (!validate()) return;
+    submitGuardRef.current = true;
     setServerError("");
 
     if (mode === "otp") {
-      if (otpStage === "mobile") await sendOtp();
-      else await verifyOtp();
+      try {
+        if (otpStage === "mobile") await sendOtp();
+        else await verifyOtp();
+      } finally {
+        // This branch precedes the password/signup try/finally below, so the
+        // guard has to be released here or OTP mode would lock after one send.
+        submitGuardRef.current = false;
+      }
       return;
     }
 
@@ -260,7 +334,7 @@ function LoginFormContent() {
       storeAuth(tokens);
       setUnverifiedEmail(null);
       await finishLogin(
-        searchParams.get("next"),
+        nextPathFromLocation(),
         mode === "login" ? "Welcome back!" : "Account created!",
         mode === "login"
           ? "You are now logged in to Padhaanewala."
@@ -274,13 +348,23 @@ function LoginFormContent() {
         setServerError("");
         return;
       }
-      const message =
+      const rawMessage =
         err instanceof ApiError
           ? err.message
           : "Something went wrong. Please try again.";
+      // The API's lower-case credentials message is deliberately generic; show
+      // the same user-facing copy whether it arrived through the client flow or
+      // through the no-JavaScript `?error=credentials` fallback above.
+      const isBadCredentials =
+        mode === "login" &&
+        /incorrect|invalid credentials|invalid email|invalid password/i.test(rawMessage);
+      const message = isBadCredentials
+        ? "Email or password is incorrect. Please try again."
+        : rawMessage;
       setServerError(message);
       showToast({ variant: "error", title: "Could not sign in", description: message });
     } finally {
+      submitGuardRef.current = false;
       setLoading(false);
     }
   };
@@ -297,7 +381,7 @@ function LoginFormContent() {
       setOtpStage("mobile");
       setOtpCode("");
     }
-    const params = new URLSearchParams(searchParams.toString());
+    const params = readLocationParams();
     if (next === "signup") {
       params.set("mode", "signup");
     } else if (next === "otp") {
@@ -376,7 +460,17 @@ function LoginFormContent() {
           </div>
         )}
 
-        <form onSubmit={onSubmit} className="mt-6 space-y-4">
+        <form
+          onSubmit={onSubmit}
+          method="post"
+          // Progressive enhancement: if hydration never finishes, the browser
+          // posts these named fields to the route handler instead of issuing a
+          // GET that would put a password in the URL. Hydration prevents this
+          // default and uses the client API flow as before.
+          action={mode === "login" ? "/api/auth/login" : undefined}
+          className="mt-6 space-y-4"
+        >
+          <input type="hidden" name="next" value={fallbackNext} />
           {mode === "signup" && (
             <div>
               <label htmlFor="name" className="mb-1 block text-sm font-medium text-gray-700">
@@ -386,9 +480,11 @@ function LoginFormContent() {
                 <User className="absolute left-3 top-2.5 h-4.5 w-4.5 text-gray-400" />
                 <input
                   id="name"
+                  name="name"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="Priya Sharma"
+                  required
                   className={cn(
                     "h-11 w-full rounded-xl border bg-white pl-10 pr-4 text-sm shadow-sm transition-colors focus:outline-none",
                     errors.name
@@ -410,10 +506,12 @@ function LoginFormContent() {
                 <Phone className="absolute left-3 top-2.5 h-4.5 w-4.5 text-gray-400" />
                 <input
                   id="mobile"
+                  name="mobile"
                   type="tel"
                   inputMode="numeric"
                   autoComplete="tel-national"
                   maxLength={10}
+                  required
                   value={mobile}
                   onChange={(e) => setMobile(e.target.value.replace(/\D/g, "").slice(0, 10))}
                   placeholder="10-digit mobile number"
@@ -438,10 +536,12 @@ function LoginFormContent() {
                 <MessageSquare className="absolute left-3 top-2.5 h-4.5 w-4.5 text-gray-400" />
                 <input
                   id="otp"
+                  name="otp"
                   type="text"
                   inputMode="numeric"
                   autoComplete="one-time-code"
                   maxLength={8}
+                  required
                   value={otpCode}
                   onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 8))}
                   placeholder="6-digit code"
@@ -490,8 +590,10 @@ function LoginFormContent() {
                 <Mail className="absolute left-3 top-2.5 h-4.5 w-4.5 text-gray-400" />
                 <input
                   id="email"
+                  name="email"
                   type="email"
                   autoComplete="email"
+                  required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="priya@example.com"
@@ -526,8 +628,10 @@ function LoginFormContent() {
                 <Lock className="absolute left-3 top-2.5 h-4.5 w-4.5 text-gray-400" />
                 <input
                   id="password"
+                  name="password"
                   type={showPw ? "text" : "password"}
                   autoComplete={mode === "signup" ? "new-password" : "current-password"}
+                  required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder={mode === "signup" ? "Min. 8 characters" : "Your password"}

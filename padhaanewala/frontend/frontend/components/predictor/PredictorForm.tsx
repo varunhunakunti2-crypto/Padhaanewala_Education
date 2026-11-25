@@ -83,14 +83,23 @@ const INITIAL: PredictorInput = {
 interface StepProps {
   input: PredictorInput;
   set: (patch: Partial<PredictorInput>) => void;
+  /** The first step is required; surface that state to assistive tech. */
+  invalid?: boolean;
 }
 
-function StepCourse({ input, set }: StepProps) {
+function StepCourse({ input, set, invalid }: StepProps) {
   const { facets } = usePredictorData();
   return (
     <div className="space-y-4">
       <Label htmlFor="pred-course">Which course are you targeting?</Label>
-      <Select id="pred-course" value={input.course} onChange={(e) => set({ course: e.target.value })}>
+      <Select
+        id="pred-course"
+        value={input.course}
+        onChange={(e) => set({ course: e.target.value })}
+        error={invalid}
+        aria-invalid={invalid ? true : undefined}
+        aria-describedby={invalid ? "predictor-course-error" : undefined}
+      >
         <option value="">Select a course</option>
             {facets.degrees.map((d) => (
           <option key={d} value={d}>{d}</option>
@@ -381,6 +390,7 @@ export function PredictorForm({ colleges: dataset }: { colleges?: College[] }) {
   const [input, setInput] = useState<PredictorInput>(INITIAL);
   const [done, setDone] = useState(false);
   const [asked, setAsked] = useState(false);
+  const [error, setError] = useState("");
 
   const colleges = useMemo(
     () => (dataset?.length ? dataset : COLLEGES),
@@ -393,13 +403,22 @@ export function PredictorForm({ colleges: dataset }: { colleges?: College[] }) {
   const stepName = STEPS[step];
   const StepComp = STEPS_COMPONENT[stepName];
 
-  const canNext = step === 0 ? input.course.trim().length > 0 : true;
-
+  const courseMissing = step === 0 && !input.course.trim();
   const results = input.course.trim() && asked ? predictColleges(input, colleges) : null;
 
-  const set = (patch: Partial<PredictorInput>) => setInput((prev) => ({ ...prev, ...patch }));
+  const set = (patch: Partial<PredictorInput>) => {
+    setError("");
+    setInput((prev) => ({ ...prev, ...patch }));
+  };
 
   const next = () => {
+    if (courseMissing) {
+      // The button used to be disabled on an empty course, so a submit attempt
+      // produced no feedback at all. Keep the wizard on step one but say why.
+      setError("Please select a course to continue.");
+      return;
+    }
+    setError("");
     if (step === STEPS.length - 1) {
       setAsked(true);
       setDone(true);
@@ -459,7 +478,17 @@ export function PredictorForm({ colleges: dataset }: { colleges?: College[] }) {
           </div>
         </div>
 
-        <StepComp input={input} set={set} />
+        <StepComp input={input} set={set} invalid={courseMissing} />
+
+        {(courseMissing || error) && (
+          <p
+            id="predictor-course-error"
+            role="alert"
+            className="mt-3 text-sm font-medium text-red-600 dark:text-red-400"
+          >
+            {error || "Please select a course to continue."}
+          </p>
+        )}
 
         <div className="mt-7 flex items-center justify-between gap-3">
           <Button
@@ -469,7 +498,7 @@ export function PredictorForm({ colleges: dataset }: { colleges?: College[] }) {
           >
             <ChevronLeft className="h-4 w-4" /> Back
           </Button>
-          <Button variant="accent" onClick={next} disabled={!canNext}>
+          <Button variant="accent" onClick={next}>
             {step === STEPS.length - 1 ? (
               <>
                 <Sparkles className="h-4 w-4" /> Predict colleges

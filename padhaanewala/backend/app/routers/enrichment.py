@@ -41,7 +41,7 @@ from app.schemas.enrichment import (
     SeatMatrixResponse,
     SeatMatrixUpdate,
 )
-from app.utils import audit
+from app.utils import audit, pagination
 
 router = APIRouter(prefix="/api/v1/colleges", tags=["college-enrichment"])
 catalog_router = APIRouter(prefix="/api/v1", tags=["catalog-data"])
@@ -149,6 +149,8 @@ def list_cutoffs(
     course_id: int | None = None,
     exam_name: str | None = None,
     year: int | None = None,
+    limit: int = pagination.list_limit(),
+    offset: int = pagination.list_offset(),
     db: Session = Depends(get_db),
 ):
     college = _get_active_college(db, college_ref)
@@ -159,12 +161,15 @@ def list_cutoffs(
         conditions.append(Cutoff.exam_name == exam_name)
     if year is not None:
         conditions.append(Cutoff.year == year)
-    cutoffs = db.scalars(
+    cutoffs = _paginated(
         select(Cutoff)
         .options(selectinload(Cutoff.college))
         .where(*conditions)
-        .order_by(Cutoff.year.desc(), Cutoff.exam_name, Cutoff.category)
-    ).all()
+        .order_by(Cutoff.year.desc(), Cutoff.exam_name, Cutoff.category),
+        db,
+        limit,
+        offset,
+    )
     course_names = _course_names_by_id(db, cutoffs)
     return [_to_cutoff(db, c, course_names) for c in cutoffs]
 
@@ -355,6 +360,8 @@ def _find_fee(db: Session, college: College, fee_id: int) -> Fee:
 def list_fees(
     college_ref: str,
     academic_year: str | None = None,
+    limit: int = pagination.list_limit(),
+    offset: int = pagination.list_offset(),
     db: Session = Depends(get_db),
 ):
     college = _get_active_college(db, college_ref)
@@ -364,9 +371,12 @@ def list_fees(
     conditions = [Fee.college_course_id.in_(ids)]
     if academic_year is not None:
         conditions.append(Fee.academic_year == academic_year)
-    fees = db.scalars(
-        select(Fee).where(*conditions).order_by(Fee.academic_year.desc())
-    ).all()
+    fees = _paginated(
+        select(Fee).where(*conditions).order_by(Fee.academic_year.desc()),
+        db,
+        limit,
+        offset,
+    )
     course_names = _course_names_by_college_course(db, fees)
     return [_to_fee(db, f, course_names) for f in fees]
 
@@ -544,6 +554,8 @@ def list_placements(
     college_ref: str,
     course_id: int | None = None,
     academic_year: str | None = None,
+    limit: int = pagination.list_limit(),
+    offset: int = pagination.list_offset(),
     db: Session = Depends(get_db),
 ):
     college = _get_active_college(db, college_ref)
@@ -552,12 +564,15 @@ def list_placements(
         conditions.append(PlacementRecord.course_id == course_id)
     if academic_year is not None:
         conditions.append(PlacementRecord.academic_year == academic_year)
-    placements = db.scalars(
+    placements = _paginated(
         select(PlacementRecord)
         .options(selectinload(PlacementRecord.college))
         .where(*conditions)
-        .order_by(PlacementRecord.academic_year.desc())
-    ).all()
+        .order_by(PlacementRecord.academic_year.desc()),
+        db,
+        limit,
+        offset,
+    )
     course_names = _course_names_by_id(db, placements)
     return [_to_placement(db, p, course_names) for p in placements]
 
@@ -741,9 +756,14 @@ def list_rankings(
     ),
     category: str | None = None,
     year: int | None = None,
+    limit: int = pagination.list_limit(),
+    offset: int = pagination.list_offset(),
     db: Session = Depends(get_db),
 ):
     college = _get_active_college(db, college_ref)
+    # One window over the merged set: over-fetch each source to offset+limit,
+    # then cut the combined, sorted rows once at the end.
+    fetch_limit = offset + limit
     rows = []
     if ranking_type in (None, "nirf"):
         conditions = [NIRFRanking.college_id == college.id]
@@ -751,11 +771,12 @@ def list_rankings(
             conditions.append(NIRFRanking.category == category)
         if year is not None:
             conditions.append(NIRFRanking.year == year)
-        nirf = db.scalars(
-            select(NIRFRanking)
-            .where(*conditions)
-            .order_by(NIRFRanking.year.desc())
-        ).all()
+        nirf = _paginated(
+            select(NIRFRanking).where(*conditions).order_by(NIRFRanking.year.desc()),
+            db,
+            fetch_limit,
+            None,
+        )
         rows += [_to_ranking("nirf", college, r) for r in nirf]
     if ranking_type in (None, "other"):
         conditions = [OtherRanking.college_id == college.id]
@@ -763,13 +784,14 @@ def list_rankings(
             conditions.append(OtherRanking.category == category)
         if year is not None:
             conditions.append(OtherRanking.year == year)
-        other = db.scalars(
-            select(OtherRanking)
-            .where(*conditions)
-            .order_by(OtherRanking.year.desc())
-        ).all()
+        other = _paginated(
+            select(OtherRanking).where(*conditions).order_by(OtherRanking.year.desc()),
+            db,
+            fetch_limit,
+            None,
+        )
         rows += [_to_ranking("other", college, r) for r in other]
-    return rows
+    return _ranking_window(rows, limit, offset)
 
 @router.get(
     "/{college_ref}/rankings/nirf",
@@ -779,6 +801,8 @@ def list_nirf_rankings(
     college_ref: str,
     category: str | None = None,
     year: int | None = None,
+    limit: int = pagination.list_limit(),
+    offset: int = pagination.list_offset(),
     db: Session = Depends(get_db),
 ):
     """NIRF rows only, newest year first.
@@ -797,12 +821,15 @@ def list_nirf_rankings(
         conditions.append(NIRFRanking.category == category)
     if year is not None:
         conditions.append(NIRFRanking.year == year)
-    rows = db.scalars(
+    rows = _paginated(
         select(NIRFRanking)
         .options(selectinload(NIRFRanking.college))
         .where(*conditions)
-        .order_by(NIRFRanking.year.desc())
-    ).all()
+        .order_by(NIRFRanking.year.desc()),
+        db,
+        limit,
+        offset,
+    )
     return [_to_nirf(db, r) for r in rows]
 
 @router.get(
@@ -814,6 +841,8 @@ def list_other_rankings(
     ranking_body: str | None = None,
     category: str | None = None,
     year: int | None = None,
+    limit: int = pagination.list_limit(),
+    offset: int = pagination.list_offset(),
     db: Session = Depends(get_db),
 ):
     """Independent-body rows only, newest year first. See `list_nirf_rankings`."""
@@ -825,12 +854,15 @@ def list_other_rankings(
         conditions.append(OtherRanking.category == category)
     if year is not None:
         conditions.append(OtherRanking.year == year)
-    rows = db.scalars(
+    rows = _paginated(
         select(OtherRanking)
         .options(selectinload(OtherRanking.college))
         .where(*conditions)
-        .order_by(OtherRanking.year.desc())
-    ).all()
+        .order_by(OtherRanking.year.desc()),
+        db,
+        limit,
+        offset,
+    )
     return [_to_other(db, r) for r in rows]
 
 @router.post(
@@ -1107,6 +1139,8 @@ def list_seat_matrix(
     course_id: int | None = None,
     exam: str | None = None,
     year: int | None = None,
+    limit: int = pagination.list_limit(),
+    offset: int = pagination.list_offset(),
     db: Session = Depends(get_db),
 ):
     college = _get_active_college(db, college_ref)
@@ -1117,12 +1151,15 @@ def list_seat_matrix(
         conditions.append(SeatMatrix.exam == exam)
     if year is not None:
         conditions.append(SeatMatrix.year == year)
-    seats = db.scalars(
+    seats = _paginated(
         select(SeatMatrix)
         .options(selectinload(SeatMatrix.college))
         .where(*conditions)
-        .order_by(SeatMatrix.year.desc())
-    ).all()
+        .order_by(SeatMatrix.year.desc()),
+        db,
+        limit,
+        offset,
+    )
     course_names = _course_names_by_id(db, seats)
     return [_to_seat_matrix(db, s, course_names) for s in seats]
 
@@ -1285,6 +1322,8 @@ def _find_admission(
 def list_admissions(
     college_ref: str,
     college_course_id: int | None = None,
+    limit: int = pagination.list_limit(),
+    offset: int = pagination.list_offset(),
     db: Session = Depends(get_db),
 ):
     college = _get_active_college(db, college_ref)
@@ -1294,9 +1333,12 @@ def list_admissions(
     conditions = [Admission.college_course_id.in_(ids)]
     if college_course_id is not None:
         conditions.append(Admission.college_course_id == college_course_id)
-    admissions = db.scalars(
-        select(Admission).where(*conditions).order_by(Admission.id)
-    ).all()
+    admissions = _paginated(
+        select(Admission).where(*conditions).order_by(Admission.id),
+        db,
+        limit,
+        offset,
+    )
     course_names = _course_names_by_college_course(db, admissions)
     return [_to_admission(db, a, course_names) for a in admissions]
 
@@ -1452,8 +1494,8 @@ def catalog_cutoffs(
     exam_name: str | None = None,
     year: int | None = None,
     category: str | None = None,
-    limit: int | None = Query(default=None, ge=1, le=500),
-    offset: int | None = Query(default=None, ge=0),
+    limit: int = pagination.list_limit(),
+    offset: int = pagination.list_offset(),
     db: Session = Depends(get_db),
 ):
     conditions = []
@@ -1484,8 +1526,8 @@ def catalog_fees(
     college_id: int | None = None,
     course_id: int | None = None,
     academic_year: str | None = None,
-    limit: int | None = Query(default=None, ge=1, le=500),
-    offset: int | None = Query(default=None, ge=0),
+    limit: int = pagination.list_limit(),
+    offset: int = pagination.list_offset(),
     db: Session = Depends(get_db),
 ):
     # Always scope to active colleges. The active-college join used to be applied
@@ -1518,8 +1560,8 @@ def catalog_placements(
     college_id: int | None = None,
     course_id: int | None = None,
     academic_year: str | None = None,
-    limit: int | None = Query(default=None, ge=1, le=500),
-    offset: int | None = Query(default=None, ge=0),
+    limit: int = pagination.list_limit(),
+    offset: int = pagination.list_offset(),
     db: Session = Depends(get_db),
 ):
     conditions = []
@@ -1549,8 +1591,8 @@ def catalog_rankings(
     ),
     category: str | None = None,
     year: int | None = None,
-    limit: int | None = Query(default=None, ge=1, le=500),
-    offset: int | None = Query(default=None, ge=0),
+    limit: int = pagination.list_limit(),
+    offset: int = pagination.list_offset(),
     db: Session = Depends(get_db),
 ):
     # Two tables are merged into one response, so a single limit/offset window has
@@ -1628,8 +1670,8 @@ def catalog_seat_matrix(
     course_id: int | None = None,
     exam: str | None = None,
     year: int | None = None,
-    limit: int | None = Query(default=None, ge=1, le=500),
-    offset: int | None = Query(default=None, ge=0),
+    limit: int = pagination.list_limit(),
+    offset: int = pagination.list_offset(),
     db: Session = Depends(get_db),
 ):
     conditions = []
@@ -1657,8 +1699,8 @@ def catalog_seat_matrix(
 def catalog_admissions(
     college_id: int | None = None,
     course_id: int | None = None,
-    limit: int | None = Query(default=None, ge=1, le=500),
-    offset: int | None = Query(default=None, ge=0),
+    limit: int = pagination.list_limit(),
+    offset: int = pagination.list_offset(),
     db: Session = Depends(get_db),
 ):
     # Same missing-WHERE defect as /fees: always scope to active colleges.

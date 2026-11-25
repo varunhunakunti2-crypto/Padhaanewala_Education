@@ -17,7 +17,7 @@ from app.schemas.content import (
     NotificationSendSummary,
     NotificationUpdate,
 )
-from app.utils import audit
+from app.utils import audit, pagination
 
 router = APIRouter(prefix="/api/v1/notifications", tags=["notifications"])
 
@@ -71,8 +71,8 @@ def list_notifications(
     type: str | None = Query(None, max_length=50),
     user_id: int | None = None,
     batch_id: str | None = Query(None, max_length=36),
-    limit: int = Query(50, ge=1, le=200),
-    offset: int = Query(0, ge=0),
+    limit: int = pagination.list_limit(),
+    offset: int = pagination.list_offset(),
     db: Session = Depends(get_db),
     _: User = Depends(require_role(*ADMIN_ROLES)),
 ):
@@ -112,8 +112,8 @@ def list_notifications(
 
 @router.get("/sends", response_model=list[NotificationSendSummary])
 def list_notification_sends(
-    limit: int = Query(50, ge=1, le=200),
-    offset: int = Query(0, ge=0),
+    limit: int = pagination.list_limit(),
+    offset: int = pagination.list_offset(),
     db: Session = Depends(get_db),
     _: User = Depends(require_role(*ADMIN_ROLES)),
 ):
@@ -192,14 +192,18 @@ def list_notification_sends(
         for n in legacy
     ]
 
-    sends.sort(key=lambda send: send.created_at, reverse=True)
+    # `created_at` alone is not a total order: a broadcast writes all rows in
+    # one transaction, so ties are the common case, not the exception. The id
+    # keeps pages from overlapping when a timestamp repeats.
+    sends.sort(key=lambda send: (send.created_at, send.notification_id), reverse=True)
     return sends[offset : offset + limit]
 
 
 @router.get("/my", response_model=list[NotificationResponse])
 def my_notifications(
     unread_only: bool = False,
-    limit: int = Query(50, ge=1, le=100),
+    limit: int = pagination.list_limit(),
+    offset: int = pagination.list_offset(),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -207,7 +211,9 @@ def my_notifications(
     if unread_only:
         query = query.where(Notification.is_read.is_(False))
     notifications = db.scalars(
-        query.order_by(Notification.created_at.desc()).limit(limit)
+        query.order_by(Notification.created_at.desc(), Notification.id.desc())
+        .limit(limit)
+        .offset(offset)
     ).all()
     return [_to_response(n) for n in notifications]
 
@@ -449,13 +455,28 @@ def update_notification(
 
 @router.put("/{notification_id}/read", response_model=NotificationResponse)
 def mark_read(
-    notification_id: int,
+    notification_id: str,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    """Mark one of the caller's own notifications as read.
+
+    The route takes a string and resolves it here rather than declaring an
+    `int` path parameter. A malformed identifier (a UUID, for example) used to
+    fail FastAPI's path validation with 422 *before* authentication ran: an
+    anonymous caller could not get the 401 the rest of the API returns, and a
+    signed-in caller could not get the same 404 as a missing numeric id. Both
+    are "no such notification for you" once parsing fails, and auth still runs
+    first because there is no validation error to short-circuit it.
+    """
+    try:
+        parsed_id = int(notification_id)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=404, detail="Notification not found")
+
     notification = db.scalar(
         select(Notification).where(
-            Notification.id == notification_id, Notification.user_id == user.id
+            Notification.id == parsed_id, Notification.user_id == user.id
         )
     )
     if notification is None:

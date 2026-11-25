@@ -37,7 +37,7 @@ from app.schemas.catalog import (
     CourseResponse,
     SearchResult,
 )
-from app.utils import audit
+from app.utils import audit, pagination
 
 router = APIRouter(prefix="/api/v1/colleges", tags=["colleges"])
 
@@ -157,7 +157,12 @@ def list_colleges(
     # The flag is gated by `can_view_inactive`, so it cannot be used to read draft
     # colleges anonymously.
     include_inactive: bool = False,
-    limit: int = Query(50, ge=1, le=100),
+    # Phase 1.6 capped this at 100 with a hand-rolled Query. The shared policy
+    # keeps the 50-row default the console and paged frontend walks rely on, but
+    # uses the same 500 hard cap as the other public lists: a legitimate
+    # `?limit=200` must not be rejected just because this route was written
+    # before the cap was centralised.
+    limit: int = pagination.list_limit(default=50),
     offset: int = Query(0, ge=0),
     user: User | None = Depends(get_optional_current_user),
     db: Session = Depends(get_db),

@@ -38,6 +38,7 @@ import type {
   ApiCollegeBundle,
   ApiCollegeDetail,
   ApiCourse,
+  ApiCourseDetail,
   ApiCutoff,
   ApiCollegeListItem,
   ApiExam,
@@ -457,7 +458,11 @@ export function mapCollege(bundle: ApiCollegeBundle): College {
   const sector = /govt|government|public/i.test(ownership) ? "Government" : "Private";
 
   return {
-    id: toNumberId(detail.college_id, String(detail.id)),
+    // The saved-colleges API keys rows by the numeric primary key (`id`), not by
+    // the display code (`college_id`, e.g. "COLLEGE000019"). Using the display
+    // code here made `Number(college.id)` NaN in the save action, so no write
+    // ever reached the server. Keep the primary key as the client-side identity.
+    id: toNumberId(detail.id, detail.slug),
     slug: detail.slug,
     name,
     shortName: shortName || name,
@@ -621,6 +626,7 @@ export function mapExam(api: ApiExam): Exam {
     conductingBody: text(api.conducting_authority, "—"),
     type: text(api.exam_type, "—"),
     overview: list(api.syllabus).join(" ") || text(api.eligibility, ""),
+    syllabus: list(api.syllabus),
     eligibility: text(api.eligibility, "Refer to the official notification for eligibility."),
     fees: "Refer to official notification",
     pattern: [],
@@ -769,7 +775,7 @@ export function mapMockTest(api: ApiMockTest): MockTest {
 
 const COURSE_LEVELS = ["UG", "PG", "Doctoral", "Diploma"] as const;
 
-export function mapCourseMeta(api: ApiCourse, index = 0) {
+export function mapCourseMeta(api: ApiCourse | ApiCourseDetail, index = 0) {
   const name = text(api.name, "Course");
   const duration = text(api.duration, "");
   const level =
@@ -782,6 +788,12 @@ export function mapCourseMeta(api: ApiCourse, index = 0) {
     degree: text(api.degree, name.split(" ")[0] ?? ""),
     level: level as (typeof COURSE_LEVELS)[number],
     description: text(api.overview, text(api.eligibility)),
+    // Kept separately from `description`: the course page needs the raw
+    // eligibility and career copy even when there is no curated detail row.
+    overview: text(api.overview) || undefined,
+    eligibility: text(api.eligibility) || undefined,
+    careerInformation: text(api.career_information) || undefined,
+    collegeCount: "college_count" in api ? num(api.college_count) : undefined,
     duration: duration || "—",
     avgFeeYear: 0,
     hot: index < 6,

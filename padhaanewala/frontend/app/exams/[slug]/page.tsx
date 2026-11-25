@@ -19,6 +19,7 @@ import {
   ExamImportantDates,
   ExamOfficialLink,
   ExamQuickFacts,
+  ExamSyllabus,
 } from "@/components/exams/ExamComponents";
 import { Badge } from "@/components/ui/Badge";
 import { ButtonLink } from "@/components/ui/Button";
@@ -156,6 +157,11 @@ export default async function ExamDetailPage({ params }: PageProps) {
             <span className="rounded-lg bg-slate-50 px-2.5 py-2"><b>{exam.duration}</b></span>
           </div>
         </div>
+      </div>
+
+      {/* Syllabus */}
+      <div className="mt-6">
+        <ExamSyllabus exam={exam} />
       </div>
 
       {/* Dates + sidebar */}

@@ -283,11 +283,12 @@ export function getSuggestions(
 
   for (const c of dataset) {
     if (contains(c.name) || contains(c.shortName) || contains(c.initials)) {
-      // Show the full catalogue name. `shortName` drops words like "of" (e.g.
-      // "RV College of Engineering" became "RV College Engineering"), so an
-      // autocomplete built from it did not contain the text the visitor typed
-      // and the chosen option could not be recognised as the college they meant.
-      const label = c.name;
+      // Prefer the short name when it is itself a match for what was typed:
+      // "IIT Bombay" is what visitors search for and recognise, while the full
+      // catalogue name ("Indian Institute of Technology Bombay") stays the
+      // fallback for queries such as "Indian Institute of Technology". The
+      // slug on the suggestion still points at the exact catalogue record.
+      const label = contains(c.shortName) ? c.shortName : c.name;
       if (!seen.has(label)) {
         seen.add(label);
         suggestions.push({

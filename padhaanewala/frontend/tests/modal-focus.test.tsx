@@ -49,6 +49,34 @@ function Harness() {
   );
 }
 
+/** Two focusable ends plus a field in between, to pin Tab cycling. */
+function TrapHarness() {
+  return (
+    // No title: the header's Close button would otherwise be the first
+    // focusable element and would shift the cycle being asserted here.
+    <Modal open onClose={() => {}}>
+      <button id="first" type="button">First</button>
+      <input id="middle" />
+      <button id="last" type="button">Last</button>
+    </Modal>
+  );
+}
+
+/** A trigger outside the dialog, used to assert focus restoration on close. */
+function ClosingHarness() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button id="trigger" type="button" onClick={() => setOpen(true)}>
+        Open dialog
+      </button>
+      <Modal open={open} onClose={() => setOpen(false)} title="Dialog">
+        <input id="field" />
+      </Modal>
+    </>
+  );
+}
+
 beforeEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   container = document.createElement("div");
@@ -104,5 +132,38 @@ describe("Modal focus", () => {
       window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     });
     expect(closed).toBe(1);
+  });
+
+  it("wraps Tab focus at both ends of the dialog", async () => {
+    await act(async () => root.render(<TrapHarness />));
+    const first = document.getElementById("first") as HTMLButtonElement;
+    const last = document.getElementById("last") as HTMLButtonElement;
+
+    last.focus();
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab" }));
+    });
+    expect(document.activeElement).toBe(first);
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", shiftKey: true }));
+    });
+    expect(document.activeElement).toBe(last);
+  });
+
+  it("restores focus to the previously focused element when it closes", async () => {
+    await act(async () => root.render(<ClosingHarness />));
+    const trigger = document.getElementById("trigger") as HTMLButtonElement;
+    trigger.focus();
+    expect(document.activeElement).toBe(trigger);
+
+    await act(async () => trigger.click());
+    const panel = container.querySelector("[tabindex='-1']") as HTMLElement;
+    expect(document.activeElement).toBe(panel);
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    });
+    expect(document.activeElement).toBe(trigger);
   });
 });

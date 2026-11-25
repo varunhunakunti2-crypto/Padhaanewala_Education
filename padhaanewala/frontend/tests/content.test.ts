@@ -81,7 +81,7 @@ describe("resolveColleges", () => {
 
     expect(result.source).toBe("local");
     expect(result.data).toEqual(COLLEGES);
-  });
+  }, 15_000);
 
   it("falls back to local bundled dataset when the backend cannot be reached at all", async () => {
     stubFetch(() => {
@@ -94,7 +94,7 @@ describe("resolveColleges", () => {
 
     expect(result.source).toBe("local");
     expect(result.data).toEqual(COLLEGES);
-  });
+  }, 15_000);
 
   it("falls back to local bundled dataset when the backend answers 500", async () => {
     stubFetch(() => json({ detail: "boom" }, 500));

@@ -32,6 +32,26 @@ import { BLOG_PAGE_SIZE, CATALOG_PAGE_SIZE } from "@/lib/api";
  * the frontend now fails a test instead of emptying a page.
  */
 const BACKEND_ROUTERS = resolve(import.meta.dirname, "../../backend/app/routers");
+const PAGINATION_HELPER = resolve(
+  import.meta.dirname,
+  "../../backend/app/utils/pagination.py",
+);
+
+/**
+ * Most list routes no longer spell `le=` out at the call site: they use
+ * `pagination.list_limit()`, whose hard cap lives in the shared helper. Read
+ * that constant too, or every helper-based route looks unbounded to this test.
+ */
+const HELPER_CAP = (() => {
+  try {
+    const match = /MAX_LIMIT\s*=\s*(\d+)/.exec(
+      readFileSync(PAGINATION_HELPER, "utf8"),
+    );
+    return match ? Number(match[1]) : undefined;
+  } catch {
+    return undefined;
+  }
+})();
 
 interface RouteBound {
   /** Full path as the frontend would call it, e.g. `/colleges`. */
@@ -88,15 +108,24 @@ function readBackendBounds(): RouteBound[] {
       const signatureEnd = chunk.indexOf("\n):");
       const signature = signatureEnd === -1 ? chunk : chunk.slice(0, signatureEnd);
 
-      // `limit: int = Query(50, ge=1, le=100)` — read the bound from inside the
-      // `Query(...)` call, not by scanning to the next `le=`, which would pick
-      // up a neighbouring parameter's bound.
-      const queryArgs = /limit:\s*[^,()]*=\s*Query\(([^)]*)\)/.exec(signature);
-      const le = queryArgs ? /le=(\d+)/.exec(queryArgs[1]) : null;
+      // `limit: int = Query(50, ge=1, le=100)` or the shared
+      // `limit: int = pagination.list_limit(default=50)` form. Read the bound
+      // from inside the default expression, not by scanning to the next `le=`,
+      // which would pick up a neighbouring parameter's bound.
+      const limitDefault = /limit:\s*[^,=]*=\s*(?:Query\(([^)]*)\)|(?:pagination\.)?list_limit\()/.exec(
+        signature,
+      );
+      let le: number | undefined;
+      if (limitDefault?.[1]) {
+        const bound = /le=(\d+)/.exec(limitDefault[1]);
+        le = bound ? Number(bound[1]) : undefined;
+      } else if (limitDefault) {
+        le = HELPER_CAP;
+      }
 
       out.push({
         path: `${prefix}${subPath}`.replace(/\/+$/, "") || prefix,
-        le: le ? Number(le[1]) : undefined,
+        le,
       });
     }
   }

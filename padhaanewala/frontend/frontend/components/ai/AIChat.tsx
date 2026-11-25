@@ -22,6 +22,7 @@ export function AIChat() {
     { id: "g0", role: "ai", text: GREETING },
   ]);
   const [input, setInput] = useState("");
+  const [inputError, setInputError] = useState("");
   const [loading, setLoading] = useState(false);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const counterRef = useRef(0);
@@ -60,7 +61,16 @@ export function AIChat() {
 
   const send = async (text: string) => {
     const q = text.trim();
-    if (!q || loading) return;
+    if (!q) {
+      // The Send button used to be disabled for an empty input, so an Enter
+      // press (or an assistive-tech submit) failed silently with no feedback.
+      // Keep the transcript untouched but make the refusal visible and
+      // announced instead of leaving the visitor guessing.
+      setInputError("Please type a question before sending.");
+      return;
+    }
+    if (loading) return;
+    setInputError("");
     const userMsg: ChatMessage = { id: nextId(), role: "user", text: q };
     setMessages((m) => [...m, userMsg]);
     setInput("");
@@ -198,18 +208,34 @@ export function AIChat() {
           e.preventDefault();
           send(input);
         }}
-        className="flex items-center gap-2 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-3"
+        className="border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-3"
       >
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Ask about courses, colleges, exams..."
-          className="h-11 flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none transition focus:border-purple-400 dark:focus:border-purple-500 focus:bg-white dark:focus:bg-slate-800 focus:ring-4 focus:ring-purple-100 dark:focus:ring-purple-900/30"
-          aria-label="Type your question"
-        />
-        <Button type="submit" size="icon" disabled={loading || !input.trim()} aria-label="Send">
-          <Send className="h-4 w-4" />
-        </Button>
+        <div className="flex items-center gap-2">
+          <input
+            value={input}
+            onChange={(e) => {
+              setInput(e.target.value);
+              if (inputError) setInputError("");
+            }}
+            placeholder="Ask about courses, colleges, exams..."
+            className="h-11 flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none transition focus:border-purple-400 dark:focus:border-purple-500 focus:bg-white dark:focus:bg-slate-800 focus:ring-4 focus:ring-purple-100 dark:focus:ring-purple-900/30"
+            aria-label="Type your question"
+            aria-invalid={inputError ? true : undefined}
+            aria-describedby={inputError ? "ai-input-error" : undefined}
+          />
+          <Button type="submit" size="icon" disabled={loading} aria-label="Send">
+            <Send className="h-4 w-4" />
+          </Button>
+        </div>
+        {inputError && (
+          <p
+            id="ai-input-error"
+            role="alert"
+            className="mt-2 text-xs font-medium text-red-600 dark:text-red-400"
+          >
+            {inputError}
+          </p>
+        )}
       </form>
 
       <p className="border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 pb-2 pt-1 text-center text-[11px] text-slate-400 dark:text-slate-500">

@@ -8,6 +8,11 @@ export interface CourseMeta {
   degree: string;
   level: "UG" | "PG" | "Doctoral" | "Diploma";
   description: string;
+  /** Long-form copy from `GET /courses/{slug}`; absent on curated rows. */
+  overview?: string;
+  eligibility?: string;
+  careerInformation?: string;
+  collegeCount?: number;
   duration: string;
   avgFeeYear: number;
   hot: boolean;

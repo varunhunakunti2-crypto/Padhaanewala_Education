@@ -1,12 +1,15 @@
 "use client";
 
-import React, { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Search, ArrowRight, CalendarDays, Clock, UserRound } from "lucide-react";
 import { cn, formatDate } from "@/lib/utils";
 import { Input } from "@/components/ui/FormField";
 import { Badge } from "@/components/ui/Badge";
 import { BlogPost, BlogCategory } from "@/lib/types";
+
+/** Cards per page. Small enough that a second page exists on a modest blog. */
+const PAGE_SIZE = 6;
 
 const CATEGORY_TONE: Record<BlogCategory, "purple" | "blue" | "green" | "yellow" | "orange" | "amber" | "gray" | "red"> = {
   Admissions: "purple",
@@ -86,20 +89,43 @@ export function BlogExplorer({
   posts: BlogPost[];
   categories: BlogCategory[];
 }) {
-  const [q, setQ] = React.useState("");
+  const [q, setQ] = useState("");
   const [cat, setCat] = useState<"All" | BlogCategory>("All");
+  const [page, setPage] = useState(1);
 
-  const filtered = posts.filter((p) => {
-    const matchCat = cat === "All" || p.category === cat;
-    const matchQ =
-      !q.trim() ||
-      [p.title, p.excerpt, p.author, ...p.tags].join(" ").toLowerCase().includes(q.toLowerCase().trim());
-    return matchCat && matchQ;
-  });
+  const filtered = useMemo(
+    () =>
+      posts.filter((p) => {
+        const matchCat = cat === "All" || p.category === cat;
+        const matchQ =
+          !q.trim() ||
+          [p.title, p.excerpt, p.author, ...p.tags]
+            .join(" ")
+            .toLowerCase()
+            .includes(q.toLowerCase().trim());
+        return matchCat && matchQ;
+      }),
+    [posts, q, cat],
+  );
 
-  const featured = posts.find((p) => p.featured);
-  const rest = filtered.filter((p) => p.id !== featured?.id);
-  const top = featured ? [featured, ...rest] : rest;
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  // A filter change resets below, but clamp here too so a prop change cannot
+  // leave the explorer pointing at a page that no longer exists.
+  const currentPage = Math.min(page, totalPages);
+  const visible = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const [lead, ...rest] = visible;
+
+  const updateQuery = (value: string) => {
+    setQ(value);
+    setPage(1);
+  };
+  const updateCategory = (value: "All" | BlogCategory) => {
+    setCat(value);
+    setPage(1);
+  };
+
+  const pageButton =
+    "grid h-9 min-w-9 place-items-center rounded-lg border px-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40";
 
   return (
     <div className="space-y-6">
@@ -108,34 +134,80 @@ export function BlogExplorer({
           <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <Input
             value={q}
-            onChange={(e) => setQ(e.target.value)}
+            onChange={(e) => updateQuery(e.target.value)}
             placeholder="Search articles..."
             className="pl-10"
             aria-label="Search articles"
           />
         </div>
         <div className="flex flex-wrap gap-2">
-          <CategoryChip active={cat === "All"} label="All" onClick={() => setCat("All")} />
+          <CategoryChip active={cat === "All"} label="All" onClick={() => updateCategory("All")} />
           {categories.map((c) => (
-            <CategoryChip key={c} active={cat === c} label={c} onClick={() => setCat(c)} />
+            <CategoryChip key={c} active={cat === c} label={c} onClick={() => updateCategory(c)} />
           ))}
         </div>
       </div>
 
-      {top.slice(0, 1).map((p) => (
-        <ArticleCard key={p.id} post={p} large />
-      ))}
+      {lead && <ArticleCard key={lead.id} post={lead} large />}
 
       <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
-        {top.slice(1).map((p) => (
+        {rest.map((p) => (
           <ArticleCard key={p.id} post={p} />
         ))}
       </div>
 
-      {!top.length && (
+      {!filtered.length && (
         <div className="rounded-3xl border border-dashed border-slate-200 py-16 text-center text-sm text-slate-500">
           No articles match your search.
         </div>
+      )}
+
+      {filtered.length > 0 && (
+        <nav aria-label="Blog pages" className="flex flex-wrap items-center justify-center gap-2 pt-2">
+          <button
+            type="button"
+            aria-label="Previous page"
+            disabled={currentPage <= 1}
+            onClick={() => setPage(Math.max(1, currentPage - 1))}
+            className={cn(
+              pageButton,
+              "border-slate-200 bg-white text-slate-600 hover:border-purple-300",
+            )}
+          >
+            Previous page
+          </button>
+          <div className="flex flex-wrap justify-center gap-1">
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((number) => (
+              <button
+                key={number}
+                type="button"
+                aria-label={`Page ${number}`}
+                aria-current={number === currentPage ? "page" : undefined}
+                onClick={() => setPage(number)}
+                className={cn(
+                  pageButton,
+                  number === currentPage
+                    ? "border-purple-600 bg-purple-600 text-white"
+                    : "border-slate-200 bg-white text-slate-600 hover:border-purple-300",
+                )}
+              >
+                {number}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            aria-label="Next page"
+            disabled={currentPage >= totalPages}
+            onClick={() => setPage(Math.min(totalPages, currentPage + 1))}
+            className={cn(
+              pageButton,
+              "border-slate-200 bg-white text-slate-600 hover:border-purple-300",
+            )}
+          >
+            Next page
+          </button>
+        </nav>
       )}
     </div>
   );

@@ -39,8 +39,9 @@ import {
 
 /**
  * The signed-in side of the college submission workflow, presented as the
- * college owner's "add your college" tool (`/add-college`; `/suggest-college`
- * redirects there).
+ * college owner's "add your college" tool at `/add-college`. The separate
+ * `/suggest-college` route is the student questionnaire that recommends
+ * colleges; it does not create a submission.
  *
  * Two jobs on one screen:
  *

@@ -167,7 +167,11 @@ export default function DashboardExplorer() {
               <Bookmark className="h-5 w-5" />
             </span>
             <p className={`font-display mt-4 text-3xl font-extrabold tabular-nums ${T.heading}`}>
-              {savedSync === "loading" ? "—" : savedColleges.length}
+              {savedSync === "synced"
+                ? savedCollegeRecords.length
+                : savedSync === "loading"
+                  ? "—"
+                  : savedColleges.length}
             </p>
             <p className={`mt-0.5 text-[15px] font-semibold ${T.heading}`}>Colleges saved</p>
             <span className={`mt-3 inline-flex items-center gap-1.5 text-[14px] font-bold ${T.accent}`}>

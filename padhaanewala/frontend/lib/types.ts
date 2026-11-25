@@ -41,6 +41,13 @@ export interface Review {
   verified: boolean;
 }
 
+/** A review shown on the public listing, tagged with its college. */
+export interface CollegeReview extends Review {
+  collegeId?: string;
+  collegeName?: string;
+  collegeSlug?: string;
+}
+
 export interface Faq {
   q: string;
   a: string;
@@ -188,6 +195,8 @@ export interface Exam {
   conductingBody: string;
   type: string;
   overview: string;
+  /** Syllabus topics supplied by the backend; absent on curated records. */
+  syllabus?: string[];
   eligibility: string;
   fees: string;
   pattern: string[];

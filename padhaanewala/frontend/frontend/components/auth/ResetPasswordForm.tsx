@@ -20,7 +20,7 @@ const PASSWORD_RULES: readonly { test: RegExp; label: string }[] = [
   { test: /\d/, label: "A number" },
 ];
 
-export function ResetPasswordForm({ token }: { token: string }) {
+export function ResetPasswordForm({ token }: { token: string | null }) {
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [showPw, setShowPw] = useState(false);
@@ -34,6 +34,34 @@ export function ResetPasswordForm({ token }: { token: string }) {
   );
   const allMet = met.every(Boolean);
   const mismatch = confirm.length > 0 && confirm !== password;
+
+  // Render no password form at all when there is no credential to redeem. The
+  // URL stays on /reset-password so the visitor can read why the link failed.
+  if (!token) {
+    return (
+      <section className="mx-auto flex max-w-lg flex-col items-center px-4 pt-28 pb-16 sm:px-6 sm:pt-32 lg:px-8 lg:pt-36">
+        <div className="mb-8">
+          <Logo />
+        </div>
+        <div className="w-full rounded-2xl bg-white p-8 ring-1 ring-purple-100/60 card-shadow sm:p-10">
+          <div role="alert" className="flex items-start gap-3">
+            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-500" aria-hidden="true" />
+            <div>
+              <h1 className="font-display text-2xl font-extrabold tracking-tight text-purple-950">
+                Reset link is invalid
+              </h1>
+              <p className="mt-2 text-sm text-gray-500">
+                This password reset link is missing or invalid. Request a new one to continue.
+              </p>
+            </div>
+          </div>
+          <ButtonLink variant="accent" size="lg" className="mt-6 w-full" href="/forgot-password">
+            Request a new link
+          </ButtonLink>
+        </div>
+      </section>
+    );
+  }
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();

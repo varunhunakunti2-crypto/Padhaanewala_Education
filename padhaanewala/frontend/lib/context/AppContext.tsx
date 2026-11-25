@@ -22,6 +22,8 @@ import {
   purgeLegacyTokenStorage,
   refreshAccessToken,
   subscribeToAccessToken,
+  toStudentProfile,
+  withDeadline,
 } from "@/lib/api";
 import {
   fetchSavedColleges,
@@ -108,7 +110,7 @@ interface AppContextValue {
 
   setPrefs: (p: Partial<NotificationPrefs>) => void;
 
-  setProfile: (p: StudentProfile) => void;
+  setProfile: (p: StudentProfile, options?: { silent?: boolean }) => void;
   addEnquiry: (e: Omit<AdmissionEnquiry, "id" | "date" | "status">) => void;
   addTestResult: (r: MockTestResult) => void;
   markNotificationRead: (id: string) => void;
@@ -246,10 +248,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // RequireAuth redirect a signed-in user to /login for the duration of one
     // same-origin request.
     void (async () => {
-      const token = await refreshAccessToken();
+      // The guard pages must never wait indefinitely on a slow or failed
+      // bootstrap request. Both halves are capped so `authReady` always settles
+      // and RequireAuth/RequireAdmin can make a decision instead of showing a
+      // permanent loading state.
+      const token = await withDeadline(refreshAccessToken(), 6_000, null);
       if (token) {
         setIsAuthenticated(true);
-        await refreshRoles();
+        // Restore the signed-in identity independently of the guard: a slow
+        // profile request must not delay `authReady`, but the dashboard needs
+        // the server profile (not a cached guest card) once it resolves.
+        void (async () => {
+          const backendProfile = await withDeadline(authApi.myProfile(), 12_000, null);
+          if (backendProfile) setProfileState(toStudentProfile(backendProfile));
+        })();
+        await withDeadline(refreshRoles(), 5_000, undefined);
       } else {
         setIsAuthenticated(false);
         setRoles([]);
@@ -268,6 +281,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (token) {
         setIsAuthenticated(true);
         void refreshRoles();
+        void withDeadline(authApi.myProfile(), 12_000, null).then((backendProfile) => {
+          if (backendProfile) setProfileState(toStudentProfile(backendProfile));
+        });
       } else if (hydrated.current) {
         setIsAuthenticated(false);
         setRoles([]);
@@ -450,7 +466,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     if (result.state === "ok") {
       setSavedCollegeRecords(result.records);
-      setSavedColleges(result.records.map((r) => String(r.college_id)));
+      // `college.id` is the numeric primary key returned by the API, which is
+      // the same identity the catalogue mapper now uses for `College.id`.
+      setSavedColleges(result.records.map((r) => String(r.college.id)));
       setSavedSync("synced");
       setSavedSyncMessage(null);
       return;
@@ -614,10 +632,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [showToast],
   );
 
-  const setProfile = useCallback((p: StudentProfile) => {
-    setProfileState(p);
-    showToast({ variant: "success", title: "Profile updated", description: "Your preferences were saved." });
-  }, [showToast]);
+  const setProfile = useCallback(
+    (p: StudentProfile, options?: { silent?: boolean }) => {
+      setProfileState(p);
+      if (!options?.silent) {
+        showToast({ variant: "success", title: "Profile updated", description: "Your preferences were saved." });
+      }
+    },
+    [showToast],
+  );
 
   const addEnquiry = useCallback(
     (e: Omit<AdmissionEnquiry, "id" | "date" | "status">) => {

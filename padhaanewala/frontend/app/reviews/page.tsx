@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { ReviewsExplorer } from "@/components/reviews/ReviewsExplorer";
 import { JsonLd } from "@/components/seo/JsonLd";
-import { resolveColleges } from "@/lib/content";
+import { resolveApprovedReviews, resolveColleges } from "@/lib/content";
 import { breadcrumbLd, ldGraph, pageMetadata } from "@/lib/seo";
 
 export const metadata: Metadata = pageMetadata({
@@ -12,7 +12,11 @@ export const metadata: Metadata = pageMetadata({
 });
 
 export default async function ReviewsPage() {
-  const { data: colleges } = await resolveColleges();
+  const { data: colleges, source } = await resolveColleges();
+  // Only fan out over the backend's per-college review endpoints when the API
+  // is actually serving colleges. Otherwise the bundled reviews are the honest
+  // offline fallback.
+  const apiReviews = source === "api" ? await resolveApprovedReviews() : [];
 
   const jsonLd = ldGraph([
     breadcrumbLd([
@@ -32,7 +36,11 @@ export default async function ReviewsPage() {
           Unfiltered experiences from students and alumni across courses, placements, faculty and campus life.
         </p>
       </div>
-      <ReviewsExplorer colleges={colleges} />
+      <ReviewsExplorer
+        colleges={colleges}
+        apiReviews={apiReviews}
+        useLocalReviews={source !== "api"}
+      />
     </section>
   );
 }

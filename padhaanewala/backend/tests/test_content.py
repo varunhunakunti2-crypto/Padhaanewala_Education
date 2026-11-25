@@ -627,7 +627,9 @@ def test_super_admin_edits_a_whole_broadcast(student, super_admin_token):
     # The log confirms the whole send was rewritten, not one row of it.
     log = client.get(
         "/api/v1/notifications",
-        params={"batch_id": batch_id},
+        # The admin log is paginated (default 50). A broadcast can reach every
+        # seeded student, so page large enough to inspect the whole send.
+        params={"batch_id": batch_id, "limit": 200},
         headers=sender_headers,
     )
     assert log.status_code == 200, log.text

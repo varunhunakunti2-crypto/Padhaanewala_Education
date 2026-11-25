@@ -133,6 +133,9 @@ export function AdmissionForm({ compact = false }: { compact?: boolean }) {
   // server-side default, so an empty value is caught here rather than as a 422
   // the user cannot act on.
   const [ageBand, setAgeBand] = useState<AgeBand | "">("");
+  // Explicit opt-in for this enquiry. Never pre-checked: consent has to be an
+  // action the student takes, not a box we tick on their behalf.
+  const [consent, setConsent] = useState(false);
 
   // `useCallback` keeps these references stable so `useOptions` does not tear
   // down and re-run its effect on every render, which would refetch in a loop.
@@ -163,6 +166,7 @@ export function AdmissionForm({ compact = false }: { compact?: boolean }) {
     if (!form.course) e.course = "Select or type a course";
     if (!form.state) e.state = "Select or type your state";
     if (ageBand === "") e.age = "Tell us whether you are under 18";
+    if (!consent) e.consent = "Please accept the consent checkbox to continue";
     // Mirrors `EnquiryCreate.require_guardian_for_minors` exactly: the field is
     // optional for an adult and required for a minor, and the backend wants a
     // mobile or an email — not a name, which is already on the form.
@@ -224,6 +228,7 @@ export function AdmissionForm({ compact = false }: { compact?: boolean }) {
       addEnquiry(form);
       setForm(INITIAL);
       setAgeBand("");
+      setConsent(false);
       setSubmitted(true);
       window.setTimeout(() => setSubmitted(false), 4000);
       showToast({ variant: "success", title: "Thank you.", description: "Our counsellor will contact you." });
@@ -432,6 +437,27 @@ export function AdmissionForm({ compact = false }: { compact?: boolean }) {
           placeholder="Tell us about your goals or questions"
           className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm outline-none transition focus:border-purple-400 focus:ring-4 focus:ring-purple-100"
         />
+      </div>
+
+      <div className="space-y-1.5 sm:col-span-2">
+        <label htmlFor="enq-consent" className="flex cursor-pointer items-start gap-2.5 text-sm text-gray-700">
+          <input
+            id="enq-consent"
+            name="consent"
+            type="checkbox"
+            checked={consent}
+            onChange={(e) => {
+              setConsent(e.target.checked);
+              setErrors((prev) => ({ ...prev, consent: "" }));
+            }}
+            className="mt-0.5 h-4 w-4 shrink-0 border-gray-300 accent-purple-600"
+          />
+          <span>
+            I consent to Padhaanewala storing these details and contacting me
+            about my admission enquiry.
+          </span>
+        </label>
+        {errors.consent && <p className="text-xs text-red-600">{errors.consent}</p>}
       </div>
 
       <div className="sm:col-span-2">

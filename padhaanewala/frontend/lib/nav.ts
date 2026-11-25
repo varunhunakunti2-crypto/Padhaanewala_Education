@@ -61,7 +61,8 @@ export interface NavItem {
  *  - `/plan`               The exam planner is unreachable from navigation and
  *                          has no server-side storage for what it writes.
  *  - `/dashboard`          A signed-in account page, not a public feature. It
- *                          stays reachable after login but is out of the nav.
+ *                          stays reachable from account links but is out of
+ *                          the nav.
  *
  * `/mock-tests` was on this list while `mock_tests` and `test_questions` held 0
  * rows. Both are populated now, so it is re-listed: it appears in `PRIMARY_NAV`,

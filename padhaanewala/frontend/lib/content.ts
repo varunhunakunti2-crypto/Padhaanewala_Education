@@ -25,7 +25,7 @@
  * than substituting a different paper's questions.
  */
 
-import type { BlogPost, College, Exam, MockTest, Scholarship } from "@/lib/types";
+import type { BlogPost, College, CollegeReview, Exam, MockTest, Scholarship } from "@/lib/types";
 import type { CourseMeta } from "@/lib/data/courses";
 import { COLLEGES } from "@/lib/data/colleges";
 import { COURSES } from "@/lib/data/courses";
@@ -37,7 +37,9 @@ import {
   getBlogBySlug,
   getBlogs,
   getCollegeBundle,
+  getCollegeReviews,
   getColleges,
+  getCourseBySlug as getApiCourseBySlug,
   getCourses,
   getExamBySlug,
   getExams,
@@ -55,6 +57,7 @@ import {
   mapCourseMeta,
   mapExam,
   mapMockTest,
+  mapReviews,
   mapScholarship,
 } from "@/lib/mappers";
 
@@ -92,6 +95,49 @@ export async function resolveCollege(slug: string): Promise<Resolved<College | u
   return { data: local, source: local ? "local" : "empty" };
 }
 
+/** Review endpoints are per college, so keep the fan-out bounded per batch. */
+const REVIEW_FANOUT_CONCURRENCY = 10;
+
+/**
+ * Public, approved reviews for the reviews listing.
+ *
+ * The backend has no global public review endpoint — the only unauthenticated
+ * route is `/reviews/college/{slug}` — so this walks the colleges the list API
+ * reports as having reviews. Colleges with no reviews are skipped, and the
+ * fan-out is chunked rather than firing hundreds of requests at once.
+ */
+export async function resolveApprovedReviews(): Promise<CollegeReview[]> {
+  const rows = await getColleges();
+  const candidates = rows.filter((college) => college.total_reviews > 0);
+  if (!candidates.length) return [];
+
+  const colleges = candidates.map(mapCollegeListItem);
+  const reviews: CollegeReview[] = [];
+
+  for (let i = 0; i < candidates.length; i += REVIEW_FANOUT_CONCURRENCY) {
+    const batch = candidates.slice(i, i + REVIEW_FANOUT_CONCURRENCY);
+    const responses = await Promise.all(batch.map((college) => getCollegeReviews(college.slug)));
+
+    responses.forEach((rowsForCollege, index) => {
+      const college = colleges[i + index];
+      if (!college) return;
+      // The endpoint already filters on `status='approved'`; keep the check so
+      // a future backend change cannot silently publish submitted reviews.
+      const approved = rowsForCollege.filter((review) => review.status === "approved");
+      reviews.push(
+        ...mapReviews(approved).map((review) => ({
+          ...review,
+          collegeId: college.id,
+          collegeName: college.shortName,
+          collegeSlug: college.slug,
+        })),
+      );
+    });
+  }
+
+  return reviews;
+}
+
 export async function resolveFeaturedColleges(limit = 9): Promise<Resolved<College[]>> {
   const rows = await getColleges("featured=true&limit=50");
   const mapped = rows.slice(0, limit).map((r) => mapCollegeListItem(r));
@@ -111,6 +157,24 @@ export async function resolveCourses(): Promise<Resolved<CourseMeta[]>> {
 }
 
 export async function resolveCourse(slug: string): Promise<Resolved<CourseMeta | undefined>> {
+  // The list projection omits eligibility and career copy. Ask for the detail
+  // record first so a course opened directly (or via a cached list) still has
+  // the fields the detail page must show.
+  const detail = await getApiCourseBySlug(slug);
+  // `serverGet` is typed from the endpoint contract but returns whatever JSON
+  // the wire actually carried. During an empty-table stub (and against a proxy
+  // that answers with a list for an unknown slug) that can be an array; treating
+  // it as a detail row manufactured a bogus "api" result. Require a real detail
+  // object for the requested slug before accepting it.
+  if (
+    detail &&
+    !Array.isArray(detail) &&
+    typeof detail.slug === "string" &&
+    detail.slug === slug
+  ) {
+    return { data: mapCourseMeta(detail), source: "api" };
+  }
+
   const rows = await getCourses();
   const hit = rows.find((c) => c.slug === slug);
   const course = hit ? mapCourseMeta(hit) : undefined;

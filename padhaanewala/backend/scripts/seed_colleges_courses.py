@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import re
 from datetime import date
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 
 from app.data.india_colleges_courses import COURSES
@@ -26,6 +26,26 @@ from app.models import College, CollegeCourse, Course, District, State, Universi
 # them (fees, intake, NAAC grade, website, email, hostel, overview) is left NULL
 # rather than filled with a plausible guess.
 RESEARCH_CUTOFF = date(2026, 9, 9)
+
+# The Karnataka workbooks are the backbone of the catalogue, but a national
+# education site cannot search for "IIT Bombay" and get zero results. These are
+# explicitly curated rows: the display name is the short form visitors type,
+# while `official_name` retains the full institution name. Only fields with a
+# trustworthy source are filled; everything else stays NULL as above.
+NATIONAL_FEATURED_COLLEGES: tuple[dict[str, str], ...] = (
+    {
+        "name": "IIT Bombay",
+        "official_name": "Indian Institute of Technology Bombay",
+        "slug": "iit-bombay",
+        "state_code": "MH",
+        "district_name": "Mumbai City",
+        "city": "Mumbai",
+        "affiliation": "Indian Institute of Technology Bombay",
+        "college_type": "Institute of National Importance",
+        "ownership": "Government",
+        "course": "B.Tech",
+    },
+)
 
 
 def slugify(text: str) -> str:
@@ -143,6 +163,68 @@ def main() -> None:
         skipped = 0
         missing_course: list[str] = []
         allocate_college_id = next_college_id_factory(db)
+
+        for item in NATIONAL_FEATURED_COLLEGES:
+            existing = db.scalar(
+                select(College.id).where(
+                    or_(College.name == item["name"], College.slug == item["slug"])
+                )
+            )
+            if existing is not None:
+                skipped += 1
+                continue
+
+            state_id = db.scalar(
+                select(State.id).where(State.code == item["state_code"])
+            )
+            if state_id is None:
+                print(
+                    f"  ! state {item['state_code']} is missing - "
+                    f"skipping {item['name']}; run seed_locations.py first"
+                )
+                continue
+            district_id = db.scalar(
+                select(District.id).where(
+                    District.name == item["district_name"], District.state_id == state_id
+                )
+            )
+
+            college = College(
+                college_id=allocate_college_id(),
+                name=item["name"],
+                official_name=item["official_name"],
+                slug=item["slug"],
+                college_type=item["college_type"],
+                ownership=item["ownership"],
+                university_id=university_ids.get(item["affiliation"]),
+                state_id=state_id,
+                district_id=district_id,
+                city=item["city"],
+                is_active=True,
+                is_featured=True,
+                verification_status="verified",
+                last_verified_date=RESEARCH_CUTOFF,
+            )
+            db.add(college)
+            db.flush()
+
+            course_id = course_map.get(item["course"])
+            if course_id is None:
+                missing_course.append(f"{item['name']}: {item['course']}")
+            else:
+                db.add(
+                    CollegeCourse(
+                        college_id=college.id,
+                        course_id=course_id,
+                        annual_fee=None,
+                        intake_seats=None,
+                        admission_mode=None,
+                        entrance_exam=None,
+                        is_active=True,
+                    )
+                )
+            created += 1
+
         for (
             name,
             sector,

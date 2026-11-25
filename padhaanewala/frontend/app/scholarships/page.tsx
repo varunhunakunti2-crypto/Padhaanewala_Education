@@ -17,15 +17,16 @@ export default async function Page() {
   const { data: scholarships } = await resolveScholarships();
 
   /**
-   * Every item points at `/scholarships` rather than a detail route, because
-   * there is no `/scholarships/[slug]` route: `Scholarship` carries no slug and
-   * each entry opens in a modal on this page. An `ItemList` whose items are all
-   * on the page it describes is a documented pattern, whereas inventing
-   * per-item URLs would send a crawler to 404s.
+   * Scholarships are addressed by their catalogue id. The route param is named
+   * `slug` to match the other detail pages, but it is the record's `id` that
+   * `resolveScholarship` looks up.
    */
   const jsonLd = ldGraph([
     itemListLd(
-      scholarships.map((scholarship) => ({ name: scholarship.name, path: "/scholarships" })),
+      scholarships.map((scholarship) => ({
+        name: scholarship.name,
+        path: `/scholarships/${encodeURIComponent(scholarship.id)}`,
+      })),
       "Scholarships for Indian Students",
     ),
     breadcrumbLd([
