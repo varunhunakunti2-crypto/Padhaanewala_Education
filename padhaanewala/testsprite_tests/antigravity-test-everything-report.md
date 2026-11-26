@@ -4,7 +4,7 @@
 **Backend re-verified from live result file:** 2026-11-26 00:05 IST (10/10)  
 **Environment:** Frontend (`http://localhost:3000`) | Backend (`http://localhost:8000`)  
 **Browser Engine:** Google Chrome via Chrome DevTools MCP (Remote Debugging active on port 9222)  
-**Test Account:** `testsprite.student@example.com`
+**Test Account:** `[REDACTED]`
 
 ---
 
@@ -83,7 +83,7 @@ All executed browser cases passed cleanly with zero breaking errors.
 ## 4. Summary & Actionable Recommendations
 
 1. **Frontend Experience (100% Pass across 31 E2E Cases)**:
-   - All end-user journeys—student auth, dashboard, saved colleges, notifications, live mock test taking, question palette states, blog pagination, college comparison caps, forms with DPDP validation, and the college recommendation wizard—are executing reliably.
+   - All end-user journeysâ€”student auth, dashboard, saved colleges, notifications, live mock test taking, question palette states, blog pagination, college comparison caps, forms with DPDP validation, and the college recommendation wizardâ€”are executing reliably.
 2. **Backend API fixes applied and verified (10/10)**:
    - `TC007`: the id is parsed in the handler, so a malformed/UUID id returns `404` and an anonymous request returns `401` instead of a pre-auth `422`.
    - `TC008`: start/submit responses now include a top-level `attempt_id` while keeping the nested `attempt` object used by the UI.

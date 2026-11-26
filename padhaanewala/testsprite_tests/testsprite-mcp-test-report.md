@@ -5,7 +5,7 @@
 | Field | Value |
 |---|---|
 | Project | Padhaanewala Education |
-| Report generated | 2026-11-25 (IST) |
+| Report generated | 2026-11-25 (IST); final re-verification 2026-11-26 10:35 IST |
 | Methodology | ISTQB-style test lifecycle; OWASP ASVS 5.0 / WSTG / Top 10 baseline (`industry-qa-methodology.md`) |
 | Test source of truth | `testsprite_frontend_test_plan.json` (50 cases) and `testsprite_backend_test_plan.json` (10 cases) |
 | Execution | TestSprite MCP `generateCodeAndExecute` with explicit `testIds`, small batches, fixture resets, and preserved raw reports + JSON results under `testsprite_tests/tmp/` |
