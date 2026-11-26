@@ -7,6 +7,7 @@ from alembic import context
 from app.config import settings
 from app.database import Base
 from app.models import admission as admission_models  # noqa: F401
+from app.models import ai_setting as ai_setting_models  # noqa: F401
 from app.models import audit_log as audit_log_models  # noqa: F401
 from app.models import banner as banner_models  # noqa: F401
 from app.models import blog as blog_models  # noqa: F401

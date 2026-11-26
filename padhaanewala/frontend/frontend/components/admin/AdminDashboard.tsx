@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { ExternalLink } from "lucide-react";
@@ -12,6 +12,7 @@ import type { SectionKey } from "@/components/admin/types";
 import { adminApi, type AdminLead } from "@/lib/api";
 import { useAdminResource } from "@/components/admin/useAdminResource";
 import {
+  AiSettingsSection,
   AnalyticsSection,
   AuditSection,
   BannersSection,
@@ -70,6 +71,14 @@ export function AdminDashboard() {
   const isSuperAdmin = roles.includes("super_admin");
   const roleLabel = isSuperAdmin ? "Super Admin" : "Admin";
 
+  // A super-admin-only entry is filtered from the sidebar rather than disabled:
+  // a greyed-out item that can never be opened is noise for most admins. The
+  // section itself still renders a "super admin only" notice if reached by URL.
+  const visibleNav = useMemo(
+    () => NAV.filter((item) => !item.superAdminOnly || isSuperAdmin),
+    [isSuperAdmin],
+  );
+
   const totalLeadsCount = realLeads ? realLeads.length : enquiries.length;
 
   return (
@@ -103,10 +112,10 @@ export function AdminDashboard() {
           <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white lg:sticky lg:top-24">
             <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-4 py-3">
               <span className="text-xs font-bold text-slate-500">ADMIN NAVIGATION</span>
-              <Badge variant="purple">{NAV.length} modules</Badge>
+              <Badge variant="purple">{visibleNav.length} modules</Badge>
             </div>
             <nav className="flex overflow-x-auto p-2 no-scrollbar lg:max-h-[calc(100vh-12rem)] lg:flex-col lg:overflow-y-auto lg:scroll-thin">
-              {NAV.map((item) => {
+              {visibleNav.map((item) => {
                 const Icon = item.icon;
                 const active = section === item.key;
                 const badge =
@@ -167,6 +176,7 @@ export function AdminDashboard() {
           {section === "datarequests" && <DataRequestsSection />}
           {section === "media" && <MediaSection />}
           {section === "seo" && <SeoSection />}
+          {section === "aisettings" && <AiSettingsSection />}
           {section === "settings" && <SettingsSection />}
           {section === "audit" && <AuditSection />}
         </main>

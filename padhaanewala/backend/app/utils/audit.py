@@ -55,6 +55,13 @@ SENSITIVE_KEYS: frozenset[str] = frozenset(
         "code",
         "code_hash",
         "secret",
+        # AI provider credentials. The settings router records only a
+        # set/cleared boolean, but the names belong here too: a future call site
+        # that dumps a schema with one of these fields must not be able to
+        # write the key into an audit row.
+        "api_key",
+        "chat_api_key",
+        "gemini_api_key",
         "authorization",
         "cookie",
         "email",

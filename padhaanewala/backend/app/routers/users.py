@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -428,6 +428,60 @@ def update_user_admin(
             )
         target.is_active = payload.is_active
 
+    # Identity fields, written only when the console sent them. Each one is
+    # checked against the same uniqueness the registration path relies on, and
+    # each one invalidates the verification that belonged to the old value: a
+    # changed address has not been proven, and leaving `is_email_verified=True`
+    # on an unproven address is the specific thing verification exists to
+    # prevent.
+    profile_changes: dict[str, dict[str, object]] = {}
+
+    if payload.email is not None:
+        new_email = str(payload.email).strip().lower()
+        if new_email != target.email:
+            taken = db.scalar(
+                select(User.id).where(User.email == new_email, User.id != target.id)
+            )
+            if taken is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="That email address is already in use",
+                )
+            profile_changes["email"] = {"from": target.email, "to": new_email}
+            target.email = new_email
+            target.is_email_verified = False
+
+    if payload.mobile is not None:
+        new_mobile = payload.mobile
+        if new_mobile != target.mobile:
+            taken = db.scalar(
+                select(User.id).where(User.mobile == new_mobile, User.id != target.id)
+            )
+            if taken is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="That mobile number is already in use",
+                )
+            profile_changes["mobile"] = {"from": target.mobile, "to": new_mobile}
+            target.mobile = new_mobile
+            target.is_mobile_verified = False
+
+    if payload.display_name is not None:
+        name = payload.display_name.strip()
+        profile = db.scalar(
+            select(StudentProfile).where(StudentProfile.user_id == target.id)
+        )
+        previous = profile.name if profile is not None else None
+        if profile is None:
+            # An account can exist without a profile row (registration creates
+            # one, but an account promoted or imported later may not have it).
+            # Creating it here is what makes the name editable in that case
+            # instead of silently doing nothing.
+            db.add(StudentProfile(user_id=target.id, name=name))
+        else:
+            profile.name = name
+        profile_changes["display_name"] = {"from": previous, "to": name}
+
     # A role is the authorization half of a counsellor; the `counsellors` row is
     # the workload half, and the leads CRM only ever reads the row. Reconciled
     # after both branches, never inside either, because deactivating the account
@@ -459,7 +513,99 @@ def update_user_admin(
             old_value={"is_active": old_is_active},
             new_value={"is_active": target.is_active},
         )
+    if profile_changes:
+        audit.record(
+            db,
+            request=request,
+            action="update_user_profile",
+            entity_type="user",
+            entity_id=target.id,
+            actor=user,
+            old_value={key: change["from"] for key, change in profile_changes.items()},
+            new_value={key: change["to"] for key, change in profile_changes.items()},
+        )
 
     db.commit()
     db.refresh(target)
     return _to_admin_view(target)
+
+
+@router.delete("/{user_id}", response_model=StandardResponse)
+def delete_user_admin(
+    user_id: int,
+    request: Request,
+    user: User = Depends(require_role(*ADMIN_ROLES)),
+    db: Session = Depends(get_db),
+):
+    """Delete an account from the admin console.
+
+    This is a hard delete, and every dependent row follows the schema's own
+    rules: sessions, OTPs, notifications, consents, profiles, reviews and
+    attempts cascade away, while content the account merely touched (blog
+    authorship, submission review) keeps its row and loses the attribution.
+    Nothing here re-implements that — the foreign keys already say what should
+    happen, and a second copy of the rules would be the thing that drifts.
+
+    The guards mirror ``PATCH``: no self-delete, no ``admin`` deleting a
+    ``super_admin``, and the last active ``super_admin`` is not removable. A
+    deleted account cannot be restored from the console, so the audit row is
+    written before the delete and keeps the address and role set that the
+    ``users`` row no longer holds.
+    """
+    target = db.get(User, user_id)
+    if target is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        )
+
+    caller_roles = audit.role_names(user)
+    target_roles = audit.role_names(target)
+
+    if user_id == user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot delete your own account",
+        )
+
+    if (
+        RoleName.SUPER_ADMIN.value in target_roles
+        and RoleName.SUPER_ADMIN.value not in caller_roles
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only a super_admin can delete a super_admin account",
+        )
+
+    if (
+        RoleName.SUPER_ADMIN.value in target_roles
+        and _count_active_super_admins(db, exclude_user_id=user_id) == 0
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot delete the last active super_admin",
+        )
+
+    audit.record(
+        db,
+        request=request,
+        action="delete_user",
+        entity_type="user",
+        entity_id=target.id,
+        actor=user,
+        old_value={
+            "email": target.email,
+            "mobile": target.mobile,
+            "roles": target_roles,
+            "is_active": target.is_active,
+        },
+        new_value=None,
+    )
+
+    # Core DELETE rather than `Session.delete`: the ORM would try to null the
+    # foreign key of every relationship it had loaded, and `student_profiles`
+    # and `notifications` are NOT NULL on `user_id`. The database already has
+    # the right rule for each child table.
+    db.execute(delete(User).where(User.id == user_id))
+    db.commit()
+
+    return StandardResponse(success=True, message="User deleted")

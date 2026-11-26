@@ -100,6 +100,7 @@ from app.schemas.question_import import (
     ImportResponse,
     ReviewRequest,
 )
+from app.services import ai_config
 from app.services import question_generation as qg
 from app.utils import audit
 
@@ -288,11 +289,16 @@ def _generate(job_id: int, subject: str | None, per_chunk: int | None) -> None:
                 "The uploaded PDF is no longer on the server. Upload it again."
             ) from None
 
+        # Resolved inside the task, from its own session: the key may have been
+        # rotated in the console between the upload and this task starting.
+        gemini = ai_config.resolve_gemini_config(db)
         result = qg.generate_drafts(
             data,
             per_chunk=per_chunk,
             subject=subject,
             max_drafts=settings.PDF_IMPORT_MAX_DRAFTS,
+            api_key=gemini.api_key,
+            model=gemini.model,
         )
 
         order = _next_sort_order(db, job.mock_test_id)
@@ -468,14 +474,17 @@ def import_pdf_questions(
     202, not 201. The job row exists and is durable, but the drafts do not yet,
     and answering 201 would claim a resource the client cannot see.
     """
-    if not qg.generation_is_configured():
+    if not qg.generation_is_configured(ai_config.resolve_gemini_config(db).api_key):
         # Before the file is read: there is no point accepting 20 MB only to
-        # report that the server cannot generate anything with it.
+        # report that the server cannot generate anything with it. The key may
+        # come from the console row or, for an older deployment, the
+        # environment -- `resolve_gemini_config` applies that order.
         raise HTTPException(
             status_code=503,
             detail=(
                 "PDF question import is not configured on this server "
-                "(GEMINI_API_KEY is unset)."
+                "(GEMINI_API_KEY is unset and no key is saved in the admin "
+                "console). A super admin can add one in the admin console."
             ),
         )
 

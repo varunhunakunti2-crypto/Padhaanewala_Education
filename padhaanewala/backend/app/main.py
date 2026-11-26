@@ -17,6 +17,8 @@ from app.middleware.logging import (
 )
 from app.middleware.ratelimit import RateLimitMiddleware
 from app.routers import (
+    ai,
+    ai_settings,
     analytics,
     audit,
     auth,
@@ -142,6 +144,8 @@ app.include_router(faqs.router)
 app.include_router(media.router)
 app.include_router(seo.router)
 app.include_router(site_settings.router)
+app.include_router(ai_settings.router)
+app.include_router(ai.router)
 app.include_router(notifications.router)
 app.include_router(audit.router)
 app.include_router(banners.router)

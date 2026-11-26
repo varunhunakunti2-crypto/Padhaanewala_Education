@@ -1,12 +1,29 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, ChevronLeft, ChevronRight, ShieldCheck, XCircle } from "lucide-react";
+import {
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Eye,
+  Pencil,
+  ShieldCheck,
+  Trash2,
+  XCircle,
+} from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 import { DataTable } from "@/components/ui/DataTable";
 import { Input } from "@/components/ui/FormField";
+import { Modal } from "@/components/ui/Modal";
+import { Field } from "@/components/admin/fields";
 import { useApp } from "@/lib/context/AppContext";
-import { adminApi, type AdminRole, type AdminUser } from "@/lib/api";
+import {
+  adminApi,
+  type AdminRole,
+  type AdminUpdateUserPayload,
+  type AdminUser,
+} from "@/lib/api";
 import {
   describePageRange,
   describeRoleDelta,
@@ -18,7 +35,6 @@ import { useAdminResource } from "@/components/admin/useAdminResource";
 import {
   SectionHeading,
   IconAction,
-  RowActions,
   FilterChips,
   BadgeForStatus,
 } from "@/components/admin/primitives";
@@ -116,6 +132,14 @@ export function StudentsSection() {
   const [roleEditorFor, setRoleEditorFor] = useState<number | null>(null);
   const [draftRoles, setDraftRoles] = useState<Set<string>>(new Set());
   const [mutating, setMutating] = useState(false);
+
+  // The three row dialogs. Each holds the *user id*, not the row object, so the
+  // View dialog can re-read the account from `GET /users/{id}` instead of
+  // showing a snapshot taken when the page loaded — a role change made in
+  // another tab would otherwise be presented as current.
+  const [viewFor, setViewFor] = useState<number | null>(null);
+  const [editFor, setEditFor] = useState<AdminUser | null>(null);
+  const [deleteFor, setDeleteFor] = useState<AdminUser | null>(null);
 
   const rows = useMemo<StudentRow[]>(
     () =>
@@ -215,6 +239,64 @@ export function StudentsSection() {
     const user = findUser(row);
     if (!user) return;
     await toggleActive(user);
+  };
+
+  /**
+   * Save the Edit dialog. The payload is built by the dialog and contains only
+   * the fields that actually changed, so a name correction cannot accidentally
+   * rewrite the address and clear its verification.
+   */
+  const saveIdentity = async (target: AdminUser, payload: AdminUpdateUserPayload) => {
+    setMutating(true);
+    try {
+      await adminApi.updateUser(target.id, payload);
+      showToast({
+        variant: "success",
+        title: "Student updated",
+        description: `${payload.email ?? target.email} was saved.`,
+      });
+      setEditFor(null);
+      reload();
+    } catch (err) {
+      showToast({
+        variant: "error",
+        title: "Could not update student",
+        description: err instanceof Error ? err.message : "The change was rejected.",
+      });
+    } finally {
+      setMutating(false);
+    }
+  };
+
+  /**
+   * Delete an account. The backend decides what "delete" means (the schema's own
+   * cascade and null-out rules); the console only asks for confirmation.
+   *
+   * When the deleted row was the last one on a page above the first, the list
+   * steps back a page instead of reloading into an empty table — otherwise the
+   * admin is left on "Page 3 of 2" with nothing in it.
+   */
+  const deleteStudent = async (target: AdminUser) => {
+    setMutating(true);
+    try {
+      await adminApi.deleteUser(target.id);
+      showToast({
+        variant: "success",
+        title: "Student deleted",
+        description: `${target.email} and its dependent records were removed.`,
+      });
+      setDeleteFor(null);
+      if (rows.length === 1 && page > 1) setPage(page - 1);
+      else reload();
+    } catch (err) {
+      showToast({
+        variant: "error",
+        title: "Could not delete student",
+        description: err instanceof Error ? err.message : "The delete was rejected.",
+      });
+    } finally {
+      setMutating(false);
+    }
   };
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -323,6 +405,21 @@ export function StudentsSection() {
                         </>
                       ) : (
                         <>
+                          <IconAction
+                            title="View student"
+                            onClick={() => setViewFor(Number(s.id))}
+                            className="hover:bg-blue-50 hover:text-blue-700"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </IconAction>
+                          {canModify && (
+                            <IconAction
+                              title="Edit student"
+                              onClick={() => user && setEditFor(user)}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </IconAction>
+                          )}
                           {canModify && (
                             <IconAction
                               title="Edit roles"
@@ -345,7 +442,15 @@ export function StudentsSection() {
                               )}
                             </IconAction>
                           )}
-                          <RowActions item={s.name} noun="student" />
+                          {canModify && (
+                            <IconAction
+                              title="Delete student"
+                              onClick={() => user && setDeleteFor(user)}
+                              className="hover:bg-red-50 hover:text-red-600"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </IconAction>
+                          )}
                         </>
                       )}
                     </div>
@@ -375,6 +480,28 @@ export function StudentsSection() {
                 const target = data?.items.find((u) => u.id === roleEditorFor);
                 if (target) void saveRoles(target);
               }}
+            />
+          )}
+
+          {viewFor !== null && (
+            <ViewStudentDialog userId={viewFor} onClose={() => setViewFor(null)} />
+          )}
+
+          {editFor !== null && (
+            <EditStudentDialog
+              user={editFor}
+              saving={mutating}
+              onClose={() => setEditFor(null)}
+              onSave={(payload) => void saveIdentity(editFor, payload)}
+            />
+          )}
+
+          {deleteFor !== null && (
+            <DeleteStudentDialog
+              user={deleteFor}
+              deleting={mutating}
+              onClose={() => setDeleteFor(null)}
+              onConfirm={() => void deleteStudent(deleteFor)}
             />
           )}
 
@@ -524,5 +651,256 @@ function RoleEditor({
         })}
       </ul>
     </div>
+  );
+}
+
+/* ---------------------------------------------------------------- dialogs */
+
+function formatDateTime(value: string | null): string {
+  if (!value) return "Never";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
+}
+
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-4 border-b border-slate-100 py-2 last:border-0">
+      <dt className="text-xs font-medium text-slate-400">{label}</dt>
+      <dd className="min-w-0 break-words text-right text-sm text-gray-900">{value}</dd>
+    </div>
+  );
+}
+
+/**
+ * Read-only detail view.
+ *
+ * It reads `GET /users/{id}` rather than the row it was opened from. The list is
+ * a snapshot taken when the page loaded, so a role granted in another tab would
+ * otherwise be shown here as though it were current — and this dialog is the
+ * screen an admin consults *before* editing or deleting the account.
+ *
+ * The component is mounted only while open, so closing and reopening re-reads.
+ */
+function ViewStudentDialog({ userId, onClose }: { userId: number; onClose: () => void }) {
+  const {
+    data: user,
+    error,
+    loading,
+  } = useAdminResource<AdminUser>(() => adminApi.user(userId), {
+    forbiddenMessage: "You do not have permission to view this account.",
+    unreachableMessage: "Could not load this account.",
+  });
+
+  return (
+    <Modal open onClose={onClose} title="Student details">
+      {loading && <p className="py-6 text-center text-sm text-slate-400">Loading account…</p>}
+      {!loading && error && (
+        <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+          {error}
+        </p>
+      )}
+      {!loading && !error && user && (
+        <div className="space-y-4">
+          <div>
+            <p className="font-display text-lg font-extrabold text-gray-900">{user.display_name}</p>
+            <p className="text-xs text-slate-400">{user.email}</p>
+          </div>
+
+          <dl>
+            <DetailRow label="Email" value={user.email} />
+            <DetailRow label="Email verified" value={user.is_email_verified ? "Yes" : "No"} />
+            <DetailRow label="Mobile" value={user.mobile ?? "—"} />
+            <DetailRow label="Mobile verified" value={user.is_mobile_verified ? "Yes" : "No"} />
+            <DetailRow label="Roles" value={user.roles.join(", ") || "—"} />
+            <DetailRow label="Status" value={user.is_active ? "Active" : "Inactive"} />
+            <DetailRow label="Registered" value={formatDateTime(user.created_at)} />
+            <DetailRow label="Last sign-in" value={formatDateTime(user.last_login_at)} />
+          </dl>
+
+          <div className="flex justify-end">
+            <Button type="button" variant="secondary" size="sm" onClick={onClose}>
+              Close
+            </Button>
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+/**
+ * Identity editor.
+ *
+ * Only changed fields go into the payload. That matters beyond tidiness: the
+ * backend clears `is_email_verified` / `is_mobile_verified` when the address or
+ * number changes, so sending an unchanged value would revoke a verification for
+ * no reason. A blank payload is impossible — Save stays disabled until something
+ * differs — which is also why "no change to save" is not a toast here.
+ */
+function EditStudentDialog({
+  user,
+  saving,
+  onClose,
+  onSave,
+}: {
+  user: AdminUser;
+  saving: boolean;
+  onClose: () => void;
+  onSave: (payload: AdminUpdateUserPayload) => void;
+}) {
+  const [name, setName] = useState(user.display_name);
+  const [email, setEmail] = useState(user.email);
+  const [mobile, setMobile] = useState(user.mobile ?? "");
+  const [isActive, setIsActive] = useState(user.is_active);
+
+  const trimmedName = name.trim();
+  const trimmedEmail = email.trim().toLowerCase();
+  const digits = mobile.replace(/\D/g, "");
+
+  const nameError = trimmedName.length < 2 ? "Enter at least 2 characters." : null;
+  const emailError = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)
+    ? null
+    : "Enter a valid email address.";
+  const mobileError = /^[6-9]\d{9}$/.test(digits)
+    ? null
+    : "Enter a 10-digit Indian mobile number.";
+
+  const payload: AdminUpdateUserPayload = {};
+  if (trimmedName !== user.display_name) payload.display_name = trimmedName;
+  if (trimmedEmail !== user.email) payload.email = trimmedEmail;
+  if (digits !== (user.mobile ?? "")) payload.mobile = digits;
+  if (isActive !== user.is_active) payload.is_active = isActive;
+
+  const valid = !nameError && !emailError && !mobileError;
+  const changed = Object.keys(payload).length > 0;
+
+  return (
+    <Modal open onClose={onClose} title={`Edit ${user.email}`}>
+      <form
+        className="space-y-4"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (valid && changed && !saving) onSave(payload);
+        }}
+      >
+        <Field id="student-name" label="Full name" hint="Stored on the student profile and shown in this list.">
+          <Input
+            id="student-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            error={Boolean(nameError)}
+            autoComplete="off"
+          />
+          {nameError && <p className="mt-1 text-xs text-red-600">{nameError}</p>}
+        </Field>
+
+        <Field
+          id="student-email"
+          label="Email"
+          hint="Changing this clears the verified flag — the new address must be verified again."
+        >
+          <Input
+            id="student-email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            error={Boolean(emailError)}
+            autoComplete="off"
+          />
+          {emailError && <p className="mt-1 text-xs text-red-600">{emailError}</p>}
+        </Field>
+
+        <Field
+          id="student-mobile"
+          label="Mobile"
+          hint="10-digit Indian number. Changing it clears the verified flag."
+        >
+          <Input
+            id="student-mobile"
+            inputMode="numeric"
+            value={mobile}
+            onChange={(e) => setMobile(e.target.value)}
+            error={Boolean(mobileError)}
+            autoComplete="off"
+          />
+          {mobileError && <p className="mt-1 text-xs text-red-600">{mobileError}</p>}
+        </Field>
+
+        <label className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-gray-700">
+          <input
+            type="checkbox"
+            checked={isActive}
+            onChange={(e) => setIsActive(e.target.checked)}
+            className="h-4 w-4 accent-purple-600"
+          />
+          Account is active and can sign in
+        </label>
+
+        <div className="flex items-center justify-end gap-2 pt-1">
+          <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={saving}>
+            Cancel
+          </Button>
+          <Button type="submit" size="sm" disabled={saving || !valid || !changed}>
+            {saving ? "Saving…" : "Save changes"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/**
+ * Delete confirmation.
+ *
+ * The list of what disappears is stated rather than implied, because "delete"
+ * on this table removes an account and every row that belonged to it. The
+ * backend owns the actual rules (cascade vs. null-out); this text names the
+ * ones an admin can verify from the rest of the console.
+ */
+function DeleteStudentDialog({
+  user,
+  deleting,
+  onClose,
+  onConfirm,
+}: {
+  user: AdminUser;
+  deleting: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Modal open onClose={onClose} title="Delete student">
+      <div className="space-y-4">
+        <p className="text-sm text-slate-600">
+          This permanently deletes{" "}
+          <span className="font-semibold text-gray-900">{user.display_name}</span> (
+          <span className="font-medium">{user.email}</span>). It cannot be undone from the console.
+        </p>
+
+        <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700">
+          <p className="font-semibold">These go with the account:</p>
+          <p className="mt-1">
+            Sign-in sessions, OTPs, notifications, saved colleges, reviews, test attempts, consent
+            records and the student profile.
+          </p>
+        </div>
+
+        <div className="flex items-center justify-end gap-2">
+          <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={deleting}>
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            onClick={onConfirm}
+            disabled={deleting}
+            className="bg-red-600 text-white shadow-red-600/25 hover:bg-red-700"
+          >
+            {deleting ? "Deleting…" : "Delete permanently"}
+          </Button>
+        </div>
+      </div>
+    </Modal>
   );
 }

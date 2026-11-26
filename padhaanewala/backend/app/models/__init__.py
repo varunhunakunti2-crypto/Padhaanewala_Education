@@ -1,4 +1,5 @@
 from app.models.admission import Admission
+from app.models.ai_setting import AiSetting
 from app.models.audit_log import AuditLog
 from app.models.banner import Banner
 from app.models.blog import Blog, BlogCategory
@@ -44,6 +45,7 @@ __all__ = [
     "FAQ",
     "Admin",
     "Admission",
+    "AiSetting",
     "AuditLog",
     "Banner",
     "Blog",

@@ -71,6 +71,7 @@ import redis.asyncio as aioredis
 from app.config import settings
 from app.main import app
 from app.middleware import ratelimit
+from app.middleware.rate_limit_policy import ResolvedRateLimit
 from app.services import redis_client
 
 # The genuine accessor, bound during collection — before conftest's session
@@ -230,8 +231,27 @@ def _app_harness(monkeypatch, namespace: str, url: str, enabled: bool = True):
     monkeypatch.setattr(redis_client, "get_redis", _real_get_redis)
     monkeypatch.setattr(ratelimit, "get_redis", _real_get_redis)
     # Every key the limiter writes goes under this prefix, so cleanup is exact
-    # and a developer's real buckets are never touched.
-    monkeypatch.setattr(ratelimit, "_limit_for", lambda path: (namespace, 5, 60))
+    # and a developer's real buckets are never touched. Policy resolution is
+    # centralized (P2), so `_limit_for` is no longer consulted on the request
+    # path; patch the resolver itself to keep the real-Redis harness pointed at
+    # an isolated namespace.
+    def _resolve(request) -> ResolvedRateLimit | None:
+        path = request.url.path
+        # Match the old shim's scope: only the auth surface was throttled by
+        # this harness. Health/readiness must stay outside it.
+        if not path.startswith("/api/v1/auth"):
+            return None
+        return ResolvedRateLimit(
+            namespace=namespace,
+            limit=5,
+            window_seconds=60,
+            bucket_path=path,
+            category="live_test",
+            fail_closed=True,
+            path=path,
+        )
+
+    monkeypatch.setattr(ratelimit, "_resolve_limit", _resolve)
     # The namespace is substituted for key isolation, but `FAIL_CLOSED_NAMESPACES`
     # decides the *policy*. Without this the auth tests below would silently
     # exercise the fail-open branch and pass for the wrong reason — which is
@@ -456,6 +476,24 @@ def test_login_is_throttled_end_to_end(live_app, namespace):
     assert statuses[:5] == [401] * 5, f"unexpected: {statuses}"
     assert statuses[5] == 429, f"real Redis did not throttle the 6th login: {statuses}"
     assert responses[5].json()["error"]["code"] == "RATE_LIMIT_EXCEEDED"
+
+    # Successful requests carry the primary counter's numbers, without a
+    # Retry-After hint (there is nothing to retry).
+    for index, resp in enumerate(responses[:5]):
+        assert resp.headers["RateLimit-Limit"] == "5"
+        assert resp.headers["RateLimit-Remaining"] == str(4 - index)
+        assert 0 < int(resp.headers["RateLimit-Reset"]) <= 60
+        assert "Retry-After" not in resp.headers
+
+    # The 429 headers come from the same real TTL as the body field.
+    retry_after = responses[5].headers["Retry-After"]
+    assert int(retry_after) >= 1
+    assert responses[5].headers["RateLimit-Limit"] == "5"
+    assert responses[5].headers["RateLimit-Remaining"] == "0"
+    assert responses[5].headers["RateLimit-Reset"] == retry_after
+    assert responses[5].json()["error"]["details"]["retry_after_seconds"] == int(
+        retry_after
+    )
 
     # The counter really is in Redis, under the namespace the middleware chose.
     probe = _sync_redis()

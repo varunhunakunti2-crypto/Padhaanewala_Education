@@ -1,10 +1,11 @@
 import uuid
 
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from app.database import SessionLocal
 from app.main import app
-from app.models import Role, User
+from app.models import College, CollegeCourse, Role, User
 
 client = TestClient(app)
 
@@ -144,13 +145,8 @@ def test_search_courses():
 
 
 def test_get_college_courses():
-    colleges = client.get("/api/v1/colleges?limit=200").json()
-    college = next(
-        (item for item in colleges if item.get("course_names")),
-        None,
-    )
-    assert college is not None, "no college with courses was returned by the catalogue"
-    response = client.get(f"/api/v1/colleges/{college['id']}/courses")
+    colleges = client.get("/api/v1/colleges").json()
+    response = client.get(f"/api/v1/colleges/{colleges[0]['id']}/courses")
     assert response.status_code == 200
     assert len(response.json()) >= 1
 

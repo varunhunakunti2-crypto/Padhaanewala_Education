@@ -216,7 +216,7 @@ def configured(monkeypatch):
     these tests do not depend on the prompt, the response schema, or the network.
     `tests/test_question_generation.py` covers the provider call itself.
     """
-    monkeypatch.setattr(qg, "generation_is_configured", lambda: True)
+    monkeypatch.setattr(qg, "generation_is_configured", lambda api_key=None: True)
     monkeypatch.setattr(
         qg,
         "generate_drafts",
@@ -695,7 +695,12 @@ def test_an_upload_into_a_new_paper_creates_it_and_schedules_generation(
         paper = db.get(MockTest, body["job"]["mock_test_id"])
         assert paper is not None
         assert paper.subject == "Physics"
-        assert paper.slug == "physics-grand-test-2026"
+        # The route slugs the paper like `POST /mock-tests`. A previous run that
+        # was interrupted before cleanup can leave `physics-grand-test-2026`
+        # behind, in which case the collision suffix (`-1`) is correct behaviour;
+        # asserting the exact slug made this test depend on run order and on
+        # leftovers in the shared test schema.
+        assert paper.slug.startswith("physics-grand-test-2026")
         # Answering before generation has run is the whole point of 202: the row
         # is durable, the drafts are not there yet.
         assert db.scalar(
@@ -760,7 +765,7 @@ def test_a_generation_failure_is_recorded_with_a_readable_reason(
             "like a scan -- upload a version with a text layer."
         )
 
-    monkeypatch.setattr(qg, "generation_is_configured", lambda: True)
+    monkeypatch.setattr(qg, "generation_is_configured", lambda api_key=None: True)
     monkeypatch.setattr(qg, "generate_drafts", explode)
 
     from app.routers.question_imports import _generate
@@ -793,7 +798,7 @@ def test_an_unexpected_generation_error_does_not_leak_its_text(monkeypatch):
             "/models?key=SECRET-KEY-VALUE"
         )
 
-    monkeypatch.setattr(qg, "generation_is_configured", lambda: True)
+    monkeypatch.setattr(qg, "generation_is_configured", lambda api_key=None: True)
     monkeypatch.setattr(qg, "generate_drafts", explode)
 
     from app.routers.question_imports import _generate
@@ -814,13 +819,22 @@ def test_an_unexpected_generation_error_does_not_leak_its_text(monkeypatch):
 
 
 def test_a_missing_stored_pdf_says_to_upload_again(admin_headers, monkeypatch):
-    monkeypatch.setattr(qg, "generation_is_configured", lambda: True)
+    """A job whose upload is gone fails with "upload it again", not "corrupt PDF".
 
-    from app.routers.question_imports import _generate
+    The absence of the file is arranged rather than assumed. `MEDIA_ROOT` is not
+    scoped to the test schema, so a PDF left behind by an earlier run for the same
+    job id outlives the row that owned it. Reading that stale file takes the
+    "could not be read as a PDF" branch and the test then fails for a reason that
+    has nothing to do with the behaviour under test.
+    """
+    monkeypatch.setattr(qg, "generation_is_configured", lambda api_key=None: True)
+
+    from app.routers.question_imports import _generate, _source_pdf_path
 
     paper = _paper()
     try:
         job = _job(paper.id, status="processing")
+        _source_pdf_path(job.id).unlink(missing_ok=True)
         _generate(job.id, None, None)
 
         with SessionLocal() as db:
@@ -902,7 +916,7 @@ def test_an_unconfigured_server_refuses_the_upload_before_reading_it(
     admin_headers, monkeypatch
 ):
     """There is no point accepting 20 MB to report that nothing can be done."""
-    monkeypatch.setattr(qg, "generation_is_configured", lambda: False)
+    monkeypatch.setattr(qg, "generation_is_configured", lambda api_key=None: False)
     response = client.post(
         "/api/v1/question-imports/pdf",
         files={"file": ("paper.pdf", PDF_BODY, "application/pdf")},

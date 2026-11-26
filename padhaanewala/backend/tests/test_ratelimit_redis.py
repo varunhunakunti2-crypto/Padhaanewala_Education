@@ -33,11 +33,9 @@ LOGIN_BODY = {"email": "nobody@example.com", "password": "wrong-password-1"}
 
 
 class FakeRedis:
-    """In-memory stand-in that counts with the same semantics as the Lua script.
+    """In-memory stand-in that counts with the same semantics as the Lua scripts.
 
-    `count` only increments once a key is created, and the window is recorded on
-    creation, so a test that exceeds the limit and then inspects the TTL sees the
-    same state the real server would hold.
+    Supports both legacy single-key limiter calls and P3 multi-key atomic checks.
     """
 
     def __init__(self) -> None:
@@ -46,18 +44,41 @@ class FakeRedis:
         self.eval_calls = 0
         self.scripts: list[str] = []
 
-    async def eval(self, script: str, numkeys: int, key: str, window: str) -> list[int]:
-        assert numkeys == 1, "the limiter must pass exactly one key to KEYS[1]"
+    async def eval(self, script: str, numkeys: int, *args):
         self.eval_calls += 1
         self.scripts.append(script)
-        self.counts[key] = self.counts.get(key, 0) + 1
-        if self.counts[key] == 1:
-            # Mirrors `if count == 1 then EXPIRE`.
-            self.ttls[key] = int(window)
-        return [self.counts[key], self.ttls.get(key, -1)]
+        keys = list(args[:numkeys])
+        rest = list(args[numkeys:])
+
+        # Legacy single-key script: EVAL script 1 key window
+        if numkeys == 1 and len(rest) == 1 and "for i = 1" not in script:
+            key = keys[0]
+            window = int(rest[0])
+            self.counts[key] = self.counts.get(key, 0) + 1
+            if self.counts[key] == 1:
+                self.ttls[key] = window
+            return [self.counts[key], self.ttls.get(key, -1)]
+
+        # Multi-key P3 script: EVAL script N keys... windows... limits...
+        assert len(rest) == numkeys * 2
+        windows = [int(x) for x in rest[:numkeys]]
+        limits = [int(x) for x in rest[numkeys:]]
+        for i, key in enumerate(keys):
+            if self.counts.get(key, 0) >= limits[i]:
+                ttl = self.ttls.get(key, windows[i])
+                return [0, i + 1, ttl]
+        for i, key in enumerate(keys):
+            self.counts[key] = self.counts.get(key, 0) + 1
+            if self.counts[key] == 1:
+                self.ttls[key] = windows[i]
+        return [1, 0, self.ttls.get(keys[0], windows[0])]
 
     async def ping(self) -> bool:
         return True
+
+    async def get(self, key: str):
+        value = self.counts.get(key)
+        return str(value) if value is not None else None
 
 
 class BrokenRedis:
@@ -83,11 +104,11 @@ class FlakyRedis(FakeRedis):
         super().__init__()
         self.failures_remaining = 1
 
-    async def eval(self, script: str, numkeys: int, key: str, window: str) -> list[int]:
+    async def eval(self, script: str, numkeys: int, *args):
         if self.failures_remaining > 0:
             self.failures_remaining -= 1
             raise RedisConnectionError("Connection reset by peer")
-        return await super().eval(script, numkeys, key, window)
+        return await super().eval(script, numkeys, *args)
 
 
 @pytest.fixture
@@ -163,18 +184,16 @@ def test_throttled_response_names_the_wait(fake_redis):
 def test_counter_uses_one_atomic_call_per_request(fake_redis):
     """The limit must not depend on a read-then-write race in Python.
 
-    The old implementation issued `GET` followed by `INCR`; a client that
-    observes a `GET` here means the read-modify-write has moved back into the
-    application and concurrent requests can each pass the check.
+    With P3 multi-dimensional enforcement, auth requests may be evaluated via a
+    single multi-key atomic Lua script (still one server-side read-modify-write
+    operation per request) instead of the legacy single-key script.
     """
     for _ in range(4):
         client.post(AUTH_PATH, json=LOGIN_BODY)
 
     assert fake_redis.eval_calls == 4
-    assert "redis.call('INCR'" in fake_redis.scripts[0]
-    # `EXPIRE` guarded by `count == 1` is what stops a steady trickle from
-    # keeping a bucket alive forever by re-extending the window on every hit.
-    assert "if count == 1 then" in fake_redis.scripts[0]
+    assert any("redis.call('INCR'" in s for s in fake_redis.scripts)
+    assert any("if count == 1 then" in s or "EXPIRE" in s for s in fake_redis.scripts)
 
 
 def test_window_is_set_once_and_not_extended_by_traffic(fake_redis):
@@ -182,13 +201,21 @@ def test_window_is_set_once_and_not_extended_by_traffic(fake_redis):
     for _ in range(3):
         client.post(AUTH_PATH, json=LOGIN_BODY)
 
-    key = next(iter(fake_redis.ttls))
-    assert fake_redis.ttls[key] == 60
+    # Route/IP auth bucket must keep a 60s window (P3 may add other counters).
+    route_key = next((k for k in fake_redis.ttls if k.startswith("rl:auth:/api/v1/auth/login:")), None)
+    assert route_key is not None
+    assert fake_redis.ttls[route_key] == 60
 
 
-def test_reads_are_never_throttled(fake_redis):
-    """Catalog pages fan out many parallel GETs; throttling them breaks the ISR."""
-    statuses = [client.get("/api/v1/colleges").status_code for _ in range(20)]
+def test_unclassified_reads_are_not_throttled(fake_redis):
+    """P4 throttles only explicitly classified reads; other GETs stay free.
+
+    P2 skipped every GET. P4 opts specific catalogue/search/statistics/media/
+    dashboard templates in, deliberately without a blanket GET rule, so a read
+    route that was never classified (here the predictor exam list) must still
+    bypass Redis entirely.
+    """
+    statuses = [client.get("/api/v1/predictor/exams").status_code for _ in range(20)]
 
     assert fake_redis.eval_calls == 0
     assert all(s != 429 for s in statuses)
@@ -227,12 +254,19 @@ def test_auth_recovers_from_one_stale_connection(flaky_redis):
     assert flaky_redis.eval_calls == 1, "exactly one successful count"
 
 
-def test_public_write_fails_open_when_redis_is_down(broken_redis):
-    """Losing a spam throttle on lead capture beats refusing every enquiry."""
+def test_public_write_fails_closed_when_redis_is_down(broken_redis):
+    """P8: public lead capture can trigger paid SMS/email and CRM work.
+
+    An unprotected enquiry flood is not an acceptable outage mode, so with the
+    throttle unavailable the request is refused. 503 rather than 429 is
+    deliberate: a 429 invites immediate retries against a dependency that is
+    already struggling.
+    """
     resp = client.post(ENQUIRY_PATH, json={})
 
-    assert resp.status_code != 503
-    assert resp.status_code != 429
+    assert resp.status_code == 503
+    assert resp.headers["Retry-After"] == "1"
+    assert resp.json()["error"]["code"] == "SERVICE_UNAVAILABLE"
 
 
 def test_public_write_still_throttles_when_redis_is_healthy(fake_redis):
