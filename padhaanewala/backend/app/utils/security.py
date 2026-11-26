@@ -34,6 +34,7 @@ nothing observable.
 gone for the same reason; neither is imported anywhere in the project.
 """
 
+import secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
@@ -58,6 +59,20 @@ pwd_context = CryptContext(
 #: hardcoded: when this was the literal "HS256" it silently shadowed
 #: settings.JWT_ALGORITHM, so changing the configured algorithm had no effect.
 ALGORITHM = settings.JWT_ALGORITHM
+
+
+_KEY_BYTES = 32
+
+
+def generate_signing_key() -> str:
+    """Return one fresh 256-bit key for a signing slot.
+
+    Call this separately for every slot — each call is an independent CSPRNG
+    draw, so the access and refresh keys cannot end up related. The return value
+    is *not* printed or logged here: callers must place it directly in a secret
+    manager. Used by rotation tooling and tests, never by the running app.
+    """
+    return secrets.token_hex(_KEY_BYTES)
 
 
 def hash_password(password: str) -> str:
@@ -127,6 +142,47 @@ def create_refresh_token(subject: str | int, role: str) -> SignedRefreshToken:
 
 
 def decode_token(token: str, secret: str | None = None) -> dict:
+    """Decode with one explicit key (or the current access key).
+
+    Retained for tests and tooling that deliberately exercise a single key.
+    Request handling should use ``decode_access_token`` / ``decode_refresh_token``
+    so a token issued just before a rotation keeps working during the grace
+    window.
+    """
     key = secret if secret is not None else settings.JWT_SECRET_KEY
     return jwt.decode(token, key, algorithms=[ALGORITHM])
+
+
+def _decode_with_keys(token: str, keys: tuple[str, ...], token_type: str) -> dict:
+    """Verify ``token`` under each candidate key, current first.
+
+    An expired token is reported immediately: expiry is a property of the
+    claims, not of which key happened to sign it, and continuing to the retired
+    key would produce a misleading "invalid signature" error. Every other
+    failure falls through to the next candidate; if none verifies, the last
+    error is raised so callers still see a normal PyJWT exception.
+    """
+    last_error: jwt.exceptions.InvalidTokenError | None = None
+    for key in keys:
+        if not key:
+            continue
+        try:
+            return jwt.decode(token, key, algorithms=[ALGORITHM])
+        except jwt.ExpiredSignatureError:
+            raise
+        except jwt.exceptions.InvalidTokenError as exc:
+            last_error = exc
+    if last_error is not None:
+        raise last_error
+    raise jwt.exceptions.InvalidTokenError(f"no {token_type} key is configured")
+
+
+def decode_access_token(token: str) -> dict:
+    """Verify an access token under current (and, during rotation, retired) keys."""
+    return _decode_with_keys(token, settings.jwt_access_keys, "access")
+
+
+def decode_refresh_token(token: str) -> dict:
+    """Verify a refresh token under current (and, during rotation, retired) keys."""
+    return _decode_with_keys(token, settings.jwt_refresh_keys, "refresh")
 

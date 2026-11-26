@@ -1,4 +1,6 @@
+import hashlib
 import os
+import re
 from functools import lru_cache
 from typing import Literal
 
@@ -24,6 +26,51 @@ _PLACEHOLDER_SECRETS = {
 
 def _is_placeholder(value: str) -> bool:
     return value.strip().lower() in _PLACEHOLDER_SECRETS
+
+
+# SHA-256 fingerprints only — never the key material itself. The source values
+# are generated locally in an ignored `.env.development` and must never appear in
+# source control, logs or build artefacts. A fingerprint is one-way and, for a
+# 256-bit random input, reveals nothing usable to an attacker; it exists solely
+# so a deployed environment cannot boot with a known development key.
+_KNOWN_DEV_KEY_FINGERPRINTS = frozenset(
+    {
+        "31e2c32578acb03e6bdb5772ba59112fc812ebb4cb9af86b2c61404b15d7b2c7",
+        "c8799280537510e1f13adaac4c414f57176d7e3f422c215d6e6b0c1784bc47f5",
+        "0cc581d8e346cfbc67cf233b05d8e115ee0f3fb923bdfd13e5802e41b9f58c15",
+    }
+)
+
+#: HMAC keys shorter than 32 bytes weaken the MAC. Hex-encoded keys therefore
+#: need 64 characters; arbitrary strings need 32 characters plus real variety.
+_MIN_JWT_KEY_BYTES = 32
+_MIN_KEY_CHAR_VARIETY = 10
+_HEX_KEY = re.compile(r"[0-9a-fA-F]+\Z")
+
+
+def _jwt_key_problem(value: str, label: str) -> str | None:
+    """Return a reason why ``value`` is unsafe as an HMAC signing key, or None.
+
+    Deliberately reports *why* a key was rejected but never echoes the value:
+    validation errors travel into logs and CI output, and a key that leaks there
+    is worse than a key that merely fails a check.
+    """
+    text = (value or "").strip()
+    if _is_placeholder(text):
+        return f"{label} is empty or a placeholder"
+    if hashlib.sha256(text.encode("utf-8")).hexdigest() in _KNOWN_DEV_KEY_FINGERPRINTS:
+        return f"{label} is a known development key"
+    if _HEX_KEY.fullmatch(text):
+        if len(text) < _MIN_JWT_KEY_BYTES * 2:
+            return (
+                f"{label} must be at least {_MIN_JWT_KEY_BYTES * 2} hex characters "
+                f"({_MIN_JWT_KEY_BYTES} bytes)"
+            )
+    elif len(text) < _MIN_JWT_KEY_BYTES:
+        return f"{label} must be at least {_MIN_JWT_KEY_BYTES} characters"
+    if len(set(text)) < _MIN_KEY_CHAR_VARIETY:
+        return f"{label} has insufficient character variety for {_MIN_JWT_KEY_BYTES} bytes of entropy"
+    return None
 
 
 def _is_absolute_path(value: str) -> bool:
@@ -113,6 +160,11 @@ class Settings(BaseSettings):
 
     JWT_SECRET_KEY: str = "change-me"
     JWT_REFRESH_SECRET_KEY: str = "change-me"
+    #: Rotation only. A token signed with the previous key keeps verifying until
+    #: this value is cleared after the grace window. Signing always uses the
+    #: current key, so a retired key can never mint a new token.
+    JWT_PREVIOUS_SECRET_KEY: str = ""
+    JWT_PREVIOUS_REFRESH_SECRET_KEY: str = ""
     JWT_ALGORITHM: str = "HS256"
     # R3.4 — short access-token lifetime. `POST /auth/logout` is a no-op echo stub
     # with no denylist, so a leaked access token cannot be revoked and the window
@@ -273,6 +325,34 @@ class Settings(BaseSettings):
     #: already has.
     DATA_REQUEST_WARN_DAYS: int = 15
 
+    @property
+    def jwt_access_keys(self) -> tuple[str, ...]:
+        """Current first, retired second; duplicates and blanks removed.
+
+        Signing uses only ``JWT_SECRET_KEY``. This tuple exists purely so
+        verification can accept tokens issued before a rotation.
+        """
+        return tuple(
+            dict.fromkeys(
+                key.strip()
+                for key in (self.JWT_SECRET_KEY, self.JWT_PREVIOUS_SECRET_KEY)
+                if key and key.strip()
+            )
+        )
+
+    @property
+    def jwt_refresh_keys(self) -> tuple[str, ...]:
+        return tuple(
+            dict.fromkeys(
+                key.strip()
+                for key in (
+                    self.JWT_REFRESH_SECRET_KEY,
+                    self.JWT_PREVIOUS_REFRESH_SECRET_KEY,
+                )
+                if key and key.strip()
+            )
+        )
+
     @model_validator(mode="after")
     def _guard_production_defaults(self):
         # A wildcard CORS origin combined with `allow_credentials=True` lets any
@@ -317,15 +397,47 @@ class Settings(BaseSettings):
                 f"less than DATA_REQUEST_SLA_DAYS ({self.DATA_REQUEST_SLA_DAYS}); "
                 "a warning that fires after the deadline is not a warning"
             )
-        if self.APP_ENV == "production":
-            if self.JWT_SECRET_KEY in ("change-me", ""):
-                raise ValueError("JWT_SECRET_KEY must be set in production")
-            if self.JWT_REFRESH_SECRET_KEY in ("change-me", ""):
-                raise ValueError("JWT_REFRESH_SECRET_KEY must be set in production")
-            if self.JWT_REFRESH_SECRET_KEY == self.JWT_SECRET_KEY:
+        # H-07 — signing-key checks apply to every *deployed* environment. A
+        # staging service is reachable by the public and carries the same user
+        # database shape as production; the old guard only fired for production,
+        # so a staging deployment could boot on committed development keys.
+        if self.APP_ENV in ("staging", "production"):
+            for label, key in (
+                ("JWT_SECRET_KEY", self.JWT_SECRET_KEY),
+                ("JWT_REFRESH_SECRET_KEY", self.JWT_REFRESH_SECRET_KEY),
+                ("JWT_PREVIOUS_SECRET_KEY", self.JWT_PREVIOUS_SECRET_KEY),
+                ("JWT_PREVIOUS_REFRESH_SECRET_KEY", self.JWT_PREVIOUS_REFRESH_SECRET_KEY),
+            ):
+                # Previous keys are optional; an empty value means "no rotation
+                # in progress" and must not be turned into a boot failure.
+                if label.startswith("JWT_PREVIOUS") and not (key or "").strip():
+                    continue
+                problem = _jwt_key_problem(key, label)
+                if problem is not None:
+                    raise ValueError(f"{label} is unsafe in {self.APP_ENV}: {problem}")
+            # Key separation is enforced across both current and retired slots:
+            # using one string for two purposes would let a refresh token verify
+            # as an access token (or vice versa) during a rotation.
+            current_and_previous = (
+                self.JWT_SECRET_KEY,
+                self.JWT_REFRESH_SECRET_KEY,
+                self.JWT_PREVIOUS_SECRET_KEY,
+                self.JWT_PREVIOUS_REFRESH_SECRET_KEY,
+            )
+            supplied = [key.strip() for key in current_and_previous if key and key.strip()]
+            if len(set(supplied)) != len(supplied):
                 raise ValueError(
-                    "JWT_REFRESH_SECRET_KEY must differ from JWT_SECRET_KEY in production"
+                    "JWT access, refresh and rotation keys must all be distinct "
+                    f"in {self.APP_ENV}"
                 )
+            if self.JWT_ALGORITHM not in ("HS256", "HS384", "HS512"):
+                raise ValueError(
+                    f"JWT_ALGORITHM must be an HMAC algorithm in {self.APP_ENV}, got "
+                    f"{self.JWT_ALGORITHM!r}. Asymmetric algorithms would require "
+                    "a public key and are not configured."
+                )
+
+        if self.APP_ENV == "production":
             if "dev_password_123" in self.DATABASE_URL or self.DB_PASSWORD == "dev_password_123":
                 raise ValueError("production must not use default dev database credentials")
             if self.JWT_ACCESS_TOKEN_EXPIRE_MINUTES > self.MAX_ACCESS_TOKEN_EXPIRE_MINUTES:
@@ -391,12 +503,6 @@ class Settings(BaseSettings):
                 raise ValueError(
                     f"BCRYPT_ROUNDS must be >= 12 in production (got "
                     f"{self.BCRYPT_ROUNDS})"
-                )
-            if self.JWT_ALGORITHM not in ("HS256", "HS384", "HS512"):
-                raise ValueError(
-                    f"JWT_ALGORITHM must be an HMAC algorithm, got "
-                    f"{self.JWT_ALGORITHM!r}. Asymmetric algorithms would require "
-                    f"a public key and are not configured."
                 )
             if not _is_absolute_path(self.MEDIA_ROOT):
                 raise ValueError(

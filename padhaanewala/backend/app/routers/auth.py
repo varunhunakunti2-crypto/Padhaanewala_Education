@@ -30,7 +30,7 @@ from app.services.compliance_service import GUARDIAN_CONSENT_VERSION
 from app.utils import audit
 from app.utils.client_ip import client_ip
 from app.utils.security import (
-    decode_token,
+    decode_refresh_token,
     hash_password,
     verify_password,
 )
@@ -376,7 +376,7 @@ def refresh(
         )
 
     try:
-        claims = decode_token(presented, settings.JWT_REFRESH_SECRET_KEY)
+        claims = decode_refresh_token(presented)
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -462,7 +462,7 @@ def logout(
     revoked = 0
     if presented:
         try:
-            claims = decode_token(presented, settings.JWT_REFRESH_SECRET_KEY)
+            claims = decode_refresh_token(presented)
         except Exception:
             claims = {}
         if claims.get("type") == "refresh":

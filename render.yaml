@@ -151,6 +151,15 @@ services:
       - key: JWT_REFRESH_SECRET_KEY
         sync: false
 
+      # Rotation grace slots. Leave UNSET outside an approved rotation. When
+      # rotating, add the two retired keys here as secret values (sync: false),
+      # deploy, observe, then delete both entries. See
+      # padhaanewala/docs/jwt-key-rotation.md. Never put values in this file.
+      # - key: JWT_PREVIOUS_SECRET_KEY
+      #   sync: false
+      # - key: JWT_PREVIOUS_REFRESH_SECRET_KEY
+      #   sync: false
+
       - key: EMAIL_PROVIDER
         value: console
 

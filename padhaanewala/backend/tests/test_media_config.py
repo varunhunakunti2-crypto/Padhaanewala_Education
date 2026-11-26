@@ -29,6 +29,13 @@ import pytest
 
 from app.config import settings
 
+# Test-only guard-satisfying values, NOT credentials. They exist solely so the
+# H-07 entropy guard passes and the media guard under test is reached first.
+# They are deliberately recognisable, are never used to sign a real token, and
+# are not the development keys (which are denylisted by fingerprint only).
+_TEST_ACCESS_KEY = "0123456789abcdef" * 4
+_TEST_REFRESH_KEY = "fedcba9876543210" * 4
+
 
 def _production_baseline(monkeypatch, **overrides) -> None:
     """Put `settings` in an otherwise-valid production state.
@@ -41,8 +48,8 @@ def _production_baseline(monkeypatch, **overrides) -> None:
     # The suite disables both globally; production requires both explicitly.
     monkeypatch.setattr(settings, "RATE_LIMIT_ENABLED", True)
     monkeypatch.setattr(settings, "EMAIL_VERIFICATION_REQUIRED", True)
-    monkeypatch.setattr(settings, "JWT_SECRET_KEY", "a-real-access-secret")
-    monkeypatch.setattr(settings, "JWT_REFRESH_SECRET_KEY", "a-different-refresh-secret")
+    monkeypatch.setattr(settings, "JWT_SECRET_KEY", _TEST_ACCESS_KEY)
+    monkeypatch.setattr(settings, "JWT_REFRESH_SECRET_KEY", _TEST_REFRESH_KEY)
     monkeypatch.setattr(settings, "DB_PASSWORD", "a-real-db-password")
     monkeypatch.setattr(settings, "DATABASE_URL", "postgresql+psycopg2://u:p@localhost/db")
     monkeypatch.setattr(settings, "JWT_ACCESS_TOKEN_EXPIRE_MINUTES", 30)

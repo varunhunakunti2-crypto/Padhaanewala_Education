@@ -168,6 +168,11 @@ services:
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY is required}
       JWT_REFRESH_SECRET_KEY: ${JWT_REFRESH_SECRET_KEY:?JWT_REFRESH_SECRET_KEY is required}
+      # Rotation grace slots. Unset except during an approved rotation; when
+      # set, these keys verify old tokens but can never sign new ones.
+      # See docs/jwt-key-rotation.md. Values come from the secret manager.
+      JWT_PREVIOUS_SECRET_KEY: ${JWT_PREVIOUS_SECRET_KEY:-}
+      JWT_PREVIOUS_REFRESH_SECRET_KEY: ${JWT_PREVIOUS_REFRESH_SECRET_KEY:-}
 
       DB_HOST: db
       DB_PORT: "5432"

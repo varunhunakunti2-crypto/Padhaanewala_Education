@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import User
 from app.roles import CONTENT_ROLES
-from app.utils.security import decode_token
+from app.utils.security import decode_access_token
 
 bearer_scheme = HTTPBearer(auto_error=True)
 bearer_scheme_optional = HTTPBearer(auto_error=False)
@@ -18,7 +18,7 @@ def get_current_user(
 ) -> User:
     token = credentials.credentials
     try:
-        payload = decode_token(token)
+        payload = decode_access_token(token)
     except ExpiredSignatureError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
