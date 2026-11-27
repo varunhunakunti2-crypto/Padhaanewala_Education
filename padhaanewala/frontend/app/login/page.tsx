@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  useTransition,
+  type FormEvent,
+} from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -79,6 +85,10 @@ export default function LoginPage() {
 
 function LoginFormContent() {
   const router = useRouter();
+  // The URL is browser-only state. Read it after mount, but apply the result
+  // through a transition (the pattern in the Next.js mutating-data guide) so
+  // the effect body never calls setState synchronously.
+  const [, startTransition] = useTransition();
   const [modeParam, setModeParam] = useState<string | null>(null);
   const { setProfile, setAuthenticated, showToast } = useApp();
 
@@ -139,16 +149,19 @@ function LoginFormContent() {
 
   useEffect(() => {
     const params = readLocationParams();
-    setModeParam(params.get("mode"));
-    setFallbackNext(nextPathFromLocation());
-    // The no-JavaScript form posts to /api/auth/login and returns here with a
-    // generic code. Never echo submitted credentials back into the URL.
-    if (params.get("error") === "credentials") {
-      setServerError("Email or password is incorrect. Please try again.");
-    } else if (params.get("error") === "unverified") {
-      setServerError("Please confirm your email address before signing in.");
-    }
-  }, []);
+    const error = params.get("error");
+    startTransition(() => {
+      setModeParam(params.get("mode"));
+      setFallbackNext(nextPathFromLocation());
+      // The no-JavaScript form posts to /api/auth/login and returns here with a
+      // generic code. Never echo submitted credentials back into the URL.
+      if (error === "credentials") {
+        setServerError("Email or password is incorrect. Please try again.");
+      } else if (error === "unverified") {
+        setServerError("Please confirm your email address before signing in.");
+      }
+    });
+  }, [startTransition]);
 
   useEffect(() => {
     if (cooldown <= 0) return;

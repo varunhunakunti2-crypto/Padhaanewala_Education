@@ -18,7 +18,6 @@ import ScholarshipsExplorer from "@/components/scholarships/ScholarshipsExplorer
 import { CollegeSubmissionsSection } from "@/components/admin/sections/CollegeSubmissionsSection";
 import { SafeExternalLink } from "@/components/ui/SafeExternalLink";
 import type { Exam, Scholarship } from "@/lib/types";
-import type { CollegeSubmission } from "@/lib/api";
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;

@@ -17,10 +17,11 @@ This batch addresses only items that do not require the outstanding owner, indep
 | 11 — API docs exposure | `backend/app/main.py` extracts a pure `docs_paths_for_env()` helper; production still disables `/docs`, `/redoc` and `/openapi.json`. | New `backend/tests/test_api_docs_exposure.py`. |
 | Deployment migration safety | Alembic had **two heads** (`b2f8c4d9e731` and `f4a1c6d8e902`), both branched from `a7d3c5e1f924`. `b2f8c4d9e731` is re-parented onto `f4a1c6d8e902` so a database stamped on the main-line revision picks up the AI-settings migration on `upgrade head`. | New `backend/tests/test_alembic_heads.py`; static graph check now reports one head. |
 | Rate-limit coverage | Two DELETE routes added after the P10 audit were unclassified: `DELETE /api/v1/compliance/requests/{request_id}` and `DELETE /api/v1/users/{user_id}`. They are now P7 `consent_write` and P9 `user_mutation` respectively, so the 23-route known gap does not grow silently. | New params in `test_rate_limit_p7.py` and `test_rate_limit_p9.py`; `test_rate_limit_p10.py` pin stays at 23. |
+| Frontend lint | `app/login/page.tsx` now applies the post-mount URL read through `startTransition`, as in the Next.js mutating-data guide, so no `setState` is called synchronously in an effect body. Two unused test bindings were also removed. | `npm run lint`, `npm run typecheck` and the 905-test suite are all clean locally. |
 
 ## Verification performed
 
-- Frontend: **905 tests passed** (50 files), including the new browser-storage and legal-consistency tests.
+- Frontend: **905 tests passed** (50 files), including the new browser-storage and legal-consistency tests. `npm run lint` and `npm run typecheck` also pass cleanly.
 - Backend: Python compilation succeeded for `app`, `tests` and `alembic`.
 - Alembic metadata: single head confirmed (`b2f8c4d9e731`).
 - Backend CI on `security/deployment-hardening` was re-run after the rate-limit fix and is **green**. The first run found 1 failure (the P10 pin for the two DELETE routes above); after classification the suite passed. This branch was merged into `main` only after that green result.

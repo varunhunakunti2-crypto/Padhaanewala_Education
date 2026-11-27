@@ -26,12 +26,15 @@ function request(token?: string) {
 }
 
 function backend(roles: unknown, status = 200) {
-  return vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
-    new Response(JSON.stringify({ roles }), {
+  return vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => {
+    // The mock ignores its arguments; the assertions below inspect the call.
+    void _input;
+    void _init;
+    return new Response(JSON.stringify({ roles }), {
       status,
       headers: { "Content-Type": "application/json" },
-    }),
-  );
+    });
+  });
 }
 
 beforeEach(() => {
