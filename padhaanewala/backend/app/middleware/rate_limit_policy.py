@@ -831,6 +831,15 @@ def default_policy_rules() -> tuple[RouteRule, ...]:
             priority=340,
             body_tiers=(_p9_body_tier("role_change", "role_ids"),),
         ),
+        # The admin hard-delete added after P10 is another user mutation. It
+        # gets its own rule without the role_ids body tier: a DELETE has no
+        # inspectable role-change body, and must fail closed on a Redis outage.
+        _p9_sensitive_rule(
+            "user_mutation",
+            "/api/v1/users/{user_id}",
+            frozenset({"DELETE"}),
+            priority=340,
+        ),
         _p9_sensitive_rule(
             "audit_read",
             "/api/v1/audit-logs",
@@ -1121,6 +1130,14 @@ def default_policy_rules() -> tuple[RouteRule, ...]:
         ),
         _p7_rule(
             "consent_write", "/api/v1/compliance/requests", frozenset({"POST"})
+        ),
+        # A data principal withdrawing their own request is the same
+        # user-scoped consent operation as creating one. This route was added
+        # after the P10 audit, so classify it rather than growing the pinned gap.
+        _p7_rule(
+            "consent_write",
+            "/api/v1/compliance/requests/{request_id}",
+            frozenset({"DELETE"}),
         ),
         _p7_rule(
             "student_notifications",

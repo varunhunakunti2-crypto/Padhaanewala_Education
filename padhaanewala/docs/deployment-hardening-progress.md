@@ -16,13 +16,15 @@ This batch addresses only items that do not require the outstanding owner, indep
 | 16 — Privacy notice | Legal copy now points data-rights requests to the in-app “Privacy and data” panel with email as fallback, qualifies the 30-day closure statement with the scheduled sweep, and corrects stale claims about file upload and the AI route. `LEGAL_LAST_UPDATED` bumped. | New `frontend/tests/legal-consistency.test.ts`. |
 | 11 — API docs exposure | `backend/app/main.py` extracts a pure `docs_paths_for_env()` helper; production still disables `/docs`, `/redoc` and `/openapi.json`. | New `backend/tests/test_api_docs_exposure.py`. |
 | Deployment migration safety | Alembic had **two heads** (`b2f8c4d9e731` and `f4a1c6d8e902`), both branched from `a7d3c5e1f924`. `b2f8c4d9e731` is re-parented onto `f4a1c6d8e902` so a database stamped on the main-line revision picks up the AI-settings migration on `upgrade head`. | New `backend/tests/test_alembic_heads.py`; static graph check now reports one head. |
+| Rate-limit coverage | Two DELETE routes added after the P10 audit were unclassified: `DELETE /api/v1/compliance/requests/{request_id}` and `DELETE /api/v1/users/{user_id}`. They are now P7 `consent_write` and P9 `user_mutation` respectively, so the 23-route known gap does not grow silently. | New params in `test_rate_limit_p7.py` and `test_rate_limit_p9.py`; `test_rate_limit_p10.py` pin stays at 23. |
 
 ## Verification performed
 
 - Frontend: **905 tests passed** (50 files), including the new browser-storage and legal-consistency tests.
 - Backend: Python compilation succeeded for `app`, `tests` and `alembic`.
 - Alembic metadata: single head confirmed (`b2f8c4d9e731`).
-- Backend pytest suite **was not run**: this environment has no reachable PostgreSQL on port 5433 with usable credentials. The new backend tests must be run in CI or on a machine with the configured test database before this branch is merged.
+- Backend CI on `security/deployment-hardening` ran **1321 tests: 1318 passed, 2 skipped, 1 failed**. The failure was the P10 route-coverage pin for the two DELETE routes listed above; they are now classified. A fresh CI run is required to confirm green before merge.
+- Backend pytest cannot be re-run locally here: this environment has no reachable PostgreSQL on port 5433 with usable credentials.
 
 ## Still blocked / not touched
 

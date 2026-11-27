@@ -432,6 +432,7 @@ def test_default_sensitive_limits_match_the_approved_values():
         ("PUT", "/api/v1/settings/ai", "p9:ai_settings", 3, 60),
         ("POST", "/api/v1/settings/ai/test", "p9:ai_settings", 3, 60),
         ("PATCH", "/api/v1/users/5", "p9:user_mutation", 20, 60),
+        ("DELETE", "/api/v1/users/5", "p9:user_mutation", 20, 60),
         ("GET", "/api/v1/audit-logs", "p9:audit_read", 30, 60),
     ],
 )

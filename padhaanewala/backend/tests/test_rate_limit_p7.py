@@ -269,6 +269,14 @@ P7_CASES = [
         3600,
     ),
     (
+        "DELETE",
+        "/api/v1/compliance/requests/{request_id}",
+        "consent_write",
+        "student_operations",
+        5,
+        3600,
+    ),
+    (
         "GET",
         "/api/v1/notifications/my",
         "student_notifications",
