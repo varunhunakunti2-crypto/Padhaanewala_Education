@@ -85,15 +85,42 @@ describe("the access token is never persisted", () => {
     expect(getAccessToken()).toBeNull();
   });
 
-  it("preference data is still persisted, so the change is not a blanket one", () => {
-    // Guards against over-correction: the fix is about credentials, not about
-    // emptying local storage entirely.
-    storeUser({ id: 1, email: "a@example.com", mobile: "9000000000", name: "A" } as never);
-    expect(window.localStorage.getItem("cp_user")).toContain("a@example.com");
+  it("caches only the display fields, never email or mobile", () => {
+    // Guards against over-correction: the fix is about identifiers in a script
+    // readable store, not about emptying local storage entirely.
+    storeUser(
+      {
+        id: 1,
+        email: "a@example.com",
+        mobile: "9000000000",
+        name: "A Student",
+      } as never,
+    );
+    const cached = window.localStorage.getItem("cp_user");
+    expect(cached).toContain('"name":"A Student"');
+    expect(cached).not.toContain("a@example.com");
+    expect(cached).not.toContain("9000000000");
   });
 });
 
 describe("purgeLegacyTokenStorage", () => {
+  it("rewrites a full profile left by an older build down to display fields", () => {
+    window.localStorage.setItem(
+      "cp_user",
+      JSON.stringify({
+        id: 7,
+        name: "Old Student",
+        email: "old@example.com",
+        mobile: "9111111111",
+      }),
+    );
+    purgeLegacyTokenStorage();
+    const cached = window.localStorage.getItem("cp_user");
+    expect(cached).toContain('"name":"Old Student"');
+    expect(cached).not.toContain("old@example.com");
+    expect(cached).not.toContain("9111111111");
+  });
+
   it("removes the tokens a pre-3.6 build left on disk", () => {
     // These are the exact keys `lib/api.ts` used to write. A browser that signed
     // in before the upgrade still has them, and without this nothing would ever

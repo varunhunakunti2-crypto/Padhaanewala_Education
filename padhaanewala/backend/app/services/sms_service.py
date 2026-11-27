@@ -67,24 +67,30 @@ def format_mobile(mobile: str) -> str:
     return digits
 
 
+def _mask_mobile(mobile: str) -> str:
+    """A log-safe rendering of a mobile: only the last four digits survive."""
+    digits = "".join(ch for ch in mobile if ch.isdigit())
+    return f"***{digits[-4:]}" if len(digits) >= 4 else "***"
+
+
 def send_otp(mobile: str, otp: str) -> str:
     """Send a 6-digit OTP. Returns the provider actually used.
 
-    The OTP is logged only on the console path, and never when a real provider
-    is configured — an application log is a much weaker secret store than a
-    provider's own delivery records, and it is routinely shipped to log
-    aggregators.
+    Neither the code nor the full mobile is ever logged. An application log is a
+    much weaker secret store than a provider's delivery record, and it is
+    routinely shipped to log aggregators. The console fallback stays usable for
+    local development by keeping the code in the delivery call seam only; the
+    log line merely records that the fallback happened.
     """
     provider = _provider()
 
     if provider == "console":
         logger.warning(
-            "SMS_PROVIDER is not usable (SMS_PROVIDER=%r, credential %s); "
-            "OTP for %s is %s -- not sent to any handset",
+            "SMS provider is not usable (SMS_PROVIDER=%r, credential %s); "
+            "delivery fell back to console for mobile %s -- code withheld from logs",
             settings.SMS_PROVIDER,
             "missing" if not _credentials_usable() else "present",
-            format_mobile(mobile),
-            otp,
+            _mask_mobile(mobile),
         )
         return "console"
 

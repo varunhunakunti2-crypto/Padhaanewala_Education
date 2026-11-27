@@ -148,6 +148,12 @@ All are authenticated, user-scoped routes. They are not anonymous amplification
 surfaces, but they are genuinely unthrottled. A future phase should classify
 them (probably `authenticated_api` reads and `student_operations` writes).
 
+Two DELETE routes were added after this audit and are **not** part of the 23:
+`DELETE /api/v1/compliance/requests/{request_id}` is classified as P7
+`consent_write` (5/hour, user-keyed), and `DELETE /api/v1/users/{user_id}` is
+classified as P9 `user_mutation` (20/min, user-keyed, fail-closed). They were
+classified during deployment hardening so the known gap does not grow silently.
+
 ---
 
 ## 5. Limits (defaults)

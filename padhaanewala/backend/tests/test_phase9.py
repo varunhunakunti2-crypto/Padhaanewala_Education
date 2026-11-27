@@ -461,7 +461,7 @@ def _make_counsellor_with_user(name: str, max_leads: int = 100) -> tuple[dict, i
 def _inbox(user_id: int) -> list[dict]:
     with SessionLocal() as db:
         return [
-            {"type": n.type, "title": n.title, "data": n.data}
+            {"type": n.type, "title": n.title, "message": n.message, "data": n.data}
             for n in db.query(Notification)
             .filter(Notification.user_id == user_id)
             .order_by(Notification.id.desc())
@@ -654,9 +654,35 @@ def test_reassigning_a_lead_to_its_current_owner_is_not_a_capacity_check():
     assert refused.status_code == 409, refused.text
 
 
+def test_lead_notifications_carry_no_personal_lead_data():
+    """Admin fan-out must not copy a lead's name or mobile into notifications."""
+    _park_all_counsellors()
+    admin_headers = _make_admin()
+    admin_id = _admin_user_id(admin_headers)
+    lead_name = f"PrivateLead{uuid.uuid4().hex[:6]}"
+    lead_mobile = f"2{uuid.uuid4().int % 1_000_000_000:09d}"
+    lead_id = _submit_enquiry({"name": lead_name, "mobile": lead_mobile})
+
+    alerts = [
+        n
+        for n in _inbox(admin_id)
+        if n["type"] == "new_lead" and (n["data"] or {}).get("enquiry_id") == lead_id
+    ]
+    assert alerts, "new lead was not announced"
+    alert = alerts[0]
+    assert lead_name not in (alert["title"] + alert["message"]), (
+        "lead name leaked into a broadcast notification"
+    )
+    assert lead_mobile not in (alert["title"] + alert["message"]), (
+        "lead mobile leaked into a broadcast notification"
+    )
+    assert alert["data"] == {"enquiry_id": lead_id}, (
+        "notification data must carry the row reference only"
+    )
+
+
 def test_a_max_length_name_still_produces_a_notification():
-    """`enquiries.name` is VARCHAR(255) and the title prefix pushes past
-    `notifications.title`'s own 255 — a long name must not lose the alert."""
+    """A 255-character name must not swallow the alert; PII stays out of it."""
     _park_all_counsellors()
     admin_headers = _make_admin()
     admin_id = _admin_user_id(admin_headers)

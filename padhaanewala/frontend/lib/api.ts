@@ -118,6 +118,19 @@ export function purgeLegacyTokenStorage(): void {
       // either way, so there is nothing to recover from here.
     }
   }
+  // Older builds cached the whole backend profile here. Rewrite it down to the
+  // display-only fields so a returning user does not keep email/mobile in a
+  // browser store that every script in the origin can read.
+  try {
+    const raw = window.localStorage.getItem(USER_KEY);
+    if (raw) {
+      const cached = toCachedUser(JSON.parse(raw));
+      if (cached) window.localStorage.setItem(USER_KEY, JSON.stringify(cached));
+      else window.localStorage.removeItem(USER_KEY);
+    }
+  } catch {
+    /* corrupted or inaccessible storage: drop it on the next successful login */
+  }
 }
 
 /** Adopt a token handed over by another tab, without persisting it. */
@@ -239,6 +252,27 @@ export interface BackendProfile {
   created_at: string;
 }
 
+/**
+ * The only profile fields allowed in `localStorage`.
+ *
+ * Email and mobile are identifiers, and any script running in this origin can
+ * read localStorage. The UI only needs an id and a display name; everything
+ * else comes from the API on demand.
+ */
+export interface CachedUser {
+  id: number;
+  name: string;
+}
+
+function toCachedUser(value: unknown): CachedUser | null {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as Partial<CachedUser>;
+  if (typeof candidate.id !== "number" || typeof candidate.name !== "string") {
+    return null;
+  }
+  return { id: candidate.id, name: candidate.name };
+}
+
 export interface EnquiryPayload {
   name: string;
   mobile: string;
@@ -330,11 +364,11 @@ export function storeAuth(tokens: AuthTokens): void {
   }
 }
 
-export function getStoredUser(): BackendProfile | null {
+export function getStoredUser(): CachedUser | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = window.localStorage.getItem(USER_KEY);
-    return raw ? (JSON.parse(raw) as BackendProfile) : null;
+    return raw ? toCachedUser(JSON.parse(raw)) : null;
   } catch {
     return null;
   }
@@ -342,7 +376,10 @@ export function getStoredUser(): BackendProfile | null {
 
 export function storeUser(user: BackendProfile): void {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(USER_KEY, JSON.stringify(user));
+  window.localStorage.setItem(
+    USER_KEY,
+    JSON.stringify({ id: user.id, name: user.name }),
+  );
 }
 
 export function clearAuth(): void {
@@ -409,8 +446,8 @@ export function subscribeToAccessToken(onToken: (token: string | null) => void):
  * Only the in-memory token is cleared. `cp_user` and the legacy keys are left
  * alone, because that is `clearAuth`'s job and the two are called at different
  * points: here the user did not ask to sign out, their session simply expired,
- * and keeping the cached profile avoids a login form that has forgotten their
- * name.
+ * and keeping the display-only cached profile avoids a login form that has
+ * forgotten their name.
  */
 export function broadcastSignOut(): void {
   accessToken = null;

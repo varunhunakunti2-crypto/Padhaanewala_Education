@@ -75,16 +75,23 @@ async def lifespan(app: FastAPI):
     yield
     await close_redis()
 
-_IS_PRODUCTION = settings.APP_ENV == "production"
+def docs_paths_for_env(env: str) -> tuple[str | None, str | None, str | None]:
+    """Return (docs, redoc, openapi) paths for the given environment.
+
+    Kept as a pure function so the production decision can be tested without
+    reloading the app module or booting a second process.
+    """
+    if env == "production":
+        return (None, None, None)
+    return ("/docs", "/redoc", "/openapi.json")
+
 
 # The interactive API docs are a complete, clickable map of every route,
 # request schema, response model and enum in a 129-endpoint API. In production
 # that is free reconnaissance for anyone who asks, and it cannot be protected
 # with credentials because Swagger UI has to load the spec before it can send
 # an Authorization header. `APP_ENV=development` keeps it for local work.
-_DOCS_PATH = None if _IS_PRODUCTION else "/docs"
-_REDOC_PATH = None if _IS_PRODUCTION else "/redoc"
-_OPENAPI_PATH = None if _IS_PRODUCTION else "/openapi.json"
+_DOCS_PATH, _REDOC_PATH, _OPENAPI_PATH = docs_paths_for_env(settings.APP_ENV)
 
 app = FastAPI(
     title="Padhaanewala API",
