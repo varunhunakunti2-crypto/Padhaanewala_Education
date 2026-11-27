@@ -1,15 +1,15 @@
 # Padhaanewala Regression — Current Status
 
-**Snapshot:** 2026-11-28 00:38 IST  
+**Snapshot:** 2026-11-28 03:45 IST  
 **Full report:** [`antigravity-test-everything-report.md`](./antigravity-test-everything-report.md)  
 **Raw frontend output:** [`antigravity-frontend-results.txt`](./antigravity-frontend-results.txt)
 
 ## Summary
 
-| Category | Total | Pass | Fail | Blocked | Interrupted | Running | Pending |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| Frontend E2E | 50 | 3 | 0 | 1 | 1 | 1 | 44 |
-| Backend API | 10 | 10 | 0 | 0 | 0 | 0 | 0 |
+| Category | Total | Pass | Fail | Blocked | Interrupted | Pending |
+|---|---:|---:|---:|---:|---:|---:|
+| Frontend E2E | 50 | 3 | 0 | 1 | 2 | 44 |
+| Backend API | 10 | 10 | 0 | 0 | 0 | 0 |
 
 ## Frontend
 
@@ -22,9 +22,11 @@ Passed:
 Open:
 
 - TC002 — BLOCKED: agent could not detect Chrome `DevToolsActivePort`; Chrome itself was verified healthy on port 9222. Rerun required.
-- TC004 — INTERRUPTED: `agy` process hung without browser progress or a final verdict; process was terminated to unblock the runner. Rerun required.
-- TC006 — currently running.
+- TC004 — INTERRUPTED: `agy` process hung without browser progress or a final verdict. Rerun required.
+- TC006 — INTERRUPTED: the `agy -p` process launched for TC006 attached to an unrelated SafeRoute AI conversation instead of the Padhaanewala browser case. No verdict was produced. The stuck runner was stopped at 03:42 IST.
 - TC007–TC050 — pending.
+
+Root cause of the stalled "44 pending" state: the sequential runner never got past TC006 because the Antigravity CLI session drifted into another workspace. It is not caused by the QA files that were removed from GitHub and restored locally. All 40 removed files were restored to GitHub in commit `6cf8274`.
 
 ## Backend
 
@@ -42,8 +44,8 @@ All 10 backend API cases pass with system `python -m pytest`:
 
 ## Next actions
 
-1. Let TC006–TC050 finish.
-2. Rerun TC002 and TC004 individually.
-3. Regenerate the full report with final verdicts.
-4. Revert the local synthetic admin credential edit in `.agents/skills/test-everything/scripts/run-frontend-cases.ps1`.
-5. Keep generated result files local-only; do not commit local QA configuration.
+1. Rerun TC002 and TC004–TC050 in an isolated CLI project (`--new-project --add-dir <APP>`) with a per-case `--print-timeout`.
+2. Re-add the local synthetic admin credential only if admin cases require it, then revert before any commit.
+3. Regenerate the full report from raw results with final verdicts.
+4. Keep generated result files local-only; do not commit local QA configuration.
+5. Keep staging and production NO-GO until their gates are closed.

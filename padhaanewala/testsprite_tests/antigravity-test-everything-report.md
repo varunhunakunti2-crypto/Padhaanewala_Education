@@ -1,25 +1,25 @@
 # Padhaanewala Full Regression & Deployment Readiness Report
 
-**Generated:** 2026-11-28 00:37 IST  
-**Report type:** Interim snapshot — the 50-case frontend runner is still executing  
+**Generated:** 2026-11-28 03:45 IST  
+**Report type:** Interim snapshot — the 50-case frontend runner was stopped after the CLI session drifted to an unrelated project  
 **Environment:** Frontend `http://localhost:3000` | Backend `http://localhost:8000`  
 **Browser:** Chrome 158, default profile, `--remote-debugging-port=9222`  
 **Database:** PostgreSQL `padhaanewala_dev`, Alembic head `b2f8c4d9e731`  
 **Cache:** Redis 7, healthy  
-**Release ref:** `e35a33f50990437ce414cd225f58c52caba8e9ed` (`main`)  
+**Release ref:** `6cf8274` (`main`)  
 **Test data:** Synthetic accounts only. No real student or minor data was used.
 
-> This report will be updated to final verdicts when the frontend runner finishes. Every frontend case is listed below with one of: `PASS`, `FAIL`, `BLOCKED`, `INTERRUPTED` (started but no verdict), `RUNNING` (currently executing), or `PENDING` (not started).
+> This report will be updated to final verdicts when the frontend rerun finishes. Every frontend case is listed below with one of: `PASS`, `FAIL`, `BLOCKED`, `INTERRUPTED` (started but no verdict), or `PENDING` (not started).
 
 ---
 
 ## 1. Executive summary
 
-| Category | Total | Passed | Failed | Blocked | Interrupted | Running | Pending | Pass rate so far |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| Frontend E2E (`/browser`) | 50 | 3 | 0 | 1 | 1 | 1 | 44 | 3/4 final verdicts (75%) |
-| Backend API (`pytest`) | 10 | 10 | 0 | 0 | 0 | 0 | 0 | **100%** |
-| Combined | 60 | 13 | 0 | 1 | 1 | 1 | 44 | — |
+| Category | Total | Passed | Failed | Blocked | Interrupted | Pending | Pass rate so far |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Frontend E2E (`/browser`) | 50 | 3 | 0 | 1 | 2 | 44 | 3/4 final verdicts (75%) |
+| Backend API (`pytest`) | 10 | 10 | 0 | 0 | 0 | 0 | **100%** |
+| Combined | 60 | 13 | 0 | 1 | 2 | 44 | — |
 
 **Current release decision:**  
 - **Staging:** NO-GO until AWS CloudShell/CLI, EC2 SSH/SSM, and Cloudflare DNS access are provided and the runbook Phase 0/1 outputs are captured.  
@@ -37,7 +37,7 @@
 | TC003 | Find a college from the homepage search | **PASS** | `tc003_college_detail_page.png` | Searched "A.B. Shetty", selected suggestion, and verified college detail page and overview with zero console errors. |
 | TC004 | Complete and submit a mock test attempt | **INTERRUPTED** | - | Runner ended without a final verdict; rerun required |
 | TC005 | Block access to a protected route while signed out | **PASS** | `tc005_redirect.png` | Unauthenticated access to /dashboard is blocked and redirected to /login?next=%2Fdashboard. |
-| TC006 | Submit a contact enquiry successfully | **RUNNING** | - | Currently executing in the runner |
+| TC006 | Submit a contact enquiry successfully | **INTERRUPTED** | - | `agy` CLI session drifted to an unrelated SafeRoute AI project; runner stopped at 03:42 IST with no TC006 verdict |
 | TC007 | Block unauthenticated access to the admin console | **PENDING** | - | Not executed yet in the current run |
 | TC008 | Filter and sort colleges before opening a detail page | **PENDING** | - | Not executed yet in the current run |
 | TC009 | Auto-submit a mock test when time runs out | **PENDING** | - | Not executed yet in the current run |
@@ -119,7 +119,8 @@ Command used: system `python -m pytest` from `padhaanewala/`.
 | Case | Layer | Status | Root cause | Action |
 |---|---|---|---|---|
 | TC002 | Frontend | **BLOCKED** | Agent reported `DevToolsActivePort` not found for `C:\Users\pushk\AppData\Local\Google\Chrome\User Data`. A separate check at 00:19 IST confirmed the file exists, port 9222 answers `/json/version` with 200, and Chrome is running with the default profile. This is a runner/browser-connection flake, not an application defect. | Rerun TC002 alone after the current batch completes; if it recurs, restart Chrome and rerun. |
-| TC004 | Frontend | **INTERRUPTED** | Complete and submit a mock test attempt started but the `agy` process hung without browser progress or a final verdict; no PASS/FAIL/BLOCKED line was produced. | Rerun TC004 alone after the batch completes; if it hangs again, restart Chrome and rerun. |
+| TC004 | Frontend | **INTERRUPTED** | Complete and submit a mock test attempt started but the `agy` process hung without browser progress or a final verdict; no PASS/FAIL/BLOCKED line was produced. | Rerun TC004 alone in an isolated CLI project; if it hangs again, restart Chrome and rerun. |
+| TC006 | Frontend | **INTERRUPTED** | The `agy -p` process launched for TC006 attached to an unrelated SafeRoute AI conversation (transcript shows work on `src/api/app.py`, port 8010, and a different user request) instead of the Padhaanewala browser case. No TC006 verdict was produced. The stuck runner was stopped at 03:42 IST. | Rerun TC006–TC050 with `--new-project --add-dir <APP>` (or an equivalent isolated CLI project) and `--print-timeout` so a session cannot drift into another workspace. |
 
 ### 4.2 Resolved earlier blockers (not current failures)
 
@@ -144,7 +145,7 @@ These are QA-machine settings only and are absent from the clean release ref:
   - `testsprite.student@example.com` — student role.
   - `testsprite.admin@example.com` — local admin/super-admin account created via `scripts/seed_admin.py` under the explicit allowlist gate.
 - Chrome launched with the default user-data directory and remote debugging on port 9222.
-- The frontend runner script currently contains a local synthetic admin credential edit; it must be reverted after the run so no test password remains in the tracked script.
+- The frontend runner script's local synthetic admin credential edit was reverted before commit `6cf8274`; future admin-case reruns need the local-only edit re-added, then reverted again before any commit.
 
 None of these justify weakening production throttling, bypassing approval gates, or deploying the working tree.
 
@@ -206,12 +207,11 @@ No production deploy, DNS change, secret write, analytics tag, or Cloudflare set
 
 ## 9. Immediate next actions
 
-1. Let the current 50-case frontend runner finish.
-2. Rerun TC002 and TC004 (plus any other FAIL/BLOCKED/INTERRUPTED cases) after fixing browser-connection or data issues.
-3. Regenerate this report with final frontend verdicts.
-4. Revert the synthetic admin credential edit in `.agents/skills/test-everything/scripts/run-frontend-cases.ps1`.
-5. Keep generated raw results local-only; do not commit local QA configuration.
-6. Provide the cloud access items above to start staging. Production stays blocked.
+1. Rerun TC002 and TC004–TC050 in an isolated CLI project (`--new-project --add-dir <APP>`) with a per-case `--print-timeout`; the previous runner drifted into another workspace.
+2. Re-add the synthetic admin credential locally only if admin cases require it, then revert before any commit.
+3. Regenerate this report from raw results with final frontend verdicts.
+4. Keep generated raw results local-only; do not commit local QA configuration.
+5. Provide the cloud access items above to start staging. Production stays blocked.
 
 ---
 
