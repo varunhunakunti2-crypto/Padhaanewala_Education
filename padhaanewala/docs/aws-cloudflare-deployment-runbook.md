@@ -21,11 +21,11 @@ Verified locally:
 | Docker | `Docker version 29.9.3, build 5457199` |
 | Docker Compose | `v5.7.1` |
 | AWS CLI | **not installed** on this Windows machine |
-| Current branch | `security/H-08-pii-encryption` |
-| Current HEAD | `5049ab1425a00bd31382ab21af472d36bf21ee57` |
-| Alembic head | `f4a1c6d8e902` |
+| Current branch | `main` |
+| Current HEAD | `e35a33f50990437ce414cd225f58c52caba8e9ed` |
+| Alembic head | `b2f8c4d9e731` (applied to the local dev database) |
 
-Before I can provision AWS resources from this machine, install/configure AWS CLI locally, or you can run the AWS steps from AWS CloudShell / an EC2 instance role.
+Before I can provision AWS resources from this machine, install/configure AWS CLI locally, or you can run the AWS steps from AWS CloudShell / an EC2 instance role. No AWS credentials, SSH keys, EC2/EIP/DNS or Cloudflare access have been supplied in this session.
 
 Do **not** paste AWS keys, JWT keys, DB passwords, SMS/email API keys, or admin passwords into chat.
 
@@ -247,15 +247,28 @@ Do not print or paste those values into chat.
 
 ## 7. Release artifact
 
-The current working tree contains modified TestSprite reports and untracked Fix 02 files. Do **not** deploy the working tree as-is.
+The current working tree contains generated TestSprite result files and locally updated readiness/test reports. Do **not** deploy the working tree as-is.
 
 Deploy from a clean committed release ref. Current verified baseline:
 
 ```text
-5049ab1425a00bd31382ab21af472d36bf21ee57
+e35a33f50990437ce414cd225f58c52caba8e9ed
 ```
 
-If the untracked T1 primitive must be included in the release, that requires an explicit commit/tag authorisation first. It is not needed for current application behaviour because no application code imports it.
+All earlier human/security branches were merged before this ref; the three most recent commits remove local-only QA artifacts from GitHub without deleting them from disk. No production secret, AWS resource, DNS record or Cloudflare setting is part of this baseline.
+
+---
+
+## 7.1 Local QA-only configuration (never deploy)
+
+These settings exist only on the Windows QA machine to make the full synthetic regression deterministic. They are **not** application defaults and must not be copied into staging or production:
+
+- Backend was started with local-only `RATE_LIMIT_P8_CRM_LIMITS` and `RATE_LIMIT_P8_IDENTIFIER_LIMITS` overrides so TC004 could submit four synthetic enquiries. `RATE_LIMIT_ENABLED=false` was never used; production rate limits remain unchanged.
+- The local dev database was migrated to Alembic head `b2f8c4d9e731` so the AI assistant endpoint has its `ai_settings` table. Staging/production must use the normal `RUN_MIGRATIONS` path; no ad-hoc schema change was committed.
+- Synthetic accounts `testsprite.student@example.com` and `testsprite.admin@example.com` exist only in the local dev database. The admin account was created with `scripts/seed_admin.py` under the explicit allowlist gate. No real student or minor data was used.
+- Chrome runs with `--remote-debugging-port=9222` on the default user-data directory because the 50-case runner connects through that DevTools endpoint.
+
+None of the above is an argument for weakening production controls, disabling throttling, or bypassing approval gates.
 
 ---
 
