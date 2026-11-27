@@ -23,7 +23,7 @@ This batch addresses only items that do not require the outstanding owner, indep
 - Frontend: **905 tests passed** (50 files), including the new browser-storage and legal-consistency tests.
 - Backend: Python compilation succeeded for `app`, `tests` and `alembic`.
 - Alembic metadata: single head confirmed (`b2f8c4d9e731`).
-- Backend CI on `security/deployment-hardening` ran **1321 tests: 1318 passed, 2 skipped, 1 failed**. The failure was the P10 route-coverage pin for the two DELETE routes listed above; they are now classified. A fresh CI run is required to confirm green before merge.
+- Backend CI on `security/deployment-hardening` was re-run after the rate-limit fix and is **green**. The first run found 1 failure (the P10 pin for the two DELETE routes above); after classification the suite passed. This branch was merged into `main` only after that green result.
 - Backend pytest cannot be re-run locally here: this environment has no reachable PostgreSQL on port 5433 with usable credentials.
 
 ## Still blocked / not touched
