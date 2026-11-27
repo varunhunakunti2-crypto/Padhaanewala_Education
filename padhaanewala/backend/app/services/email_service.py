@@ -164,12 +164,21 @@ def _send_via_sendgrid(to_email: str, subject: str, text: str, html: str) -> Non
         raise EmailDeliveryError("Email provider is unreachable") from exc
 
 
+def _mask_email(email: str) -> str:
+    """A log-safe rendering: first character of the mailbox, full domain."""
+    mailbox, sep, domain = email.partition("@")
+    if not sep:
+        return "***"
+    return f"{mailbox[:1]}***@{domain}" if mailbox else f"***@{domain}"
+
+
 def send_email(to_email: str, subject: str, text: str, html: str) -> str:
     """Deliver an email. Returns the provider actually used.
 
-    `text` and `html` are logged on the console path only. On a real provider
-    they are the account-recovery credential, so they are never written to a
-    log that is likely to be shipped elsewhere.
+    Neither the body nor the full address is logged. A reset/verification body
+    is an account-recovery credential, and logs are routinely shipped to third
+    party aggregators; the delivery call seam is the only place a developer
+    needs to see the plaintext.
     """
     provider = _provider()
 
@@ -178,12 +187,9 @@ def send_email(to_email: str, subject: str, text: str, html: str) -> str:
             "EMAIL_PROVIDER is not usable (EMAIL_PROVIDER=%r); email to %s not "
             "sent. Subject: %s",
             settings.EMAIL_PROVIDER,
-            to_email,
+            _mask_email(to_email),
             subject,
         )
-        # The body is logged at DEBUG, not WARNING, so a default-INFO deployment
-        # never spills a live reset link into a log aggregator.
-        logger.debug("console email body for %s:\n%s", to_email, text)
         return "console"
 
     if provider == "smtp":
@@ -191,5 +197,5 @@ def send_email(to_email: str, subject: str, text: str, html: str) -> str:
     else:
         _send_via_sendgrid(to_email, subject, text, html)
 
-    logger.info("Email '%s' sent to %s via %s", subject, to_email, provider)
+    logger.info("Email '%s' sent via %s", subject, provider)
     return provider

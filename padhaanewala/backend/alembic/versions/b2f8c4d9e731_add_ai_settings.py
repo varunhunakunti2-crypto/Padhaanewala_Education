@@ -38,7 +38,12 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "b2f8c4d9e731"
-down_revision: str | Sequence[str] | None = "a7d3c5e1f924"
+# Both this revision and `f4a1c6d8e902` were authored from `a7d3c5e1f924`
+# on separate branches. Re-parent here so the merged tree has one head and a
+# database stamped at `f4a1c6d8e902` (the main-line migration) picks this one up
+# on the next `upgrade head`. The two changes are independent: f4a1 updates the
+# site support email, this one creates `ai_settings`.
+down_revision: str | Sequence[str] | None = "f4a1c6d8e902"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

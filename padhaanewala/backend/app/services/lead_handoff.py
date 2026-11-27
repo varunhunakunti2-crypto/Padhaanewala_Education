@@ -138,11 +138,15 @@ def promote_enquiry_to_lead(db: Session, enquiry: Enquiry) -> Counsellor | None:
     db.commit()
     db.refresh(enquiry)
 
-    # Clipped as whole strings, not as the name inside them: the "New enquiry: "
-    # prefix is what pushes a 255-character name over the 255-character column.
-    title = _clip(f"New enquiry: {enquiry.name}", TITLE_LIMIT)
-    message = _clip(f"{enquiry.name} ({enquiry.mobile})", MESSAGE_LIMIT)
-    data = {"enquiry_id": enquiry.id, "mobile": enquiry.mobile}
+    # Notifications fan out to every active admin, so they must carry no lead
+    # PII. The recipient opens the admin console to see the actual record; the
+    # alert only says that something needs attention and which row it is.
+    title = _clip("New enquiry received", TITLE_LIMIT)
+    message = _clip(
+        f"Enquiry #{enquiry.id} is waiting for review in the admin console.",
+        MESSAGE_LIMIT,
+    )
+    data = {"enquiry_id": enquiry.id}
 
     try:
         with db.begin_nested():

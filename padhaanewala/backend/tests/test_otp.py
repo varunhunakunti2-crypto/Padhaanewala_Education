@@ -712,13 +712,23 @@ def test_gate_does_not_leak_password_validity(user, monkeypatch):
 # ------------------------------------------------------- console fallback
 
 
-def test_sms_falls_back_to_console_and_logs_the_otp(user, caplog, monkeypatch):
-    """The no-credential path must still produce a usable, visible OTP.
+def test_sms_console_fallback_withholds_otp_and_mobile_from_logs(
+    user, caplog, monkeypatch
+):
+    """The no-credential path stays usable without putting PII in logs.
 
-    This is what makes Phase 3 exercisable before the paid MSG91 account
-    exists, so it is load-bearing rather than a convenience.
+    The code is observable at the delivery seam (the only place it exists in
+    plaintext), not in the log stream that ships to an aggregator.
     """
-    monkeypatch.setattr(sms_service, "send_otp", sms_service.send_otp)
+    captured: dict[str, str] = {}
+    real_send_otp = sms_service.send_otp
+
+    def capture_otp(mobile: str, otp: str) -> str:
+        captured["mobile"] = mobile
+        captured["otp"] = otp
+        return real_send_otp(mobile, otp)
+
+    monkeypatch.setattr(sms_service, "send_otp", capture_otp)
     monkeypatch.setattr(settings, "SMS_PROVIDER", "msg91")
     monkeypatch.setattr(settings, "SMS_API_KEY", "change-me")
 
@@ -730,12 +740,18 @@ def test_sms_falls_back_to_console_and_logs_the_otp(user, caplog, monkeypatch):
         )
     assert response.status_code == 200
 
-    logged = [r.getMessage() for r in caplog.records if "OTP" in r.getMessage()]
-    assert logged, "console fallback did not log the OTP"
+    logged = "\n".join(r.getMessage() for r in caplog.records)
+    assert "console" in logged, "console fallback did not log its occurrence"
+    assert captured.get("otp") and captured["otp"] not in logged, (
+        "the OTP must never appear in application logs"
+    )
+    assert user["mobile"] not in logged, (
+        "a full mobile number must never appear in application logs"
+    )
 
-    otp = re.search(r"OTP for \S+ is (\d{6})", logged[-1]).group(1)
     verified = client.post(
-        "/api/v1/auth/login/otp/verify", json={"mobile": user["mobile"], "otp": otp}
+        "/api/v1/auth/login/otp/verify",
+        json={"mobile": user["mobile"], "otp": captured["otp"]},
     )
     assert verified.status_code == 200, verified.text
 

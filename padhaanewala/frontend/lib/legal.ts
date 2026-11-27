@@ -22,15 +22,17 @@
  *  - No analytics, advertising or error-tracking SDK is installed. Not Google
  *    Analytics, not Meta Pixel, not Sentry, not Vercel Analytics.
  *  - No payment gateway is integrated. Every service is currently free.
- *  - There is no file upload anywhere, so no documents or photographs are held.
+ *  - Media upload exists in the admin console only. Uploads are type-sniffed,
+ *    size-capped and served with `nosniff`; they are not a student document
+ *    collection feature.
  *  - Email and mobile are verified: the address by a one-time emailed link, the
  *    mobile by an SMS OTP. Both are stored only as a bcrypt digest of the secret
  *    in the `otp_records` table, never in plaintext. A reset link is a bearer
  *    credential for the account, so it expires (60 min) and is single-use.
- *  - The AI assistant forwards the user's raw message to OpenAI
- *    (app/api/ai/route.ts) and falls back to canned replies when
- *    OPENAI_API_KEY is unset. The route is unlisted in the page manifest
- *    (lib/nav.ts) pending the rate limit and input cap in Phase 4.
+ *  - The AI assistant forwards the user's raw message to the backend
+ *    (`POST /api/v1/ai/chat`), which applies the shared rate limit and uses the
+ *    key saved by the super admin. The fallback responder answers when no
+ *    provider is configured.
  *  - There is an age gate and a parental-consent mechanism (Phase 9.1).
  *    Registration and the admission enquiry both require an `age_band`, the
  *    account gate blocks a logged-in user whose band is unanswered, and a user
@@ -38,15 +40,15 @@
  *    or guardian confirms by an OTP sent to a number or address the child does
  *    not control. Backend: `/api/v1/compliance/*` and
  *    `require_processing_consent`. Frontend: `components/compliance/AgeGate.tsx`.
- *  - There is still no in-product data export or account-deletion flow, so the
- *    rights section describes a manual process rather than claiming a button
- *    exists.
+ *  - Data-rights requests can be raised and tracked in the “Privacy and data”
+ *    panel. Irreversible whole-account closure is still a manual, team-handled
+ *    request.
  */
 
 import { SITE } from "@/lib/site";
 
 /** Bumped whenever any document below changes substantively. */
-export const LEGAL_LAST_UPDATED = "2026-09-27";
+export const LEGAL_LAST_UPDATED = "2026-11-27";
 
 /**
  * The Grievance Officer's name and direct line, supplied at build time.
@@ -177,7 +179,7 @@ export const LEGAL_DOCS: readonly LegalDoc[] = [
             "Data from our AI assistant: the text of the question you type. It is forwarded to our AI processor (OpenAI) to generate a reply, as described under “AI features and third-party processing” below.",
           ),
           note(
-            "We do not ask for, and cannot receive, your date of birth, caste, religion, marks or certificates, Aadhaar number, PAN, bank details or payment-card information. We have no file-upload feature, so we never hold copies of your marksheets or identity documents.",
+            "We do not ask for, and cannot receive, your date of birth, caste, religion, marks or certificates, Aadhaar number, PAN, bank details or payment-card information. Student-facing pages have no file upload, so we never receive copies of your marksheets or identity documents. The admin media library can hold site images uploaded by staff; those are not student records.",
           ),
         ],
       },
@@ -257,7 +259,7 @@ export const LEGAL_DOCS: readonly LegalDoc[] = [
         heading: "How long we keep it",
         blocks: [
           p(
-            "We keep data for as long as your account is active, because that is what makes shortlists, mock-test history and saved preferences work. When you close your account, we delete or irreversibly anonymise your personal data within 30 days, except where we must keep it longer to comply with a legal obligation or to resolve a dispute.",
+            "We keep data for as long as your account is active, because that is what makes shortlists, mock-test history and saved preferences work. When you close your account, we delete or irreversibly anonymise your personal data within 30 days of the scheduled retention sweep running, except where we must keep it longer to comply with a legal obligation or to resolve a dispute.",
           ),
           p(
             "Aggregated, non-identifying usage counts may be retained for longer because they cannot be linked back to you.",
@@ -294,10 +296,10 @@ export const LEGAL_DOCS: readonly LegalDoc[] = [
             "Receive a grievance redressal response, and appeal an unsatisfactory one.",
           ),
           p(
-            `Email ${SITE.email} with the subject line “Data rights request” and tell us which right you want to exercise. We aim to acknowledge within 7 days and to complete the request within 30 days. We may ask you to confirm that you are the account holder before we act, so that nobody can request your data using your email address alone.`,
+            `Use the “Privacy and data” panel in your dashboard to tell us which right you want to exercise and to follow its progress. If you cannot sign in, email ${SITE.email} with the subject line “Data rights request” and we will open it for you. We aim to acknowledge within 7 days and to complete the request within 30 days. We may ask you to confirm that you are the account holder before we act, so that nobody can request your data using your email address alone.`,
           ),
           note(
-            "To be straight with you about the current state of the product: there is no in-app button to download or delete your account, and requests are currently handled by our team manually. We would rather tell you that plainly than describe a self-service process that does not exist. We intend to add self-service export and deletion.",
+            "To be straight with you about the current state of the product: you can raise access, correction and deletion requests in the “Privacy and data” panel and track them there. There is no self-service button that irreversibly deletes the whole account; that closure request is still handled by our team.",
           ),
         ],
       },
@@ -357,8 +359,8 @@ export const LEGAL_DOCS: readonly LegalDoc[] = [
   //
   // Every entry below is checkable against the code. The header comment of this
   // file records the current-state facts the copy depends on, and those are the
-  // same facts this notice has to state honestly — including the two that are
-  // not yet true of the product (no self-service export or deletion).
+  // same facts this notice has to state honestly — including the one that is
+  // not yet true of the product (no self-service irreversible account deletion).
   {
     slug: "dpdp-notice",
     title: "Notice on Personal Data",
@@ -456,7 +458,7 @@ export const LEGAL_DOCS: readonly LegalDoc[] = [
           ),
           ul(
             "Your date of birth, caste, religion, marks, certificates, Aadhaar number, PAN, bank details or card information.",
-            "Any photograph, marksheet or identity document. There is no file-upload feature anywhere on this site.",
+            "Any photograph, marksheet or identity document submitted by a student. The only upload facility is an admin-only media library for site images.",
             "Any behavioural profile built by an advertising or analytics network. We run no third-party tracking scripts of any kind.",
             "Location data from your device. We use the city and state you type into a form, never your GPS.",
           ),
@@ -488,13 +490,13 @@ export const LEGAL_DOCS: readonly LegalDoc[] = [
             "Where we rely on your consent, you may withdraw it at any time. Withdrawing consent does not affect processing that was lawful before you withdrew it.",
           ),
           ul(
-            `To withdraw consent, or to ask us to stop processing, delete your data, or exercise any other right under the DPDP Act, email ${SITE.email} with the subject line “Data rights request”. Every such request is logged with a statutory deadline of 90 days from the day we receive it, and our case queue is ordered by that deadline rather than by when the request arrived. We aim to acknowledge sooner and to finish well inside it. We may ask you to confirm you are the account holder before we act.`,
+            `To withdraw consent, or to ask us to stop processing, correct or delete your data, or exercise any other right under the DPDP Act, use the “Privacy and data” panel in your dashboard. If you cannot sign in, email ${SITE.email} with the subject line “Data rights request” and we will open the request for you. Every request is logged with a statutory deadline of 90 days from the day we receive it, and our case queue is ordered by that deadline rather than by when the request arrived. We aim to acknowledge sooner and to finish well inside it. We may ask you to confirm you are the account holder before we act.`,
             `To complain, email ${SITE.email} with the subject line “Grievance”. Our Grievance Redressal page explains the full process, the response window, and how to escalate to the National Consumer Helpline on 1915 if you are not satisfied.`,
             `If you are not satisfied with our response, you are not required to approach us first. The Data Protection Board of India and the appropriate consumer forum are both available to you.`,
             `To stop us processing your data because you are under 18, you do not need to email anyone: withdraw parental consent from the “Privacy and data” panel in your dashboard, and it takes effect immediately.`,
           ),
           note(
-            "To be straight with you about the current state of the product: there is no in-app button to export or delete your account, so those requests are handled by our team from the email above. We would rather state that plainly than describe a self-service process that does not exist.",
+            "To be straight with you about the current state of the product: you can raise access, correction and deletion requests in the “Privacy and data” panel and track them there. Account closure is still handled by our team; there is no self-service button that irreversibly deletes the whole account.",
           ),
         ],
       },

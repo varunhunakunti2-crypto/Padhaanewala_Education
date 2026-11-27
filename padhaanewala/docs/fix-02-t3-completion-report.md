@@ -75,7 +75,7 @@ No T3 tests were run. No executable T3 code exists, and Gate 0 prohibits impleme
 
 ## 7. Migration and deployment effects
 
-None. No migration, backfill, production write, key rotation, or deployment was performed. Alembic head remains the verified single head `f4a1c6d8e902`.
+None. No migration, backfill, production write, key rotation, or deployment was performed. At the time of this report the verified single head was `f4a1c6d8e902`; after the branches were merged, the re-parenting recorded in `deployment-hardening-progress.md` leaves the single head at `b2f8c4d9e731`.
 
 ---
 
