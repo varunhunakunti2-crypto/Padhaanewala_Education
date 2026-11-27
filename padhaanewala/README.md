@@ -343,8 +343,7 @@ all four — see `.github/workflows/` at the repository root.
 | Document | What it is |
 |---|---|
 | `docs/padhaanewala-complete.md` | The master product specification and implementation plan (V5.0), 105 phases |
-| `docs/Pending-phases.md` | The authoritative status tracker for taking this to deployable. **Supersedes the two below.** |
-| `docs/padhaanewala-phase-checklist.md` | Per-phase checklist. Predates the code it describes; several rows are wrong |
+| `docs/Pending-phases.md` | The authoritative status tracker for taking this to deployable. **Supersedes the stale phase records below.** |
 | `docs/rbac-compliance-checklist.md` | The authorization ruleset, keyed to `app/roles.py` |
 | `docs/phase-verification.md`, `docs/session-log-2026-09-27.md` | Point-in-time records. Useful as history, not as status |
 

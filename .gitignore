@@ -78,3 +78,16 @@ __pycache__/
 /padhaanewala/testsprite_tests/TC013_Block_access_to_a_protected_page_when_signed_out.py
 /padhaanewala/testsprite_tests/TC014_View_dashboard_saved_colleges_and_notifications.py
 /padhaanewala/testsprite_tests/TC015_Use_a_quick_action_to_open_a_discovery_page.py
+
+# Batch 2: stale QA history, duplicate brand assets, and superseded docs.
+/padhaanewala/test_e2e_platform.py
+/padhaanewala/testsprite_tests/standard_prd.json
+/padhaanewala/testsprite_tests/testsprite-mcp-*.md
+/padhaanewala/testsprite_tests/api_connectivity_check.ps1
+/padhaanewala/testsprite_tests/api-connectivity-report.md
+/padhaanewala/docs/padhaanewala-phase-checklist.md
+/logo.svg/Radiant Graduation Cap Education Logo.png
+/padhaanewala/frontend/public/favicon.ico
+/padhaanewala/testsprite_tests/industry-qa-methodology.md
+/padhaanewala/testsprite_tests/qa-change-log.md
+/padhaanewala/testsprite_tests/antigravity-test-everything-blocked-2026-11-27.md
