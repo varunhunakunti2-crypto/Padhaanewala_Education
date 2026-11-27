@@ -55,3 +55,26 @@ node_modules/
 __pycache__/
 *.tsbuildinfo
 *.py[cod]
+
+# Removed from GitHub but kept locally: duplicated assets, one-off scripts,
+# stale raw evidence, and superseded 15-case browser test generators.
+/padhaanewala/bot_robot.glb
+/padhaanewala/backend/reseed_mock_tests.py
+/padhaanewala/testsprite_tests/antigravity-backend-results.txt
+/padhaanewala/testsprite_tests/sanitize_generated_scripts.ps1
+/padhaanewala/.agents/skills/test-everything/test-everything/
+/padhaanewala/testsprite_tests/TC001_Log_in_and_reach_the_dashboard.py
+/padhaanewala/testsprite_tests/TC002_Start_a_mock_test_and_answer_questions_under_the_timer.py
+/padhaanewala/testsprite_tests/TC003_Register_and_reach_the_dashboard.py
+/padhaanewala/testsprite_tests/TC004_Submit_a_mock_test_and_review_results.py
+/padhaanewala/testsprite_tests/TC005_Start_a_mock_test_attempt_from_the_catalog.py
+/padhaanewala/testsprite_tests/TC006_Start_and_complete_a_mock_test_attempt.py
+/padhaanewala/testsprite_tests/TC007_Find_a_college_from_the_homepage_search.py
+/padhaanewala/testsprite_tests/TC008_Browse_colleges_and_open_a_college_detail_page.py
+/padhaanewala/testsprite_tests/TC009_Block_protected_pages_until_sign_in.py
+/padhaanewala/testsprite_tests/TC010_Complete_a_mock_test_and_submit_answers.py
+/padhaanewala/testsprite_tests/TC011_Redirect_unauthenticated_visitors_away_from_the_admin_console.py
+/padhaanewala/testsprite_tests/TC012_Browse_and_filter_colleges.py
+/padhaanewala/testsprite_tests/TC013_Block_access_to_a_protected_page_when_signed_out.py
+/padhaanewala/testsprite_tests/TC014_View_dashboard_saved_colleges_and_notifications.py
+/padhaanewala/testsprite_tests/TC015_Use_a_quick_action_to_open_a_discovery_page.py
