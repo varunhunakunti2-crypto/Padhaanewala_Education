@@ -37,6 +37,12 @@ All 10 backend API cases pass with system `python -m pytest`:
 - Local Alembic head is `b2f8c4d9e731`.
 - Earlier TC004 rate-limit 429 and TC009 missing `ai_settings` failures are resolved.
 
+## Environment blocker
+
+- **2026-11-28 16:05 IST:** port `8000` is occupied by another active project's server (`scripts\run_app.py --no-browser --port 8000`, PIDs `22724`/`39028` from `D:\COde\Major project\Saferoute-AI-Project`). The Padhaanewala backend API cases hardcode `127.0.0.1:8000`, so the rerun cannot start on another port without local test/config edits.
+- The OpenCode/server restarts also stopped Docker Desktop, the frontend dev server, and the Chrome remote-debugging session.
+- I did not terminate the other project's processes or change configuration. The rerun is paused until port `8000` is free and the local stack is restored.
+
 ## Deployment decision
 
 - **Staging:** NO-GO until AWS CloudShell/CLI, EC2 SSH/SSM, Cloudflare DNS access, and runbook Phase 0/1 outputs are provided.
@@ -44,7 +50,7 @@ All 10 backend API cases pass with system `python -m pytest`:
 
 ## Next actions
 
-1. Rerun TC002 and TC004–TC050 in an isolated CLI project (`--new-project --add-dir <APP>`) with a per-case `--print-timeout`.
+1. Free port `8000`, restore Docker/frontend/Chrome debug, then rerun TC002 and TC004–TC050 in an isolated CLI project (`--new-project --add-dir <APP>`) with a per-case `--print-timeout`.
 2. Re-add the local synthetic admin credential only if admin cases require it, then revert before any commit.
 3. Regenerate the full report from raw results with final verdicts.
 4. Keep generated result files local-only; do not commit local QA configuration.

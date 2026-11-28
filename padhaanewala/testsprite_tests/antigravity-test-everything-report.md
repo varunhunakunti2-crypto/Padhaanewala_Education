@@ -207,7 +207,7 @@ No production deploy, DNS change, secret write, analytics tag, or Cloudflare set
 
 ## 9. Immediate next actions
 
-1. Rerun TC002 and TC004–TC050 in an isolated CLI project (`--new-project --add-dir <APP>`) with a per-case `--print-timeout`; the previous runner drifted into another workspace.
+1. Free port `8000` (currently held by another active project's server), restore Docker/frontend/Chrome debug, then rerun TC002 and TC004–TC050 in an isolated CLI project (`--new-project --add-dir <APP>`) with a per-case `--print-timeout`; the previous runner drifted into another workspace.
 2. Re-add the synthetic admin credential locally only if admin cases require it, then revert before any commit.
 3. Regenerate this report from raw results with final frontend verdicts.
 4. Keep generated raw results local-only; do not commit local QA configuration.
